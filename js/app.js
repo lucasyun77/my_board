@@ -237,7 +237,24 @@
         </form></details></section>`;
   }
 
-  /* ---------- 오늘 할 일 (홈) ---------- */
+  /* ---------- 메인 대시보드 (회장 현황판 로고) ---------- */
+  function viewHome() {
+    const tasks = S.dailyTasks.filter((t) => t.date === S.today);
+    const doneT = tasks.filter((t) => t.done).length;
+    const due = S.directives.filter((d) => isOpen(d) && d.due_at <= S.today);
+    const stages = ['아이디어', '검증', 'PoC', '론칭'].map((st) => [st, S.ideas.filter((i) => i.stage === st).length]);
+    const u = S.usage[S.usage.length - 1];
+    const recent = S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).length;
+    const card = (tab, title, body) => `<section class="panel"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3>${title}</h3><button type="button" class="btn sm" data-act="tab" data-v="${tab}">열기 →</button></div>${body}</section>`;
+    return `<div class="grid2">
+      ${card('today', '오늘 할 일', `<div class="small muted">내 할 일 ${doneT}/${tasks.length} 완료 · 오늘까지 기한 지시 ${due.length}건</div><ul style="margin:8px 0 0;padding-left:18px">${[...due.map((d) => `<li>${esc(d.title)} <span class="small muted">${esc(d.org)}</span></li>`), ...tasks.filter((t) => !t.done).map((t) => `<li>${esc(t.title)} <span class="small muted">내 할 일</span></li>`)].slice(0, 4).join('') || '<li class="muted">남은 일이 없습니다.</li>'}</ul>`)}
+      ${card('ideas', '신사업 파이프라인', `<div class="row" style="gap:10px">${stages.map(([st, n]) => `<div style="flex:1;min-width:70px;background:var(--paper2);border-radius:12px;padding:10px;text-align:center"><div class="small muted">${st}</div><div class="num" style="font-size:22px;font-weight:900">${n}</div></div>`).join('')}</div>`)}
+      ${card('ai', 'AI 사용 · 오늘', `<div class="row" style="gap:24px"><div><div class="small muted">토큰 ${badge('측정')}</div><div class="num" style="font-size:22px;font-weight:900">${((u.input_tokens + u.output_tokens) / 1e6).toFixed(2)}M</div></div><div><div class="small muted">비용 ${badge('측정')}</div><div class="num" style="font-size:22px;font-weight:900">${won(u.cost_usd * RATE)}원</div></div><div><div class="small muted">ChatGPT·Gemini</div><div>${badge('미확인')}</div></div></div>`)}
+      ${card('learn', '경영학습', `<div class="row" style="gap:24px"><div><div class="small muted">누적 XP ${badge('측정')}</div><div class="num" style="font-size:22px;font-weight:900">${S.xp}</div></div><div><div class="small muted">최근 7일 풀이</div><div class="num" style="font-size:22px;font-weight:900">${recent}문제</div></div><div><div class="small muted">다시 보기</div><div class="num" style="font-size:22px;font-weight:900">${S.wrong.length}문제</div></div></div>`)}
+    </div>`;
+  }
+
+  /* ---------- 오늘 할 일 ---------- */
   function tasksBlock() {
     const tasks = S.dailyTasks.filter((t) => t.date === S.today);
     const comp = S.ui.completing ? S.dailyTasks.find((t) => t.id === S.ui.completing) : null;
@@ -466,15 +483,15 @@
   const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
   try { const t = localStorage.getItem('myboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* */ }
   function syncThemeBtn() { const b = document.getElementById('themeBtn'); if (b) b.textContent = isDark() ? '밝게 보기' : '어둡게 보기'; }
-  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'today'; };
+  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'home'; };
   function render() {
-    const isHome = curTab() === 'today';
+    const tab = curTab();
+    const isHome = tab === 'home';
     const bf = document.getElementById('brandFace'); if (bf && !bf.firstChild) bf.innerHTML = ART.face(44);
     if (isHome) renderTop(); else $('#top').innerHTML = '';
-    const tab = curTab();
     $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
     syncThemeBtn();
-    $('#view').innerHTML = TABS.find((t) => t[0] === tab)[2]();
+    $('#view').innerHTML = isHome ? viewHome() : TABS.find((t) => t[0] === tab)[2]();
     save();
   }
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
