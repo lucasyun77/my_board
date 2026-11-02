@@ -73,7 +73,7 @@
       <h3 id="h-vlv" class="val-sr">레벨과 잔액</h3>
       <div class="val-lvgrid">
         <div class="val-lvmain">${ART.mascot(can ? 'key' : 'stand', 104)}
-          <div><div class="small muted">현재 레벨 ${badge('측정')}</div><div class="val-big num">Lv.${w.level}</div>
+          <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="val-big num">Lv.${w.level}</div>
             <div class="small muted">레벨업 ${S.levelUps.length}회 · 1회 ${kwon(LEVEL_COST)}천원</div></div></div>
         <div class="val-stat"><div class="small muted">사용 가능 잔액 ${badge('추정')}</div><div class="val-mid num">${kwon(w.balance_won)}<small>천원</small></div></div>
         <div class="val-stat"><div class="small muted">누적 확정 ${badge('추정')}</div><div class="val-mid num">${kwon(w.total_won)}<small>천원</small></div></div>
