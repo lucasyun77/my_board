@@ -1,1 +1,68 @@
 /* 메뉴: value — 이 메뉴 전용 스타일. 공용 토큰(var(--paper) 등)만 사용 */
+.val-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.val-big { font-size: 44px; font-weight: 900; line-height: 1.05; }
+.val-mid { font-size: 24px; font-weight: 900; line-height: 1.2; }
+.val-mid small { font-size: 13.5px; font-weight: 500; color: var(--sub); margin-left: 2px; }
+
+/* 레벨 패널 */
+.val-lvgrid { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.val-lvmain { display: flex; align-items: flex-end; gap: 14px; min-width: 0; }
+.val-lvmain .mascot { flex: none; margin-bottom: -20px; }
+.val-stat { background: var(--paper2); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.val-next { margin-top: 18px; padding-top: 14px; border-top: var(--hair); display: grid; gap: 10px; }
+.val-ask { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; background: var(--goldSoft); border-radius: 12px; padding: 10px 12px; font-size: 15px; }
+.val-hist { margin-top: 12px; }
+.val-hist > summary, .val-why > summary { cursor: pointer; font-size: 14.5px; font-weight: 700; color: var(--sub); padding: 6px 0; }
+.val-hist > summary:hover, .val-why > summary:hover { color: var(--ink); }
+
+/* 기간 타일 */
+.val-hint { font-weight: 400; margin-left: auto; }
+.val-periods { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 6px; }
+.val-per { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--paper); cursor: pointer; color: var(--ink); }
+.val-per:hover { border-color: var(--gold); }
+.val-per[aria-pressed="true"] { background: var(--goldSoft); border-color: var(--gold); box-shadow: var(--shadow); }
+.val-per:focus-visible, .val-hist > summary:focus-visible, .val-why > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* 평가 건 목록 */
+.val-lhead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.val-lhead h3 { margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.val-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.val-filters .seg { flex-wrap: wrap; }
+.val-sel select { width: auto; max-width: 100%; }
+.val-sum { margin: 10px 0 4px; }
+.val-item { border-top: var(--hair); padding: 16px 0; display: grid; gap: 10px; }
+.val-item:last-child { padding-bottom: 0; }
+.val-ihead { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-start; justify-content: space-between; }
+.val-ititle { min-width: 0; flex: 1 1 260px; }
+.val-ititle b { font-size: 16px; }
+.val-ival { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.val-kt { font-family: var(--sans); font-weight: 500; }
+.val-why .rationale { margin-top: 2px; }
+.val-log { display: grid; gap: 8px; }
+.val-vd { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--paper); border: 1.5px solid var(--line); }
+.val-vd.ok { color: var(--ok); border-color: var(--ok); }
+.val-vd.part { color: var(--warn); border-color: var(--warn); }
+.val-vd.no { color: var(--crit); border-color: var(--crit); }
+.val-nego { grid-template-columns: minmax(0, 1fr) auto; background: var(--paper2); border-radius: 12px; padding: 12px; }
+.val-nego select { width: auto; max-width: 100%; }
+.val-note { margin: 0; }
+.val-item.is-done .coef > div { background: transparent; border: 1.5px solid var(--line); }
+
+@media (max-width: 1100px) {
+  .val-lvgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .val-lvmain { grid-column: 1 / -1; }
+  .val-periods { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+}
+@media (max-width: 600px) {
+  .val-lvgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .val-lvgrid .val-stat:last-child { grid-column: 1 / -1; }
+  .val-big { font-size: 38px; }
+  .val-mid { font-size: 20px; }
+  .val-periods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .val-periods .val-per:first-child { grid-column: 1 / -1; }
+  .val-hint { margin-left: 0; flex-basis: 100%; }
+  .val-nego { grid-template-columns: minmax(0, 1fr); }
+  .val-nego select, .val-sel, .val-sel select { width: 100%; }
+  .val-filters > .val-sel { flex: 1 1 140px; }
+  .val-ask .row, .val-ask .row .btn { flex: 1 1 auto; }
+}
