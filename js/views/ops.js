@@ -10,9 +10,9 @@
   const ISSUE_STATUS = ['접수', '대응 중', '합의·조정', '종결'];
   const ISSUE_KIND = ['분쟁', '이슈'];
   const ORGS = (window.MOCK && MOCK.ORGS) || ['경영지원본부'];
-  // 회장 대기함: 처리 완료는 S.waiting에서 빼서 S.opsDone으로 옮긴다(홈·오늘 할 일 숫자와 맞추기 위해)
+  // 회장 대기함: 처리 완료는 S.waiting에서 빼서 S.waitingDone으로 옮긴다(홈·오늘 할 일 숫자와 맞추기 위해)
   S.waiting.forEach((w, i) => { if (!w.id) w.id = 'w' + (i + 1); });
-  S.opsDone = S.opsDone || [];
+  S.waitingDone = S.waitingDone || []; // 오늘 할 일 메뉴와 같은 처리 완료 목록을 함께 씀
   // 부서별 지연 과제 이름(수훈보드 연동 전 샘플)
   S.opsDeptTasks = S.opsDeptTasks || {
     '벌툰사업부': ['가맹점 오픈 체크리스트 개정'],
@@ -45,7 +45,7 @@
   /* ---------- ① 회장 대기함 ---------- */
   function waitingBlock() {
     const wl = S.waiting.slice().sort((a, b) => a.since.localeCompare(b.since));
-    const done = S.opsDone.filter((x) => x.done_at === S.today);
+    const done = S.waitingDone.filter((x) => x.done_at === S.today);
     const rows = wl.map((w) => {
       const d = days(w.since, S.today);
       const lv = d >= 5 ? 'crit' : d >= 3 ? 'warn' : '';
@@ -172,12 +172,12 @@
   APP.acts.opsWaitDone = (el) => {
     const i = S.waiting.findIndex((w) => w.id === el.dataset.id); if (i < 0) return;
     const [w] = S.waiting.splice(i, 1);
-    S.opsDone.push(Object.assign(w, { done_at: S.today }));
+    S.waitingDone.push(Object.assign(w, { done_at: S.today }));
     toast('처리 완료로 표시했습니다 (Asana 완료 처리는 목업 표시)');
   };
   APP.acts.opsWaitUndo = (el) => {
-    const i = S.opsDone.findIndex((w) => w.id === el.dataset.id); if (i < 0) return;
-    const [w] = S.opsDone.splice(i, 1); delete w.done_at;
+    const i = S.waitingDone.findIndex((w) => w.id === el.dataset.id); if (i < 0) return;
+    const [w] = S.waitingDone.splice(i, 1); delete w.done_at;
     S.waiting.push(w);
     toast('대기함으로 되돌렸습니다');
   };

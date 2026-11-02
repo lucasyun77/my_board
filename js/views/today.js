@@ -90,7 +90,7 @@
       actions += `<button type="button" class="btn sm" data-act="tdOpen" data-k="manual" data-id="${t.id}">시간 수기 입력</button>`;
       actions += `<button type="button" class="btn sm" data-act="tdTomorrow" data-id="${t.id}">내일로</button>`;
     }
-    if (!t.evaluated) actions += `<button type="button" class="btn sm td-del" data-act="tdDel" data-id="${t.id}" aria-label="${esc(t.title)} 삭제">삭제</button>`;
+    if (!t.evaluated) actions += `<button type="button" class="btn sm td-del" data-act="tdDel" data-id="${t.id}" aria-label="${esc(t.title)} 삭제">${S.ui.tdDelAsk === t.id ? '정말 삭제' : '삭제'}</button>`;
 
     let panel = '';
     if (open === 'manual') panel = `<form class="form td-sub" data-form="tdManual" data-id="${t.id}">
@@ -239,7 +239,9 @@
     tdCarry: () => { const n = S.dailyTasks.filter((t) => t.date < S.today && !t.done).map((t) => { t.date = S.today; return t; }).length; toast(`${n}건을 오늘로 가져왔습니다`); },
     tdDel: (el) => {
       const t = task(el.dataset.id);
-      if (!window.confirm(`"${t.title}"을(를) 지울까요?`)) return;
+      // 화면 안 2단계 확인(공유 페이지에서는 브라우저 확인창이 뜨지 않음)
+      if (S.ui.tdDelAsk !== t.id) { S.ui.tdDelAsk = t.id; toast('한 번 더 누르면 지웁니다'); return; }
+      S.ui.tdDelAsk = null;
       S.dailyTasks = S.dailyTasks.filter((x) => x !== t); close(); toast('할 일을 지웠습니다');
     },
     tdWait: (el) => {
