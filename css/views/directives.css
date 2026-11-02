@@ -1,1 +1,151 @@
 /* 메뉴: directives — 이 메뉴 전용 스타일. 공용 토큰(var(--paper) 등)만 사용 */
+
+/* Asana 동기화 띠 */
+.dir-syncbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; background: var(--paper); border: var(--hair); border-radius: 14px; padding: 10px 14px; font-size: 14.5px; }
+.dir-asana { width: 18px; height: 18px; flex: none; border-radius: 50%; background: radial-gradient(circle at 50% 28%, var(--pink) 0 22%, transparent 23%), radial-gradient(circle at 26% 68%, var(--pink) 0 22%, transparent 23%), radial-gradient(circle at 74% 68%, var(--pink) 0 22%, transparent 23%); }
+.dir-syncbar .btn { margin-left: auto; }
+.dir-mock { flex-basis: 100%; }
+.dir-sync { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.dir-sync.ok { background: rgba(46,139,87,.14); color: var(--ok); }
+.dir-sync.pend { background: var(--goldSoft); color: var(--goldInk); }
+
+/* 경보·현황 숫자 (누르면 필터) */
+.dir-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dir-stat { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--paper); border: var(--hair); border-radius: 16px; padding: 12px 14px; cursor: pointer; min-width: 0; }
+.dir-stat:hover { border-color: var(--gold); }
+.dir-stat .l { font-size: 13px; color: var(--sub); font-weight: 500; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dir-stat .n { font-size: 28px; font-weight: 900; line-height: 1.15; }
+.dir-stat .n small { font-size: 14px; font-weight: 500; color: var(--sub); margin-left: 3px; }
+.dir-stat.crit .n { color: var(--crit); }
+.dir-stat.warn .n { color: var(--warn); }
+.dir-stat.info .n { color: var(--info); }
+.dir-stat.crit:not(.on) { background: var(--pinkSoft); border-color: transparent; }
+.dir-stat.on { border-color: var(--gold); box-shadow: inset 0 0 0 2px var(--gold); }
+
+/* 필터 */
+.dir-tagrow { margin: 10px 0 12px; }
+.dir-ftag { cursor: pointer; min-height: 34px; font-size: 14px; }
+.dir-ftag .num { font-size: 12px; margin-left: 2px; }
+.dir-ftag.on { background: var(--paper); font-weight: 700; }
+.dir-fform { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.dir-saved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.dir-sv { display: inline-flex; align-items: stretch; border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--paper); }
+.dir-sv button { border: 0; background: none; cursor: pointer; padding: 5px 10px; font-size: 13.5px; color: var(--ink); }
+.dir-sv button + button { border-left: 1.5px solid var(--line); color: var(--sub); padding: 5px 9px; }
+.dir-sv button + button:hover { color: var(--crit); }
+.dir-sv.on { border-color: var(--gold); background: var(--goldSoft); }
+.dir-sv.on button:first-child { font-weight: 700; }
+.dir-resbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.dir-link { border: 0; background: none; padding: 0; color: var(--goldInk); text-decoration: underline; cursor: pointer; font-size: 13.5px; }
+
+/* 공통 표시 */
+.dir-title { border: 0; background: none; padding: 0; text-align: left; font-weight: 700; font-size: 15px; line-height: 1.45; color: var(--ink); cursor: pointer; }
+.dir-title:hover { color: var(--goldInk); text-decoration: underline; }
+.dir-flags:empty { display: none; }
+.dir-flags { margin-top: 4px; gap: 4px; }
+.dir-flag { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.dir-flag.crit { background: var(--crit); color: #fff; }
+.dir-flag.warn { background: var(--goldSoft); color: var(--warn); border: 1px solid var(--warn); }
+.dir-memo { margin-top: 4px; }
+.is-over { color: var(--crit); font-weight: 700; }
+.is-soon { color: var(--warn); font-weight: 700; }
+.crit { color: var(--crit); } .warn { color: var(--warn); }
+.dir-empty { text-align: center; }
+.dir-empty p { margin: 0 0 8px; color: var(--sub); }
+.dir-tbl select { width: auto; max-width: 100%; }
+
+/* 칸반 */
+.dir-kanban .card { gap: 6px; }
+.dir-kanban .card select { width: 100%; }
+.dir-empty-col { padding: 6px 4px; }
+
+/* 기한 타임라인 */
+.dir-tl { display: flex; flex-direction: column; gap: 14px; }
+.dir-tl-group { background: var(--paper); border: var(--hair); border-radius: 18px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.dir-tl-group.crit { border-color: var(--crit); }
+.dir-tl-group.today { border-color: var(--gold); }
+.dir-tl-head { display: flex; justify-content: space-between; font-weight: 900; font-size: 15px; }
+.dir-tl-group.crit .dir-tl-head span:first-child { color: var(--crit); }
+.dir-tl-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 10px; border-radius: 12px; background: var(--paper2); }
+.dir-tl-date { display: flex; flex-direction: column; font-size: 14px; line-height: 1.3; }
+.dir-tl-date span { font-size: 12.5px; }
+.dir-tl-body .row { margin-top: 2px; gap: 6px; }
+
+/* 조직별 이행률 */
+.dir-org { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.dir-org-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 52px 190px; grid-template-areas: "o b p m"; gap: 2px 12px; align-items: center; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 12px; cursor: pointer; color: var(--ink); font-size: 14.5px; }
+.dir-org-row:hover { background: var(--paper2); }
+.dir-org-row .o { grid-area: o; font-weight: 700; }
+.dir-org-row .bar { grid-area: b; display: block; }
+.dir-org-row .p { grid-area: p; text-align: right; font-weight: 700; }
+.dir-org-row .m { grid-area: m; }
+
+/* 등록 */
+.dir-new { border-color: var(--gold); }
+.dir-new form { margin-top: 10px; }
+.dir-fs { border: 0; padding: 0; margin: 0; min-width: 0; }
+.dir-tagcheck { cursor: pointer; min-height: 34px; }
+.dir-tagcheck input { margin: 0; accent-color: var(--gold); }
+.dir-tagcheck:has(input:checked) { border-color: var(--gold); background: var(--goldSoft); }
+
+/* 태그 관리 */
+.dir-delbox { margin: 0 0 10px; }
+.dir-tagbtns .btn { min-width: 36px; }
+.dir-editing td { background: var(--goldSoft); }
+.dir-tagform { margin-top: 12px; }
+.dir-color { display: flex; align-items: center; gap: 8px; }
+.dir-color input[type=color] { width: 52px; height: 40px; padding: 3px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; }
+
+/* 상세 창 */
+body.dir-lock { overflow: hidden; }
+.dir-dlg-back { position: fixed; inset: 0; z-index: 15; background: rgba(20, 10, 4, .5); display: flex; align-items: flex-start; justify-content: center; padding: max(24px, env(safe-area-inset-top, 0px)) 16px 24px; overflow-y: auto; }
+.dir-dlg { background: var(--paper); border: var(--hair); border-radius: 20px; width: 100%; max-width: 720px; padding: 20px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.dir-dlg:focus { outline: none; }
+.dir-dlg-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.dir-dlg-head h3 { font-family: var(--serif); font-size: 20px; margin-top: 6px; line-height: 1.4; }
+.dir-dlg-head .row { gap: 6px; }
+.dir-dlg-head .btn { flex: none; }
+.dir-body { margin: 0; padding: 10px 12px; background: var(--paper2); border-radius: 12px; }
+.dir-kvs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.dir-kv { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.dir-kv .k { color: var(--sub); font-size: 13px; font-weight: 700; }
+.dir-kv .v { min-width: 0; overflow-wrap: anywhere; }
+.dir-kv select { width: auto; max-width: 100%; }
+.dir-quick { background: var(--goldSoft); border-radius: 14px; padding: 12px; }
+.dir-log ul { margin: 4px 0 0; padding-left: 18px; font-size: 14px; }
+.dir-log li { margin: 2px 0; }
+
+@media (max-width: 900px) {
+  .dir-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  /* 목록·태그 표 → 카드 */
+  .dir-tbl thead { display: none; }
+  .dir-tbl, .dir-tbl tbody, .dir-tbl tr, .dir-tbl td { display: block; width: 100%; }
+  .dir-tbl tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; background: var(--paper); border: var(--hair); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+  .dir-tbl tr.overdue { border-color: var(--pink); background: var(--paper); }
+  .dir-tbl tr.overdue td, .dir-tbl tr.dir-editing td { background: none; }
+  .dir-tbl tr.dir-editing { border-color: var(--gold); }
+  .dir-tbl td { border: 0; padding: 0; text-align: left; min-width: 0; }
+  .dir-tbl td.r { text-align: left; }
+  .dir-tbl td::before { content: attr(data-label); display: block; color: var(--sub); font-size: 12.5px; font-weight: 700; }
+  .dir-tbl td:first-child { grid-column: 1 / -1; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .dir-tbl td:first-child::before { display: none; }
+  .dir-tbl td[data-label="태그"], .dir-tbl td[data-label="설명"], .dir-tbl td[data-label="관리"] { grid-column: 1 / -1; }
+  .dir-tbl td.num .small { display: inline; margin-left: 6px; }
+  .dir-tbl:not(.dir-tagtbl) td[data-label="태그"] { order: 10; }
+  .dir-tagtbl td:first-child { display: none; }
+  .dir-tagtbl td[data-label="태그"] { order: -1; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .dir-tagtbl td[data-label="태그"]::before { display: none; }
+  .dir-kanban { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: minmax(0, 1fr); overflow-x: visible; }
+  .dir-kvs { grid-template-columns: minmax(0, 1fr); }
+  .dir-org-row { grid-template-columns: 110px minmax(0, 1fr) 46px; grid-template-areas: "o b p" "o m m"; }
+  .dir-syncbar .btn { margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .dir-dlg-back { padding: 0; }
+  .dir-dlg { border-radius: 0; min-height: 100%; border: 0; padding: 16px; }
+  .dir-stat .n { font-size: 24px; }
+  .dir-org-row { grid-template-columns: minmax(0, 1fr) 46px; grid-template-areas: "o p" "b b" "m m"; }
+}
+.dir-tl-row .pill { border: 1px solid var(--line); }
