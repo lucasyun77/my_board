@@ -237,26 +237,11 @@
         </form></details></section>`;
   }
 
-  /* ---------- ③ 성과·레벨 ---------- */
-  function viewValue() {
-    const w = S.wallet;
+  /* ---------- 오늘 할 일 (홈) ---------- */
+  function tasksBlock() {
     const tasks = S.dailyTasks.filter((t) => t.date === S.today);
     const comp = S.ui.completing ? S.dailyTasks.find((t) => t.id === S.ui.completing) : null;
-    const periods = [['당일', S.today], ['주간', dayStr(-6)], ['월간', dayStr(-29)], ['분기', dayStr(-89)], ['누적', '0000']];
-    const ach = S.achievements.slice().reverse();
-    return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N, 천원 단위 반올림. 목업에서는 Claude 평가 자리를 규칙 계산으로 대신합니다.</p></div></div>
-      <section class="panel"><div class="levelbox">
-        ${ART.mascot(w.balance_won >= LEVEL_COST ? 'key' : 'stand', 120)}
-        <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="big num">Lv.${w.level}</div></div>
-        <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
-        <div><div class="small muted">누적 수익가치</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
-        <div style="flex:1;min-width:200px"><div class="small muted">다음 레벨까지 ${w.balance_won >= LEVEL_COST ? '— 지금 올릴 수 있습니다' : kwon(LEVEL_COST - w.balance_won) + '천원'}</div><div class="bar est" style="margin:6px 0"><i style="width:${Math.min(100, 100 * w.balance_won / LEVEL_COST)}%"></i></div>
-          <button type="button" class="btn primary" data-act="levelUp" ${w.balance_won >= LEVEL_COST ? '' : 'disabled'}>1,000천원 사용해 레벨업</button></div>
-      </div>
-      <div class="tbl-wrap" style="margin-top:14px"><table><thead><tr>${periods.map((p) => `<th class="r">${p[0]}</th>`).join('')}</tr></thead><tbody><tr>${periods.map((p) => `<td class="r num">${kwon(sumConfirmed(p[1]))}천원</td>`).join('')}</tr></tbody></table></div>
-      ${S.levelUps.length ? `<p class="small muted" style="margin:8px 0 0">레벨업 이력: ${S.levelUps.map((l) => `Lv.${l.level_after} (${md(l.at)})`).join(', ')}</p>` : ''}</section>
-
-      <section class="panel"><h3>오늘 할 일</h3>
+    return `      <section class="panel"><h3>내 할 일 <span class="small muted" style="font-weight:500">시작·종료를 누르면 소요시간이 측정됩니다</span></h3>
         <div class="tbl-wrap"><table><thead><tr><th>업무</th><th class="r">예상 E</th><th class="r">예상 가치</th><th class="r">실제 T</th><th></th></tr></thead><tbody>
         ${tasks.map((t) => `<tr><td>${esc(t.title)}</td><td class="r num">${t.est_minutes}분 ${badge('추정')}</td><td class="r num">${kwon(t.est_value)}천원 ${badge('추정')}</td>
           <td class="r num">${t.actual_minutes != null ? `${t.actual_minutes}분 ${badge(t.time_source)}` : t.started_at ? '<span style="color:var(--accent-ink)">진행 중</span>' : '-'}</td>
@@ -282,6 +267,46 @@
           <p class="small muted wide" style="margin:0">B는 반드시 1인 기준으로 적습니다. 영향 인원은 L로만 반영합니다(이중 반영 방지).</p>
           <div class="row"><button class="btn primary">Claude 최종 평가 요청</button><button type="button" class="btn sm" data-act="cancelComplete">취소</button></div>
         </form></section>` : ''}
+
+`;
+  }
+  function viewToday() {
+    const due = S.directives.filter((d) => isOpen(d) && d.due_at <= S.today).sort((x, y) => x.due_at.localeCompare(y.due_at));
+    const soon = S.directives.filter((d) => isOpen(d) && d.due_at > S.today && d.due_at <= dayStr(3)).sort((x, y) => x.due_at.localeCompare(y.due_at));
+    const wl = S.waiting.slice().sort((x, y) => x.since.localeCompare(y.since));
+    const dRow = (d) => `<tr class="${isOverdue(d) ? 'overdue' : ''}"><td><b>${esc(d.title)}</b><div class="small muted">${esc(d.org)} · ${esc(d.assignee)}</div></td><td class="num">${isOverdue(d) ? `<span style="color:var(--crit);font-weight:700">D+${days(d.due_at, S.today)}</span>` : d.due_at === S.today ? '<b>오늘</b>' : md(d.due_at)}</td><td>${statusSelect(d)}</td></tr>`;
+    return `<div class="view-head"><div><h2>오늘 할 일</h2><p>내가 할 일, 오늘 챙길 지시, 결재 대기, 일정을 한 화면에서 처리합니다.</p></div></div>
+      ${tasksBlock()}
+      <div class="grid2">
+        <section class="panel"><h3>오늘 챙길 지시 ${badge('측정')}</h3>
+          <div class="tbl-wrap"><table><thead><tr><th>지시</th><th>기한</th><th>상태</th></tr></thead><tbody>${due.map(dRow).join('') || '<tr><td colspan="3" class="muted">오늘까지 기한인 지시가 없습니다.</td></tr>'}
+          ${soon.length ? `<tr><td colspan="3" class="small muted" style="padding-top:16px;border-bottom:0">3일 안에 기한</td></tr>${soon.map(dRow).join('')}` : ''}</tbody></table></div>
+        </section>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <section class="panel"><h3>결재·답변 대기 ${badge('측정')}</h3><div class="tl">${wl.map((w) => { const d = days(w.since, S.today); return `<div class="tl-row"><span class="d" style="${d >= 5 ? 'color:var(--crit)' : ''}">${d}일째</span><span>${esc(w.title)} <span class="small muted">${w.from}</span></span></div>`; }).join('')}</div></section>
+          <section class="panel"><h3>오늘 일정 ${badge('측정')}</h3><div class="tl">${S.calendar.map((c) => `<div class="tl-row"><span class="d">${c.time}</span><span>${esc(c.title)}</span></div>`).join('')}</div></section>
+        </div>
+      </div>`;
+  }
+
+  /* ---------- ③ 성과·레벨 ---------- */
+  function viewValue() {
+    const w = S.wallet;
+    const periods = [['당일', S.today], ['주간', dayStr(-6)], ['월간', dayStr(-29)], ['분기', dayStr(-89)], ['누적', '0000']];
+    const ach = S.achievements.slice().reverse();
+    return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N, 천원 단위 반올림. 목업에서는 Claude 평가 자리를 규칙 계산으로 대신합니다.</p></div></div>
+      <section class="panel"><div class="levelbox">
+        ${ART.mascot(w.balance_won >= LEVEL_COST ? 'key' : 'stand', 120)}
+        <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="big num">Lv.${w.level}</div></div>
+        <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
+        <div><div class="small muted">누적 수익가치</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
+        <div style="flex:1;min-width:200px"><div class="small muted">다음 레벨까지 ${w.balance_won >= LEVEL_COST ? '— 지금 올릴 수 있습니다' : kwon(LEVEL_COST - w.balance_won) + '천원'}</div><div class="bar est" style="margin:6px 0"><i style="width:${Math.min(100, 100 * w.balance_won / LEVEL_COST)}%"></i></div>
+          <button type="button" class="btn primary" data-act="levelUp" ${w.balance_won >= LEVEL_COST ? '' : 'disabled'}>1,000천원 사용해 레벨업</button></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:14px"><table><thead><tr>${periods.map((p) => `<th class="r">${p[0]}</th>`).join('')}</tr></thead><tbody><tr>${periods.map((p) => `<td class="r num">${kwon(sumConfirmed(p[1]))}천원</td>`).join('')}</tr></tbody></table></div>
+      ${S.levelUps.length ? `<p class="small muted" style="margin:8px 0 0">레벨업 이력: ${S.levelUps.map((l) => `Lv.${l.level_after} (${md(l.at)})`).join(', ')}</p>` : ''}</section>
+
+      <section class="panel row" style="justify-content:space-between"><span>오늘 할 일 등록·시간 기록·완료 입력은 <b>오늘 할 일</b> 메뉴에서 합니다. 완료 입력하면 이곳에서 평가·협상·확정합니다.</span><button type="button" class="btn sm" data-act="tab" data-v="today">오늘 할 일로 →</button></section>
 
       <section class="panel"><h3>평가·협상·확정</h3>
         ${ach.map((a) => `<div style="padding:12px 0;border-bottom:var(--hair)">
@@ -436,22 +461,23 @@
   }
 
   /* ---------- 라우팅 ---------- */
-  const TABS = [['directives', '지시 관리', viewDirectives, '#E9A400'], ['ideas', '신사업', viewIdeas, '#E46F8C'], ['value', '성과·레벨', viewValue, '#2E8B57'], ['learn', '경영학습', viewLearn, '#5B6FB8'], ['ai', 'AI 사용', viewAI, '#2F8C7A'], ['ops', '경영 현황', viewOps, '#8C6A4F'], ['rules', '보상 기준', viewRules, '#C0392B']];
+  const TABS = [['today', '오늘 할 일', viewToday, '#3D1E0F'], ['directives', '지시 관리', viewDirectives, '#E9A400'], ['ideas', '신사업', viewIdeas, '#E46F8C'], ['value', '성과·레벨', viewValue, '#2E8B57'], ['learn', '경영학습', viewLearn, '#5B6FB8'], ['ai', 'AI 사용', viewAI, '#2F8C7A'], ['ops', '경영 현황', viewOps, '#8C6A4F'], ['rules', '보상 기준', viewRules, '#C0392B']];
   /* 테마: 시스템 설정을 따르되, 버튼으로 바꾸면 이 브라우저에 기억 */
   const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
   try { const t = localStorage.getItem('myboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* */ }
   function syncThemeBtn() { const b = document.getElementById('themeBtn'); if (b) b.textContent = isDark() ? '밝게 보기' : '어둡게 보기'; }
-  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'directives'; };
+  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'today'; };
   function render() {
+    const isHome = curTab() === 'today';
     const bf = document.getElementById('brandFace'); if (bf && !bf.firstChild) bf.innerHTML = ART.face(44);
-    renderTop();
+    if (isHome) renderTop(); else $('#top').innerHTML = '';
     const tab = curTab();
     $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
     syncThemeBtn();
     $('#view').innerHTML = TABS.find((t) => t[0] === tab)[2]();
     save();
   }
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
   /* ---------- 이벤트 ---------- */
   const setFilter = (patch) => { S.ui.filter = Object.assign({}, currentFilter(), patch); };
