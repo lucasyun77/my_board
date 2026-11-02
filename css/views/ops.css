@@ -1,1 +1,89 @@
 /* 메뉴: ops — 이 메뉴 전용 스타일. 공용 토큰(var(--paper) 등)만 사용 */
+.ops-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.ops-strip button { border: var(--hair); background: var(--paper); color: var(--ink); border-radius: 999px; padding: 8px 14px; font-size: 15px; cursor: pointer; min-height: 40px; }
+.ops-strip button:hover { border-color: var(--gold); }
+.ops-strip button b { font-size: 17px; }
+.ops-strip button.alert { border-color: var(--crit); color: var(--crit); }
+.ops-grid { align-items: start; }
+
+.ops-count { margin-left: auto; font-size: 14px; font-weight: 700; color: var(--sub); }
+.ops-seg { margin-left: auto; }
+.ops-count + .ops-seg { margin-left: 0; }
+.ops-note { margin: 10px 0 0; font-size: 13.5px; color: var(--sub); }
+.ops-empty { margin: 6px 0; padding: 14px; text-align: center; color: var(--sub); background: var(--paper2); border-radius: 12px; font-size: 15px; list-style: none; }
+.ops-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ops-title { font-weight: 700; font-size: 15px; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.ops-meta { font-size: 14px; color: var(--sub); }
+.ops-bad { color: var(--crit); font-weight: 700; }
+.ops-sub { margin: 6px 0 0; padding-left: 18px; font-size: 14.5px; }
+.ops-sub li + li { margin-top: 3px; }
+.ops-list details > summary { cursor: pointer; font-size: 14px; color: var(--sub); margin-top: 4px; }
+
+/* 대기함 */
+.ops-wait { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--paper2); border-left: 4px solid var(--line); }
+.ops-wait.warn { border-left-color: var(--gold); }
+.ops-wait.crit { border-left-color: var(--crit); }
+.ops-wait.done { grid-template-columns: minmax(0, 1fr) auto; opacity: .8; }
+.ops-wait.done .ops-title { text-decoration: line-through; }
+.ops-wait-days { text-align: center; line-height: 1.1; }
+.ops-wait-days b { display: block; font-size: 24px; font-weight: 900; }
+.ops-wait-days small { font-size: 12.5px; color: var(--sub); }
+.ops-wait.crit .ops-wait-days b { color: var(--crit); }
+.ops-wait.warn .ops-wait-days b { color: var(--warn); }
+.ops-done { margin-top: 12px; }
+.ops-done > summary { cursor: pointer; font-size: 14.5px; color: var(--sub); font-weight: 700; }
+
+/* 신호등 */
+.ops-sigsum { display: flex; flex-wrap: wrap; gap: 14px; font-size: 14.5px; color: var(--sub); }
+.ops-dept { padding: 10px 12px; border-radius: 14px; background: var(--paper2); }
+.ops-dept-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 15px; }
+.ops-dept-head .ops-meta { margin-left: auto; }
+.ops-light { font-size: 12.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; color: #fff; }
+.ops-light.g { background: var(--ok); }
+.ops-light.y { background: var(--gold); color: #3D1E0F; }
+.ops-light.r { background: var(--crit); }
+
+/* 브랜드 */
+.ops-brands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+.ops-brand { background: var(--paper2); border-radius: 14px; padding: 12px 14px; border-top: 4px solid var(--line); min-width: 0; }
+.ops-brand.bl { border-top-color: var(--ink); }
+.ops-brand.bt { border-top-color: var(--gold); }
+.ops-brand.sp { border-top-color: var(--pink); }
+.ops-brand-name { font-family: var(--serif); font-weight: 700; font-size: 18px; margin-bottom: 6px; }
+.ops-brand dl { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ops-brand dl > div { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.ops-brand dt { color: var(--sub); }
+.ops-brand dd { margin: 0; white-space: nowrap; }
+
+/* 이슈·분쟁 */
+.ops-issue { padding: 12px; border-radius: 14px; background: var(--paper2); display: flex; flex-direction: column; gap: 6px; }
+.ops-issue.closed { opacity: .65; }
+.ops-issue.editing { background: var(--goldSoft); }
+.ops-issue-top { display: flex; align-items: baseline; gap: 8px; }
+.ops-issue-top .ops-title { flex: 1; }
+.ops-issue-next { font-size: 15px; }
+.ops-issue-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ops-issue-foot select { width: auto; font-size: 14.5px; padding: 6px 8px; }
+.ops-due { font-weight: 700; font-size: 14px; white-space: nowrap; color: var(--sub); font-variant-numeric: tabular-nums; }
+.ops-due.near { color: var(--warn); }
+.ops-due.over { color: var(--crit); }
+.ops-form { margin-top: 4px; }
+.panel .adder { margin-top: 12px; }
+
+/* 일정 */
+.ops-cal.past { opacity: .5; }
+.ops-cal.next { background: var(--goldSoft); }
+.ops-cal span:last-child { font-size: 15px; }
+
+@media (max-width: 900px) {
+  .ops-brands { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .ops-wait { grid-template-columns: 44px minmax(0, 1fr); }
+  .ops-wait > .btn { grid-column: 1 / -1; justify-self: stretch; min-height: 40px; }
+  .ops-wait.done { grid-template-columns: minmax(0, 1fr); }
+  .ops-dept-head .ops-meta { margin-left: 0; width: 100%; }
+  .ops-count { margin-left: 0; }
+  .ops-seg { margin-left: 0; }
+  .tl-row.ops-cal { grid-template-columns: 56px minmax(0, 1fr); }
+}
