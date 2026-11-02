@@ -7,29 +7,30 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <div class="who">
-      <span class="eyebrow">아이센스그룹 · 목업 V03</span>
-      <h1>회장 개인현황판</h1>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo" aria-hidden="true">尹</div><div><b>회장 현황판</b><small>아이센스그룹 · 목업 V04</small></div></div>
+    <div><div class="side-label">메뉴</div><nav class="tabbar" id="tabbar" role="tablist" aria-label="모듈"></nav></div>
+    <div><div class="side-label">수치 배지</div><div class="legend"><span class="b m">측정</span><span class="b h">수기</span><span class="b e">추정</span><span class="b u">미확인</span></div></div>
+    <div class="side-foot">
+      <button type="button" class="side-btn" data-act="theme" id="themeBtn">어둡게 보기</button>
+      <button type="button" class="side-btn" data-act="copyMd">Markdown 복사</button>
     </div>
-    <div class="meta">
-      <span class="legend"><span class="muted">수치 배지</span><span class="b m">측정</span><span class="b h">수기</span><span class="b e">추정</span><span class="b u">미확인</span></span>
-      <button type="button" class="btn sm" data-act="copyMd">Markdown 복사</button>
-    </div>
-  </header>
-  <div id="top"></div>
-  <nav class="tabbar" id="tabbar" role="tablist" aria-label="모듈"></nav>
-  <main class="view" id="view"></main>
-  <footer class="foot">
-    <span>목업 — 모든 데이터는 샘플이며 이 브라우저에만 저장됩니다.</span>
-    <span>공개용 현황판 · 보기는 누구나, 고치기는 회장 로그인 후(실서비스)</span>
-    <button type="button" class="btn sm" data-act="reset">샘플 데이터로 되돌리기</button>
-  </footer>
+  </aside>
+  <div class="main">
+    <div id="top"></div>
+    <section class="view" id="view"></section>
+    <footer class="foot">
+      <span>목업 — 모든 데이터는 샘플이며 이 브라우저에만 저장됩니다.</span>
+      <span>공개용 현황판 · 보기는 누구나, 고치기는 회장 로그인 후(실서비스)</span>
+      <button type="button" class="btn sm" data-act="theme">밝게/어둡게</button>
+      <button type="button" class="btn sm" data-act="reset">샘플 데이터로 되돌리기</button>
+    </footer>
+  </div>
 </div>
 <script src="js/data.js"></script>
 <script src="js/app.js"></script>

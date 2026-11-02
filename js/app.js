@@ -79,7 +79,15 @@
       '월': [`이번 달 확정 수익가치 <b>${kwon(sumConfirmed(dayStr(-29)))}천원</b>`, `지시 이행률 ${Math.round(100 * S.directives.filter((d) => d.status === '완료').length / S.directives.length)}%`, `누적 학습 XP ${S.xp}`]
     }[bt];
     const one = S.ui.oneThing || { title: overdue[0] ? overdue[0].title : '신사업 파이프라인 점검', done: '담당자 보고를 받고 다음 기한을 확정한다' };
+    const todayTxt = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+    const focusN = overdue.length + dueToday.length + S.waiting.length;
     $('#top').innerHTML = `
+      <div class="hello">
+        <div><div class="date">${todayTxt}</div>
+          <h1>회장님, 오늘 챙길 일은 <em>${focusN}건</em>입니다</h1>
+          <p class="hsub">기한 경과 ${overdue.length} · 오늘 기한 ${dueToday.length} · 결재 대기 ${S.waiting.length}</p></div>
+        <div class="lvbadge"><div class="lv num">Lv.${S.wallet.level}</div><small>잔액 ${kwon(S.wallet.balance_won)}천원</small></div>
+      </div>
       <div class="brief">
         <section class="panel" aria-labelledby="h-brief">
           <h3 id="h-brief">오늘의 브리핑 ${badge('추정')}<span class="tabs-mini seg">${['일', '주', '월'].map((x) => `<button type="button" data-act="briefTab" data-v="${x}" aria-pressed="${x === bt}">${x}</button>`).join('')}</span></h3>
@@ -103,7 +111,7 @@
         <div class="kpi" role="listitem"><span class="label">오늘 기한 지시 ${badge('측정')}</span><span class="value num">${dueToday.length}<small>건</small></span><span class="small muted">미완료 ${S.directives.filter(isOpen).length}건 중</span></div>
         <div class="kpi" role="listitem"><span class="label">회장 대기함 ${badge('측정')}</span><span class="value num">${S.waiting.length}<small>건</small></span><span class="small muted">Asana 회장 담당·미완료</span></div>
         <div class="kpi" role="listitem"><span class="label">오늘 수익가치 ${badge('추정')}</span><span class="value num">${kwon(todayVal)}<small>천원</small></span><span class="small muted">어제 ${kwon(yVal)}천원</span></div>
-        <div class="kpi" role="listitem"><span class="label">레벨 ${badge('추정')}</span><span class="value num">Lv.${S.wallet.level}</span><span class="small muted">잔액 ${kwon(S.wallet.balance_won)}천원</span></div>
+        <div class="kpi" role="listitem"><span class="label">이번 주 수익가치 ${badge('추정')}</span><span class="value num">${kwon(sumConfirmed(dayStr(-6)))}<small>천원</small></span><span class="small muted">최근 7일 확정분</span></div>
       </div>`;
   }
 
@@ -236,8 +244,8 @@
     return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N, 천원 단위 반올림. 목업에서는 Claude 평가 자리를 규칙 계산으로 대신합니다.</p></div></div>
       <section class="panel"><div class="levelbox">
         <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="big num">Lv.${w.level}</div></div>
-        <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-family:var(--serif);font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
-        <div><div class="small muted">누적 수익가치</div><div class="num" style="font-family:var(--serif);font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
+        <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
+        <div><div class="small muted">누적 수익가치</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
         <div style="flex:1;min-width:200px"><div class="small muted">다음 레벨까지 ${w.balance_won >= LEVEL_COST ? '— 지금 올릴 수 있습니다' : kwon(LEVEL_COST - w.balance_won) + '천원'}</div><div class="bar est" style="margin:6px 0"><i style="width:${Math.min(100, 100 * w.balance_won / LEVEL_COST)}%"></i></div>
           <button type="button" class="btn primary" data-act="levelUp" ${w.balance_won >= LEVEL_COST ? '' : 'disabled'}>1,000천원 사용해 레벨업</button></div>
       </div>
@@ -273,7 +281,7 @@
 
       <section class="panel"><h3>평가·협상·확정</h3>
         ${ach.map((a) => `<div style="padding:12px 0;border-bottom:var(--hair)">
-          <div class="row" style="justify-content:space-between"><b>${esc(a.title)}</b><span class="row"><span class="pill ${a.status === '확정' ? 'st-done' : 'st-wait'}">${a.status}</span><span class="num" style="font-family:var(--serif);font-size:20px">${kwon(a.value_won)}천원</span>${badge('추정')}</span></div>
+          <div class="row" style="justify-content:space-between"><b>${esc(a.title)}</b><span class="row"><span class="pill ${a.status === '확정' ? 'st-done' : 'st-wait'}">${a.status}</span><span class="num" style="font-weight:900;font-size:20px">${kwon(a.value_won)}천원</span>${badge('추정')}</span></div>
           <div class="coef" style="margin-top:8px">${[['B', won(a.B) + '원'], ['L', a.L.toFixed(1)], ['F', a.F.toFixed(1)], ['S', a.S.toFixed(2)], ['A', a.A.toFixed(1)], ['N', a.N.toFixed(2)]].map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>
           <ul class="rationale">${a.rationale.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
           ${a.negotiations.map((n) => `<div class="nego" style="margin-top:8px"><span><b>회장 ${n.round}차</b> ${esc(n.chairman_msg)}</span><span><b>Claude</b> [${n.verdict}] ${esc(n.claude_reply)} → N ${n.n_after.toFixed(2)}</span></div>`).join('')}
@@ -364,9 +372,9 @@
     const ranToday = runHours.filter((h) => h <= nowH);
     return `<div class="view-head"><div><h2>AI 사용 모니터링</h2><p>보고 스킬 <code>ai-usage-report</code> v0.1이 매시 정각 수집해 <code>POST /api/ai-usage</code>로 보냅니다. 수집 경로가 없는 항목은 미확인으로 둡니다.</p></div></div>
       <div class="grid3">
-        <section class="panel"><div class="small muted">오늘 토큰 (Claude) ${badge('측정')}</div><div class="num" style="font-family:var(--serif);font-size:26px">${((last.input_tokens + last.output_tokens) / 1e6).toFixed(2)}<span class="small muted">M</span></div><div class="small muted">입력 ${(last.input_tokens / 1e6).toFixed(2)}M · 출력 ${(last.output_tokens / 1e6).toFixed(2)}M</div></section>
-        <section class="panel"><div class="small muted">최근 7일 비용 ${badge('측정')}</div><div class="num" style="font-family:var(--serif);font-size:26px">${won(wk * RATE)}<span class="small muted">원</span></div><div class="small muted">$${wk.toFixed(2)} × ${won(RATE)}원(가정 환율)</div></section>
-        <section class="panel"><div class="small muted">ChatGPT · Gemini 비용 ${badge('미확인')}</div><div class="num" style="font-family:var(--serif);font-size:26px">—</div><div class="small muted">관리자 키 확인 전(§8-4)</div></section>
+        <section class="panel"><div class="small muted">오늘 토큰 (Claude) ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${((last.input_tokens + last.output_tokens) / 1e6).toFixed(2)}<span class="small muted">M</span></div><div class="small muted">입력 ${(last.input_tokens / 1e6).toFixed(2)}M · 출력 ${(last.output_tokens / 1e6).toFixed(2)}M</div></section>
+        <section class="panel"><div class="small muted">최근 7일 비용 ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${won(wk * RATE)}<span class="small muted">원</span></div><div class="small muted">$${wk.toFixed(2)} × ${won(RATE)}원(가정 환율)</div></section>
+        <section class="panel"><div class="small muted">ChatGPT · Gemini 비용 ${badge('미확인')}</div><div class="num" style="font-weight:900;font-size:26px">—</div><div class="small muted">관리자 키 확인 전(§8-4)</div></section>
       </div>
       <section class="panel"><h3>일별 토큰 추이 · 14일 (Claude) ${badge('측정')}</h3>
         <svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="14일 토큰 추이">
@@ -393,7 +401,7 @@
         <section class="panel"><h3>회장 대기함 ${badge('측정')}</h3><div class="tbl-wrap"><table><thead><tr><th>건</th><th>요청 조직</th><th class="r">대기</th></tr></thead><tbody>${wl.map((w) => { const d = days(w.since, S.today); return `<tr><td>${esc(w.title)}</td><td class="small">${w.from}</td><td class="r num" style="${d >= 5 ? 'color:var(--crit)' : ''}">${d}일</td></tr>`; }).join('')}</tbody></table></div><p class="small muted" style="margin:8px 0 0">Asana 회장 담당 + 미완료 기준</p></section>
         <section class="panel"><h3>부서 신호등 ${badge('미확인')}</h3><div class="tbl-wrap"><table><thead><tr><th>부서</th><th>현황판 등록</th><th class="r">지연 과제</th></tr></thead><tbody>${S.depts.map((d) => { const c = !d.registered || d.delayed >= 3 ? 'r' : d.delayed ? 'y' : 'g'; return `<tr><td><span class="sig ${c}" aria-label="${{ g: '양호', y: '주의', r: '위험' }[c]}"></span>${d.name}</td><td>${d.registered ? '등록' : '<span style="color:var(--crit)">미등록</span>'}</td><td class="r num">${d.delayed}</td></tr>`; }).join('')}</tbody></table></div><p class="small muted" style="margin:8px 0 0">수훈보드 연동 방법 확인 전 샘플값</p></section>
       </div>
-      <section class="panel"><h3>브랜드 핵심 지표</h3><div class="grid3" style="margin-top:8px">${['블랙라벨', '벌툰', '생전포차'].map((b) => `<div><div style="font-family:var(--serif);font-size:18px">${b}</div><div class="small">월 매출 — ${badge('미확인')}</div><div class="small">가맹점 수 — ${badge('미확인')}</div><div class="small">전월 대비 — ${badge('미확인')}</div></div>`).join('')}</div><p class="small muted" style="margin:8px 0 0">데이터 원천이 정해질 때까지 수치를 비워 둡니다.</p></section>
+      <section class="panel"><h3>브랜드 핵심 지표</h3><div class="grid3" style="margin-top:8px">${['블랙라벨', '벌툰', '생전포차'].map((b) => `<div><div style="font-weight:900;font-size:18px">${b}</div><div class="small">월 매출 — ${badge('미확인')}</div><div class="small">가맹점 수 — ${badge('미확인')}</div><div class="small">전월 대비 — ${badge('미확인')}</div></div>`).join('')}</div><p class="small muted" style="margin:8px 0 0">데이터 원천이 정해질 때까지 수치를 비워 둡니다.</p></section>
       <div class="grid2">
         <section class="panel"><h3>이슈·분쟁 추적 ${badge('수기')}</h3><div class="tbl-wrap"><table><thead><tr><th>건</th><th>다음 조치</th><th class="r">기한</th></tr></thead><tbody>${S.issues.map((i) => `<tr><td>${esc(i.title)}<div class="small muted">${i.owner}</div></td><td class="small">${esc(i.next)}</td><td class="r num">${md(i.due)}</td></tr>`).join('')}</tbody></table></div></section>
         <section class="panel"><h3>오늘 일정 ${badge('측정')}</h3><div class="tl">${S.calendar.map((c) => `<div class="tl-row"><span class="d">${c.time}</span><span>${esc(c.title)}</span></div>`).join('')}</div><p class="small muted" style="margin:8px 0 0">Google Calendar 연동 예정(목업 샘플)</p></section>
@@ -423,12 +431,17 @@
   }
 
   /* ---------- 라우팅 ---------- */
-  const TABS = [['directives', '① 지시 관리', viewDirectives], ['ideas', '② 신사업', viewIdeas], ['value', '③ 성과·레벨', viewValue], ['learn', '④ 경영학습', viewLearn], ['ai', '⑤ AI 사용', viewAI], ['ops', '⑥ 경영 현황', viewOps], ['rules', '⑦ 보상 기준', viewRules]];
+  const TABS = [['directives', '지시 관리', viewDirectives, '#E9A400'], ['ideas', '신사업', viewIdeas, '#E46F8C'], ['value', '성과·레벨', viewValue, '#2E8B57'], ['learn', '경영학습', viewLearn, '#5B6FB8'], ['ai', 'AI 사용', viewAI, '#2F8C7A'], ['ops', '경영 현황', viewOps, '#8C6A4F'], ['rules', '보상 기준', viewRules, '#C0392B']];
+  /* 테마: 시스템 설정을 따르되, 버튼으로 바꾸면 이 브라우저에 기억 */
+  const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
+  try { const t = localStorage.getItem('myboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* */ }
+  function syncThemeBtn() { const b = document.getElementById('themeBtn'); if (b) b.textContent = isDark() ? '밝게 보기' : '어둡게 보기'; }
   const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'directives'; };
   function render() {
     renderTop();
     const tab = curTab();
-    $('#tabbar').innerHTML = TABS.map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}">${label}</button>`).join('');
+    $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
+    syncThemeBtn();
     $('#view').innerHTML = TABS.find((t) => t[0] === tab)[2]();
     save();
   }
@@ -483,6 +496,7 @@
         S.ui.quiz = null; break;
       }
       case 'copyMd': copyMarkdown(); return;
+      case 'theme': { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('myboard.theme', t); } catch (er) { /* */ } syncThemeBtn(); return; }
       case 'reset': try { localStorage.removeItem(KEY); } catch (er) { /* */ } location.reload(); return;
       default: return;
     }
