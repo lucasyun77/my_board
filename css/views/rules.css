@@ -1,1 +1,87 @@
 /* 메뉴: rules — 이 메뉴 전용 스타일. 공용 토큰(var(--paper) 등)만 사용 */
+#view .rl-p { margin: 8px 0 0; font-size: 15px; line-height: 1.6; }
+#view .rl-note { font-size: 13.5px; color: var(--sub); font-weight: 500; }
+#view .rl-lab { font-size: 13.5px; color: var(--sub); font-weight: 500; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#view .rl-btns { gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* 바로가기 */
+.rl-jump { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 공식 */
+#view .formula { margin-top: 8px; }
+.rl-dl { margin: 12px 0 0; display: grid; gap: 6px; }
+.rl-dl > div { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rl-dl dt { font-family: var(--mono); font-weight: 900; font-size: 17px; color: var(--goldInk); text-align: center; }
+.rl-dl dd { margin: 0; font-size: 15px; line-height: 1.6; }
+.rl-dl code, .rl-p code { font-family: var(--mono); font-size: 14px; background: var(--paper2); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.rl-example { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--paper2); border-left: 3px solid var(--gold); font-size: 15px; line-height: 1.7; }
+.rl-tables { margin-top: 8px; }
+.rl-tables h4 { margin: 4px 0 6px; font-size: 15px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.rl-tables td { font-size: 15px; padding: 8px 10px; }
+.rl-tables td.r, .rl-tables th.r { text-align: right; white-space: nowrap; }
+
+/* 시뮬레이터 */
+.rl-form { margin-top: 12px; }
+.rl-form label.f { font-size: 14px; }
+.rl-form input, .rl-form select { font-size: 15px; min-height: 42px; }
+.rl-fs { border: 1px dashed var(--line); border-radius: 14px; padding: 10px 12px 12px; margin: 0; min-width: 0; }
+.rl-fs legend { font-size: 14px; font-weight: 700; padding: 0 6px; color: var(--ink); }
+.rl-check { justify-content: flex-end; }
+.rl-check span { display: flex; align-items: center; gap: 8px; min-height: 42px; color: var(--ink); font-size: 15px; cursor: pointer; }
+.rl-check input { width: 20px; height: 20px; min-height: 0; accent-color: var(--gold); }
+.rl-out { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; }
+.rl-v { flex: 1 1 220px; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--goldSoft); min-width: 0; }
+.rl-v .pill { align-self: flex-start; }
+.rl-v.rl-draft { background: var(--paper2); border: 1.5px dashed var(--line); }
+.rl-big { font-size: 34px; font-weight: 900; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.rl-big small { font-size: 15px; font-weight: 500; color: var(--sub); margin-left: 3px; }
+#rl-sim .coef .v { font-size: 17px; overflow-wrap: anywhere; }
+.rl-dv { font-size: 13.5px; font-weight: 700; color: var(--info); }
+.rl-why { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.rl-draft-box { margin-top: 16px; border-top: var(--hair); padding-top: 12px; }
+.rl-draft-box > summary { cursor: pointer; font-weight: 700; font-size: 15px; padding: 6px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; list-style: none; }
+.rl-draft-box > summary::-webkit-details-marker { display: none; }
+.rl-draft-box > summary::before { content: '▸'; color: var(--goldInk); }
+.rl-draft-box[open] > summary::before { content: '▾'; }
+.rl-change { padding: 12px; border-radius: 14px; background: var(--paper2); }
+
+/* 협상 규칙 · 보정 */
+.rl-ol { margin: 8px 0 0; padding-left: 20px; font-size: 15px; line-height: 1.65; }
+.rl-ol li + li { margin-top: 4px; }
+.rl-calib { border-left: 3px solid var(--gold); }
+.rl-calib.is-done { border-left-color: var(--ok); }
+.rl-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 8px; }
+.rl-stats > div { background: var(--paper2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rl-stats b { font-size: 20px; font-weight: 900; }
+
+/* 변경 이력 */
+.rl-hist td { font-size: 15px; }
+.rl-hist td:nth-child(2) { white-space: nowrap; }
+
+/* 협상 로그 */
+.rl-seg { margin: 4px 0 4px; flex-wrap: wrap; }
+.rl-seg button { min-height: 36px; }
+.rl-nego { margin-top: 10px; font-size: 15px; gap: 6px; }
+.rl-nego-h { display: flex; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+.rl-nego-h .row { gap: 6px; flex-wrap: wrap; }
+.rl-nego p { margin: 0; line-height: 1.6; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+.rl-who { font-weight: 700; font-size: 13.5px; padding: 2px 0; color: var(--sub); }
+.rl-who.ai { color: var(--goldInk); }
+
+@media (max-width: 640px) {
+  .rl-stats { grid-template-columns: 1fr 1fr 1fr; }
+  .rl-stats b { font-size: 17px; }
+  .rl-big { font-size: 28px; }
+  .rl-nego p { grid-template-columns: 1fr; gap: 0; }
+  .rl-hist thead { display: none; }
+  .rl-hist, .rl-hist tbody, .rl-hist tr, .rl-hist td { display: block; width: 100%; }
+  .rl-hist tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .rl-hist td { border: 0; padding: 2px 0; }
+}
+/* 휴대폰: 시뮬레이터 입력을 두 칸씩 보여 스크롤을 줄인다 */
+@media (max-width: 640px) {
+  .rl-form.form, .rl-form .form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+  .rl-form .rl-fs { grid-column: 1 / -1; }
+  .rl-form label.f { font-size: 13px; }
+  .rl-change { grid-template-columns: 1fr; }
+}
