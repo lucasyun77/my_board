@@ -1,1 +1,95 @@
 /* 메뉴: today — 이 메뉴 전용 스타일. 공용 토큰(var(--paper) 등)만 사용 */
+.td-panel { margin: 16px 0; }
+.td-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.td-head h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.td-sort { flex-wrap: wrap; }
+.td-sort button { font-size: 13.5px; padding: 6px 10px; }
+
+/* 진행 막대 */
+.td-prog { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.td-prog-txt { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--sub); }
+.td-prog-txt b { color: var(--ink); }
+
+/* 어제 못 끝낸 일 */
+.td-carry { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; background: var(--goldSoft); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: 14.5px; }
+
+/* 추가 폼 */
+.td-add { display: grid; grid-template-columns: minmax(0, 1fr) 120px 170px auto; gap: 10px; align-items: end; padding: 12px; border: 1.5px dashed var(--line); border-radius: 14px; margin-bottom: 12px; }
+.td-add .btn { height: 42px; }
+
+/* 할 일 목록 */
+.td-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.td-item { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px; padding: 12px 14px 12px 8px; border: var(--hair); border-radius: 14px; background: var(--paper); }
+.td-item.is-run { border-color: var(--gold); box-shadow: 0 0 0 2px var(--goldSoft); }
+.td-item.is-done { background: var(--paper2); }
+.td-item.is-done .td-title { text-decoration: line-through; text-decoration-color: var(--sub); color: var(--sub); }
+.td-chk { display: grid; place-items: center; align-self: start; width: 40px; height: 40px; cursor: pointer; }
+.td-chk input { width: 22px; height: 22px; accent-color: var(--ok); cursor: pointer; margin: 0; }
+.td-chk input:disabled { cursor: default; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.td-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-top: 7px; }
+.td-title { font-weight: 700; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.td-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: 14px; color: var(--sub); }
+.td-meta b { color: var(--ink); font-weight: 700; }
+.td-prio { width: auto; padding: 3px 8px; font-size: 13.5px; font-weight: 700; }
+.td-live { color: var(--goldInk); font-weight: 700; }
+.td-acts { gap: 6px; }
+.td-acts .btn { min-height: 36px; }
+.td-stop { border-color: var(--gold); color: var(--goldInk); font-weight: 700; }
+.td-del { margin-left: auto; color: var(--sub); border-color: transparent; background: none; }
+.td-del:hover { color: var(--crit); }
+.td-sub { margin-top: 4px; padding: 12px; background: var(--paper2); border-radius: 12px; }
+.td-empty { padding: 18px; text-align: center; color: var(--sub); background: var(--paper2); border-radius: 14px; }
+.td-fold { margin: 14px 0 8px; border: 0; background: none; padding: 4px 0; color: var(--sub); font-weight: 700; cursor: pointer; font-size: 14.5px; }
+.td-later { margin-top: 14px; }
+.td-later summary { cursor: pointer; color: var(--sub); font-weight: 700; font-size: 14.5px; }
+.td-later ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.td-later li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--paper2); border-radius: 12px; }
+
+/* 지시 */
+.td-grid { align-items: start; }
+.td-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.td-grp { font-size: 13.5px; font-weight: 700; color: var(--sub); margin: 12px 0 6px; }
+.td-grp:first-of-type { margin-top: 0; }
+.td-grp.crit { color: var(--crit); }
+.td-grp.gold { color: var(--goldInk); }
+.td-dirs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.td-dir { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--paper2); }
+.td-dir.overdue { background: var(--pinkSoft); }
+.td-dir-main { min-width: 0; flex: 1 1 220px; }
+.td-dir-main b { overflow-wrap: anywhere; }
+.td-dir-side { display: flex; gap: 8px; align-items: center; }
+.td-dir-side select { width: auto; padding: 5px 8px; font-size: 14px; }
+.td-due { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.td-dir.overdue .td-due { color: var(--crit); }
+
+/* 결재 대기 */
+.td-wait { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.td-wait li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 12px; background: var(--paper2); }
+.td-wait li.late { background: var(--pinkSoft); }
+.td-days { font-weight: 900; color: var(--sub); }
+.td-wait li.mid .td-days { color: var(--warn); }
+.td-wait li.late .td-days { color: var(--crit); }
+.td-wait-t { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.td-wait-acts { gap: 6px; flex-wrap: nowrap; }
+
+/* 일정 */
+.td-cal { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.td-cal li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 9px 12px; border-radius: 12px; background: var(--paper2); }
+.td-cal li.past { opacity: .55; }
+.td-cal li.next { background: var(--goldSoft); }
+.td-time { font-weight: 700; color: var(--sub); }
+
+@media (max-width: 900px) {
+  .td-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .td-add-title { grid-column: 1 / -1; }
+  .td-add .btn { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .td-panel { padding: 16px 12px; }
+  .td-item { grid-template-columns: 34px minmax(0, 1fr); padding-right: 10px; }
+  .td-chk { width: 34px; }
+  .td-wait li { grid-template-columns: 56px minmax(0, 1fr); }
+  .td-wait-acts { grid-column: 1 / -1; justify-content: flex-end; }
+  .td-dir-side { width: 100%; justify-content: space-between; }
+}
