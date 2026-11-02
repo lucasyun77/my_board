@@ -72,7 +72,7 @@
       '일': [
         `기한 지난 지시 <b>${overdue.length}건</b>` + (overdue[0] ? ` — 가장 급한 건: ${esc(overdue[0].title)} (${esc(overdue[0].org)}, D+${days(overdue[0].due_at, S.today)})` : ''),
         `오늘 기한 <b>${dueToday.length}건</b>, 3일 이상 갱신 없는 지시 <b>${stale.length}건</b>`,
-        `회장 대기함 <b>${S.waiting.length}건</b> — 최장 ${Math.max(...S.waiting.map((w) => days(w.since, S.today)))}일 대기`,
+        `회장 대기함 <b>${S.waiting.length}건</b>` + (S.waiting.length ? ` — 최장 ${Math.max(...S.waiting.map((w) => days(w.since, S.today)))}일 대기` : ' — 모두 처리됨'),
         `어제 확정 수익가치 <b>${kwon(yVal)}천원</b>, 최근 7일 학습 <b>${recentAttempts}문제</b>`
       ],
       '주': [`이번 주 확정 수익가치 <b>${kwon(sumConfirmed(dayStr(-6)))}천원</b>`, `완료된 지시 ${S.directives.filter((d) => d.status === '완료' && d.updated_at >= dayStr(-6)).length}건 / 신규 지시 ${S.directives.filter((d) => d.issued_at >= dayStr(-6)).length}건`, `PoC 단계 신사업 ${S.ideas.filter((i) => i.stage === 'PoC').length}건`],
