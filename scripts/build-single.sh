@@ -7,10 +7,11 @@ mkdir -p dist
   echo '<title>회장 개인현황판</title>'
   echo '<meta name="claude:viewport-fit-sides" content="cover">'
   echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700\&family=Noto+Sans+KR:wght@400;500;700;900\&display=swap">'
-  echo '<style>'; cat css/style.css; echo '</style>'
+  echo '<style>'; cat css/style.css css/views/*.css; echo '</style>'
   sed -n '/<body>/,/<\/body>/p' index.html | sed '1d;$d' | grep -v '<script src='
   echo '<script>'; cat js/data.js; echo '</script>'
   echo '<script>'; cat js/art.js; echo '</script>'
   echo '<script>'; cat js/app.js; echo '</script>'
+  for f in js/views/*.js; do echo '<script>'; cat "$f"; echo '</script>'; done
 } > dist/my_board.html
 echo "built dist/my_board.html"
