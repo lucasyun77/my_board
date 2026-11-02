@@ -82,12 +82,12 @@
     const todayTxt = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
     const focusN = overdue.length + dueToday.length + S.waiting.length;
     $('#top').innerHTML = `
-      <div class="hello">
+      <div class="hello" style="--hero-img:url('${new URL(ASSETS.heroBg, location.href).href}')">
         <div><div class="date">${todayTxt}</div>
           <h1>회장님, 오늘 챙길 일은 <em>${focusN}건</em>입니다</h1>
           <p class="hsub">기한 경과 ${overdue.length} · 오늘 기한 ${dueToday.length} · 결재 대기 ${S.waiting.length}</p></div>
         <div class="lvbadge"><div class="lv num">Lv.${S.wallet.level}</div><small>잔액 ${kwon(S.wallet.balance_won)}천원</small></div>
-        <div class="hero-char"><div class="caption"><small>비서실장 서하</small>${overdue.length ? `“기한 지난 건부터<br>보고드리겠습니다.”` : `“오늘 일정은<br>순조롭습니다.”`}</div>${ART.mascot('stand', 196)}</div>
+        <div class="hero-char"><div class="caption"><small>비서실장 서하</small>${overdue.length ? `“기한 지난 건부터<br>보고드리겠습니다.”` : `“오늘 일정은<br>순조롭습니다.”`}</div><div class="portrait-frame"><img src="${ASSETS.profile}" alt="서하 실장" width="150" height="173"></div></div>
       </div>
       <div class="brief">
         <section class="panel" aria-labelledby="h-brief">
