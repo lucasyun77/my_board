@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>회장 개인현황판</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="who">
+      <span class="eyebrow">아이센스그룹 · 목업 V02</span>
+      <h1>회장 개인현황판</h1>
+    </div>
+    <div class="meta">
+      <span class="legend"><span class="muted">수치 배지</span><span class="b m">측정</span><span class="b h">수기</span><span class="b e">추정</span><span class="b u">미확인</span></span>
+      <button type="button" class="btn sm" data-act="copyMd">Markdown 복사</button>
+    </div>
+  </header>
+  <div id="top"></div>
+  <nav class="tabbar" id="tabbar" role="tablist" aria-label="모듈"></nav>
+  <main class="view" id="view"></main>
+  <footer class="foot">
+    <span>목업 — 모든 데이터는 샘플이며 이 브라우저에만 저장됩니다.</span>
+    <span>공개용 현황판(대외비 아님) · 로그인 없음</span>
+    <button type="button" class="btn sm" data-act="reset">샘플 데이터로 되돌리기</button>
+  </footer>
+</div>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
