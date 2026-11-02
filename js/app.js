@@ -87,6 +87,8 @@
           <h1>회장님, 오늘 챙길 일은 <em>${focusN}건</em>입니다</h1>
           <p class="hsub">기한 경과 ${overdue.length} · 오늘 기한 ${dueToday.length} · 결재 대기 ${S.waiting.length}</p></div>
         <div class="lvbadge"><div class="lv num">Lv.${S.wallet.level}</div><small>잔액 ${kwon(S.wallet.balance_won)}천원</small></div>
+        <div class="hero-char"><div class="bubble">${overdue.length ? `기한 지난 건부터<br>챙겨 볼까요?` : `오늘도 힘차게<br>출발합니다!`}</div>${ART.mascot('wave', 104)}</div>
+        ${ART.scene()}
       </div>
       <div class="brief">
         <section class="panel" aria-labelledby="h-brief">
@@ -114,6 +116,8 @@
         <div class="kpi" role="listitem"><span class="label">이번 주 수익가치 ${badge('추정')}</span><span class="value num">${kwon(sumConfirmed(dayStr(-6)))}<small>천원</small></span><span class="small muted">최근 7일 확정분</span></div>
       </div>`;
   }
+
+  const guide = (pose, title, text) => `<div class="guide">${ART.mascot(pose, 64)}<p><b>${title}</b><br>${text}</p></div>`;
 
   /* ---------- ① 지시 관리 + 태그 ---------- */
   function currentFilter() { return S.ui.filter || { tags: [], mode: 'OR', status: 'all', org: '', due: '' }; }
@@ -177,10 +181,7 @@
       <p class="small muted" style="margin:0">${list.length}건 표시 / 전체 ${S.directives.length}건</p>
       ${body}
       <div class="grid2">
-        <section class="panel"><h3>상태별 현황 ${badge('측정')}</h3>${donut(S.directives)}</section>
         <section class="panel"><h3>조직별 이행률 ${badge('측정')}</h3><div class="tl" style="gap:8px;margin-top:8px">${orgRows.map((r) => `<div class="barrow"><span>${r.o}</span><div class="bar"><i style="width:${r.pct}%"></i></div><span class="num r">${r.pct}%</span></div>`).join('')}</div><p class="small muted" style="margin:8px 0 0">완료 ÷ (전체 − 보류)</p></section>
-      </div>
-      <div>
         <section class="panel"><details class="adder"><summary class="btn primary">+ 지시 등록</summary>
           <form class="form" data-form="directive">
             <label class="f wide">지시 내용<input type="text" id="nd-title" name="title" required placeholder="예: 가맹점 고정비 절감안 보고"></label>
@@ -194,14 +195,6 @@
           </form></details></section>
       </div>
       ${viewTags()}`;
-  }
-  const ST_COLOR = { '지시': '#1F8FD8', '진행': '#F2C94C', '보고대기': '#F07A22', '완료': '#2ED993', '보류': '#C7CBD3' };
-  function donut(list) {
-    const n = list.length || 1; let acc = 0;
-    const stops = STATUSES.map((st) => { const c = list.filter((d) => d.status === st).length; const a = acc; acc += 360 * c / n; return `${ST_COLOR[st]} ${a}deg ${acc}deg`; }).join(', ');
-    const done = list.filter((d) => d.status === '완료').length;
-    return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})" role="img" aria-label="상태별 지시 비율"><div class="c num">${Math.round(100 * done / n)}%<small>완료</small></div></div>
-      <div class="dlegend">${STATUSES.map((st) => `<div><span style="background:${ST_COLOR[st]}"></span>${st} <b class="num">${list.filter((d) => d.status === st).length}</b></div>`).join('')}</div></div>`;
   }
   function viewTags() {
     const ed = S.ui.editTag ? tagById(S.ui.editTag) : null;
@@ -254,6 +247,7 @@
     const ach = S.achievements.slice().reverse();
     return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N, 천원 단위 반올림. 목업에서는 Claude 평가 자리를 규칙 계산으로 대신합니다.</p></div></div>
       <section class="panel"><div class="levelbox">
+        ${ART.mascot(w.balance_won >= LEVEL_COST ? 'star' : 'idle', 72)}
         <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="big num">Lv.${w.level}</div></div>
         <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
         <div><div class="small muted">누적 수익가치</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
@@ -337,7 +331,7 @@
     }
     const last = S.ui.lastResult;
     const recentN = new Set(S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).map((a) => a.question_id)).size;
-    return head + `
+    return head + guide('book', '벌이 차장의 한마디', '하루 한 세트면 충분해요. 틀린 문제는 다시 보기에 모아 둘게요.') + `
       ${last ? `<div class="explain" role="status">방금 ${last.n}문제 · 정답 ${last.c}개 · XP +${last.n}${last.mode === 'review' ? ` · 구성: 최근 ${last.r} / 랜덤 ${last.a}${last.nw ? ` / 새 문제 ${last.nw}` : ''}` : ''}</div>` : ''}
       <section class="panel"><div class="row" style="justify-content:space-between"><div><h3>오늘의 복습 도전</h3><p class="small muted" style="margin:4px 0 0">10문제 = 최근 7일 학습 50% + 전체 학습 이력 랜덤 50%. 하루 여러 번 도전할 수 있습니다. (최근 7일 풀이 ${recentN}문항)</p></div><button type="button" class="btn primary" data-act="startReview">도전 시작</button></div></section>
       <section><h3 style="margin-bottom:10px">과목 선택</h3><div class="subjects">${S.SUBJECTS.map((s) => { const qs = S.questions.filter((q) => q.subject === s); const done = new Set(S.attempts.filter((a) => qs.some((q) => q.id === a.question_id)).map((a) => a.question_id)).size; return `<button type="button" class="subject" data-act="startSubject" data-v="${s}"><span class="n">${s}</span><span class="small muted num">${qs.length}문항 · 푼 문항 ${done}</span><div class="bar" style="width:100%"><i style="width:${qs.length ? 100 * done / qs.length : 0}%"></i></div></button>`; }).join('')}</div>
@@ -382,6 +376,7 @@
     const nowH = new Date().getHours();
     const ranToday = runHours.filter((h) => h <= nowH);
     return `<div class="view-head"><div><h2>AI 사용 모니터링</h2><p>보고 스킬 <code>ai-usage-report</code> v0.1이 매시 정각 수집해 <code>POST /api/ai-usage</code>로 보냅니다. 수집 경로가 없는 항목은 미확인으로 둡니다.</p></div></div>
+      ${guide('lantern', '밤에는 쉬어요', '01시~07시에는 수집하지 않고, 나머지 시간엔 매시 정각에 기록해요.')}
       <div class="grid3">
         <section class="panel"><div class="small muted">오늘 토큰 (Claude) ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${((last.input_tokens + last.output_tokens) / 1e6).toFixed(2)}<span class="small muted">M</span></div><div class="small muted">입력 ${(last.input_tokens / 1e6).toFixed(2)}M · 출력 ${(last.output_tokens / 1e6).toFixed(2)}M</div></section>
         <section class="panel"><div class="small muted">최근 7일 비용 ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${won(wk * RATE)}<span class="small muted">원</span></div><div class="small muted">$${wk.toFixed(2)} × ${won(RATE)}원(가정 환율)</div></section>
@@ -438,30 +433,21 @@
         <section class="panel"><h3>협상 규칙</h3><ul style="margin:8px 0 0;padding-left:18px"><li>근거(실측 데이터, 영향 인원 증빙, 재사용 가능성)를 내면 Claude가 수용 / 부분수용 / 거절과 사유를 답합니다.</li><li>건당 3회, N 상한 1.3.</li><li>근거 없이 올리지 않으며, 판단 기준을 매번 적습니다.</li><li>운영 2주 후 산정값 분포를 보고 계수를 1회 보정합니다.</li></ul></section>
         <section class="panel"><h3>변경 이력</h3><div class="tbl-wrap"><table><thead><tr><th>버전</th><th>적용일</th><th>사유</th></tr></thead><tbody>${S.rewardRules.map((r) => `<tr><td>${r.version}</td><td class="num">${r.effective_from}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></section>
       </div>
-      <section class="panel"><h3>협상 로그 전문</h3>${negos.length ? negos.map((n) => `<div class="nego" style="margin-top:8px"><span class="small muted">${esc(n.title)} · ${n.round}차</span><span><b>회장</b> ${esc(n.chairman_msg)}</span><span><b>Claude</b> [${n.verdict}] ${esc(n.claude_reply)} (N → ${n.n_after.toFixed(2)})</span></div>`).join('') : '<p class="muted small" style="margin:6px 0 0">아직 협상 기록이 없습니다. ③ 성과·레벨에서 평가 건에 이의를 제기하면 여기에 남습니다.</p>'}</section>`;
+      <section class="panel"><h3>협상 로그 전문</h3>${negos.length ? negos.map((n) => `<div class="nego" style="margin-top:8px"><span class="small muted">${esc(n.title)} · ${n.round}차</span><span><b>회장</b> ${esc(n.chairman_msg)}</span><span><b>Claude</b> [${n.verdict}] ${esc(n.claude_reply)} (N → ${n.n_after.toFixed(2)})</span></div>`).join('') : guide('idle', '아직 협상 기록이 없어요', '성과·레벨 메뉴에서 평가 건에 이의를 제기하면 여기에 전문이 남아요.')}</section>`;
   }
 
   /* ---------- 라우팅 ---------- */
-  const IC = {
-    directives: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM8.5 11h7M8.5 15h4.5"/>',
-    ideas: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"/>',
-    ops: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
-    value: '<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
-    rules: '<circle cx="12" cy="12" r="8"/><path d="M9 12h6M12 9v6"/>',
-    learn: '<path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/>',
-    ai: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>'
-  };
-  const icon = (id) => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[id]}</svg>`;
-  const TABS = [['directives', '지시 관리', viewDirectives, '업무'], ['ideas', '신사업', viewIdeas, '업무'], ['ops', '경영 현황', viewOps, '업무'], ['value', '성과·레벨', viewValue, '성과'], ['rules', '보상 기준', viewRules, '성과'], ['learn', '경영학습', viewLearn, '학습·AI'], ['ai', 'AI 사용', viewAI, '학습·AI']];
+  const TABS = [['directives', '지시 관리', viewDirectives, '#E9A400'], ['ideas', '신사업', viewIdeas, '#E46F8C'], ['value', '성과·레벨', viewValue, '#2E8B57'], ['learn', '경영학습', viewLearn, '#5B6FB8'], ['ai', 'AI 사용', viewAI, '#2F8C7A'], ['ops', '경영 현황', viewOps, '#8C6A4F'], ['rules', '보상 기준', viewRules, '#C0392B']];
   /* 테마: 시스템 설정을 따르되, 버튼으로 바꾸면 이 브라우저에 기억 */
   const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
   try { const t = localStorage.getItem('myboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* */ }
   function syncThemeBtn() { const b = document.getElementById('themeBtn'); if (b) b.textContent = isDark() ? '밝게 보기' : '어둡게 보기'; }
   const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'directives'; };
   function render() {
+    const bf = document.getElementById('brandFace'); if (bf && !bf.firstChild) bf.innerHTML = ART.face(44);
     renderTop();
     const tab = curTab();
-    $('#tabbar').innerHTML = TABS.map(([id, label, , group], k) => (k === 0 || TABS[k - 1][3] !== group ? `<div class="side-label">${group}</div>` : '') + `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}">${icon(id)}${label}</button>`).join('');
+    $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
     syncThemeBtn();
     $('#view').innerHTML = TABS.find((t) => t[0] === tab)[2]();
     save();
