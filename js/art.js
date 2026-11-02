@@ -1,99 +1,80 @@
-/* 현황판 오리지널 캐릭터 '벌이 차장'과 인사말 배경(손그림 풍 언덕·구름·하늘로 오르는 기차).
-   벌툰 노랑 코트 + 차장 모자 + 주황 목도리, 갈색 단발. 모든 그림은 인라인 SVG로 직접 그림. */
+/* 현황판 오리지널 캐릭터 '서하 실장' — 40대 비서실장. 패션 일러스트 풍(길게 뻗은 비례, 가는 선, 금색 포인트).
+   낙타색 롱 트렌치코트, 남색 실크 스카프, 낮게 묶은 흑갈색 머리, 붉은 입술, 금 귀걸이. 모든 그림은 인라인 SVG로 직접 그림. */
 (function () {
   'use strict';
-  const C = { hair: '#6B3E26', hairHi: '#8A5636', skin: '#FFE3C8', cap: '#2B3A67', capDk: '#1F2A4D', coat: '#F2B21B', coatDk: '#C98E0A', scarf: '#E4572E', boot: '#3D1E0F', leg: '#5A3A26', blush: '#F59AA0', eye: '#3D1E0F' };
+  const C = { hair: '#2A1A14', hairHi: '#5A3A2A', skin: '#F2D3BE', skinDk: '#DDB49A', coat: '#B8895A', coatDk: '#8F6440', coatLt: '#CFA477',
+    scarf: '#1F2A4D', gold: '#C9A24A', lip: '#A3222C', leg: '#3A2A24', shoe: '#1C1210', eye: '#2A1A14', folder: '#3D1E0F' };
 
-  function arms(pose) {
-    const arm = (d) => `<path d="${d}" stroke="${C.coat}" stroke-width="11" stroke-linecap="round" fill="none"/><path d="${d}" stroke="${C.coatDk}" stroke-width="11" stroke-linecap="round" fill="none" opacity=".18"/>`;
-    const hand = (x, y) => `<circle cx="${x}" cy="${y}" r="6.2" fill="${C.skin}"/>`;
-    const right = arm('M104 118 Q116 138 112 152') + hand(112, 155);
+  function hands(pose) {
+    const arm = (d, w = 11) => `<path d="${d}" stroke="${C.coat}" stroke-width="${w}" stroke-linecap="round" fill="none"/><path d="${d}" stroke="${C.coatDk}" stroke-width="${w}" stroke-linecap="round" fill="none" opacity=".22"/>`;
+    const hand = (x, y, r = 4.6) => `<ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r + 1.2}" fill="${C.skin}"/>`;
+    const pocketArm = arm('M49 100 Q40 140 47 172') + `<path d="M42 170 q6 4 12 0" stroke="${C.coatDk}" stroke-width="2" fill="none"/>`;
     switch (pose) {
-      case 'wave':
-        return arm('M56 118 Q38 106 34 86') + hand(34, 81) + right +
-          `<path d="M22 70 q4 -6 8 -2 M18 82 q-6 0 -4 -6" stroke="${C.coatDk}" stroke-width="2" fill="none" stroke-linecap="round" opacity=".5"/>`;
-      case 'book':
-        return arm('M56 118 Q52 136 66 142') + arm('M104 118 Q108 136 94 142') +
-          `<g transform="rotate(-6 80 140)"><rect x="60" y="126" width="40" height="28" rx="3" fill="#5B6FB8"/><rect x="62" y="128" width="17" height="24" rx="1.5" fill="#FFFDF9"/><rect x="81" y="128" width="17" height="24" rx="1.5" fill="#FFFDF9"/><path d="M65 134h11M65 139h11M65 144h8M84 134h11M84 139h11M84 144h8" stroke="#C4AB93" stroke-width="1.4"/></g>` +
-          hand(66, 143) + hand(94, 143);
-      case 'star':
-        return arm('M56 118 Q38 104 36 84') + hand(36, 79) + right +
-          `<g class="twinkle"><circle cx="34" cy="62" r="16" fill="#FABF1A" opacity=".25"/><path d="M34 48 l4.3 9 9.7 1.2 -7.1 6.7 1.9 9.6 -8.8 -4.8 -8.8 4.8 1.9 -9.6 -7.1 -6.7 9.7 -1.2z" fill="#FABF1A" stroke="#E9A400" stroke-width="1.2"/></g>`;
-      case 'lantern':
-        return arm('M56 118 Q46 138 50 152') + hand(50, 155) + arm('M104 118 Q118 128 120 142') + hand(120, 145) +
-          `<path d="M120 150 v6" stroke="${C.boot}" stroke-width="2"/><circle cx="120" cy="170" r="16" fill="#FABF1A" opacity=".22"/><rect x="111" y="156" width="18" height="24" rx="5" fill="#FFE493" stroke="${C.boot}" stroke-width="2"/><rect x="113" y="154" width="14" height="4" rx="2" fill="${C.boot}"/><circle cx="120" cy="168" r="4" fill="#F27B1A"/>`;
+      case 'folder':
+        return pocketArm + arm('M91 100 Q104 130 86 146') +
+          `<g transform="rotate(-8 84 150)"><rect x="70" y="134" width="30" height="38" rx="2" fill="${C.folder}"/><rect x="73" y="137" width="24" height="32" rx="1" fill="#FFFDF9" opacity=".9"/><path d="M76 145h18M76 151h18M76 157h12" stroke="#B9A08A" stroke-width="1.2"/><rect x="70" y="134" width="30" height="5" fill="${C.gold}" opacity=".85"/></g>` + hand(84, 147);
+      case 'key':
+        return pocketArm + arm('M91 100 Q108 86 106 62') + hand(106, 58) +
+          `<g transform="translate(106 40) rotate(18)"><circle r="8" fill="none" stroke="${C.gold}" stroke-width="3"/><path d="M0 8 v20 M0 20 h6 M0 26 h5" stroke="${C.gold}" stroke-width="3" stroke-linecap="round"/></g><circle cx="106" cy="40" r="16" fill="${C.gold}" opacity=".12"/>`;
+      case 'watch':
+        return pocketArm + arm('M91 100 Q100 124 88 136') + hand(86, 137) +
+          `<rect x="84" y="128" width="9" height="6" rx="1.5" fill="${C.gold}"/><circle cx="88.5" cy="131" r="2" fill="#FFFDF9"/>`;
       default:
-        return arm('M56 118 Q44 138 48 152') + hand(48, 155) + right;
+        return pocketArm + arm('M91 100 Q100 140 94 172') + `<path d="M88 170 q6 4 12 0" stroke="${C.coatDk}" stroke-width="2" fill="none"/>`;
     }
   }
 
-  function mascot(pose = 'idle', size = 120, label = '벌이 차장') {
-    return `<svg class="mascot" width="${size}" height="${Math.round(size * 1.25)}" viewBox="0 0 160 200" role="img" aria-label="${label}">
-      <ellipse cx="80" cy="193" rx="38" ry="5" fill="#3D1E0F" opacity=".12"/>
-      <rect x="64" y="166" width="11" height="20" rx="4" fill="${C.leg}"/><rect x="86" y="166" width="11" height="20" rx="4" fill="${C.leg}"/>
-      <ellipse cx="68" cy="188" rx="10" ry="5.5" fill="${C.boot}"/><ellipse cx="93" cy="188" rx="10" ry="5.5" fill="${C.boot}"/>
-      <path d="M57 112 Q80 105 103 112 L116 168 Q80 177 44 168 Z" fill="${C.coat}"/>
-      <path d="M80 114 V172" stroke="${C.coatDk}" stroke-width="2" opacity=".5"/>
-      <path d="M57 112 Q52 140 44 168 Q60 172 66 172 Q60 140 64 114Z" fill="${C.coatDk}" opacity=".15"/>
-      <circle cx="80" cy="130" r="2.6" fill="${C.leg}"/><circle cx="80" cy="143" r="2.6" fill="${C.leg}"/><circle cx="80" cy="156" r="2.6" fill="${C.leg}"/>
-      <path d="M60 150 h12" stroke="${C.coatDk}" stroke-width="2" stroke-linecap="round" opacity=".5"/>
-      ${arms(pose)}
-      <path d="M58 107 Q80 117 102 107 L104 116 Q80 127 56 116 Z" fill="${C.scarf}"/>
-      <path d="M92 116 Q103 131 117 129 Q108 122 101 113 Z" fill="${C.scarf}"/><path d="M95 120 Q104 128 112 128" stroke="#B8401E" stroke-width="1.2" fill="none" opacity=".6"/>
-      <ellipse cx="80" cy="74" rx="38" ry="37" fill="${C.hair}"/>
-      <path d="M46 74 Q42 100 54 113 Q57 96 55 80Z" fill="${C.hair}"/><path d="M114 74 Q118 100 106 113 Q103 96 105 80Z" fill="${C.hair}"/>
-      <ellipse cx="80" cy="82" rx="29" ry="29" fill="${C.skin}"/>
-      <path d="M51 74 Q58 56 80 57 Q102 56 109 74 Q98 66 90 70 Q84 61 76 70 Q66 63 51 74Z" fill="${C.hair}"/>
-      <path d="M62 62 Q70 58 78 60" stroke="${C.hairHi}" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".7"/>
-      <ellipse cx="69" cy="85" rx="4.2" ry="5.8" fill="${C.eye}"/><ellipse cx="91" cy="85" rx="4.2" ry="5.8" fill="${C.eye}"/>
-      <circle cx="70.6" cy="82.6" r="1.7" fill="#fff"/><circle cx="92.6" cy="82.6" r="1.7" fill="#fff"/>
-      <path d="M64 76 q5 -3 9 0 M87 76 q5 -3 9 0" stroke="${C.hair}" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-      <ellipse cx="62" cy="94" rx="5.5" ry="3.2" fill="${C.blush}" opacity=".55"/><ellipse cx="98" cy="94" rx="5.5" ry="3.2" fill="${C.blush}" opacity=".55"/>
-      <path d="M75 97 Q80 101.5 85 97" stroke="#A0522D" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <path d="M46 55 Q48 28 80 26 Q112 28 114 55 Z" fill="${C.cap}"/>
-      <path d="M58 34 Q70 29 84 30" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".18"/>
-      <rect x="45" y="50" width="70" height="9" rx="3.5" fill="${C.capDk}"/>
-      <path d="M48 58 Q80 70 112 58 Q80 63 48 58Z" fill="${C.capDk}"/>
-      <circle cx="80" cy="42" r="7.5" fill="#FABF1A"/><path d="M80 36.5 l1.7 3.6 3.9 .5 -2.9 2.7 .8 3.9 -3.5 -2 -3.5 2 .8 -3.9 -2.9 -2.7 3.9 -.5z" fill="${C.capDk}"/>
+  function head() {
+    return `
+      <path d="M64 66 L64 86 Q70 90 77 86 L76 64Z" fill="${C.skinDk}"/>
+      <path d="M64 70 L64 86 Q70 89 76 86 L76 72 Q70 76 64 70Z" fill="${C.skin}"/>
+      <circle cx="88" cy="56" r="10" fill="${C.hair}"/><path d="M82 50 q6 -2 11 3" stroke="${C.hairHi}" stroke-width="1.6" fill="none" opacity=".6"/>
+      <path d="M55 46 Q55 29 70 28 Q85 29 85 46 Q85 62 74 70 Q66 72 60 64 Q55 56 55 46Z" fill="${C.skin}"/>
+      <path d="M60 64 Q66 72 74 70 Q68 70 62 62Z" fill="${C.skinDk}" opacity=".6"/>
+      <path d="M52 50 Q48 20 72 19 Q94 20 90 50 Q88 38 80 33 Q74 40 60 38 Q55 42 55 54Z" fill="${C.hair}"/>
+      <path d="M60 38 Q68 33 80 33 Q72 30 62 32Z" fill="${C.hairHi}" opacity=".5"/>
+      <path d="M55 40 Q50 52 56 62 Q56 52 58 44Z" fill="${C.hair}"/>
+      <path d="M59 44 q5 -3 10 -1" stroke="${C.hair}" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M73 43 q5 -2 9 1" stroke="${C.hair}" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M60 50 q4.5 -2.6 9 0" stroke="${C.eye}" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+      <path d="M73.5 50 q4.5 -2.6 9 0" stroke="${C.eye}" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+      <ellipse cx="64.6" cy="51.2" rx="2.3" ry="1.9" fill="${C.eye}"/><ellipse cx="78" cy="51.2" rx="2.3" ry="1.9" fill="${C.eye}"/>
+      <circle cx="65.3" cy="50.7" r=".6" fill="#fff"/><circle cx="78.7" cy="50.7" r=".6" fill="#fff"/>
+      <path d="M59.5 49.5 l-2 -1.4 M82.5 49.5 l2 -1.6" stroke="${C.eye}" stroke-width="1.1" stroke-linecap="round"/>
+      <path d="M71 51 Q70 57 72.5 58.5" stroke="${C.skinDk}" stroke-width="1.2" fill="none"/>
+      <path d="M66.5 63 q2.8 -1.6 5.5 -.4 q2.6 -1.2 5 .4 q-2.6 3 -5.3 2.8 q-3 .2 -5.2 -2.8Z" fill="${C.lip}"/>
+      <path d="M67.5 63.2 q4.5 1 9 0" stroke="#7A1820" stroke-width=".7" fill="none"/>
+      <ellipse cx="62" cy="57" rx="3.6" ry="2" fill="#E89A8E" opacity=".35"/><ellipse cx="81" cy="57" rx="3.2" ry="1.8" fill="#E89A8E" opacity=".3"/>
+      <circle cx="85" cy="56" r="1.4" fill="${C.gold}"/><path d="M85 57.5 v3" stroke="${C.gold}" stroke-width="1"/><circle cx="85" cy="62" r="2" fill="${C.gold}"/>`;
+  }
+
+  /* size = 세로 높이(px) */
+  function mascot(pose = 'stand', size = 200, label = '서하 실장') {
+    const w = Math.round(size * 140 / 300);
+    return `<svg class="mascot" width="${w}" height="${size}" viewBox="0 0 140 300" role="img" aria-label="${label}">
+      <ellipse cx="70" cy="293" rx="34" ry="4" fill="#1C1210" opacity=".14"/>
+      <path d="M60 232 L58 284" stroke="${C.leg}" stroke-width="5.5" stroke-linecap="round"/><path d="M78 232 L82 283" stroke="${C.leg}" stroke-width="5.5" stroke-linecap="round"/>
+      <path d="M51 288 Q56 283 61 284 L62 289 Z" fill="${C.shoe}"/><path d="M60 284 L61 291" stroke="${C.shoe}" stroke-width="1.6"/>
+      <path d="M80 283 Q86 282 91 287 L81 289 Z" fill="${C.shoe}"/><path d="M81 283 L80 291" stroke="${C.shoe}" stroke-width="1.6"/>
+      <path d="M47 94 Q70 86 93 94 L106 238 Q72 248 36 238 Z" fill="${C.coat}"/>
+      <path d="M47 94 Q44 160 36 238 Q48 242 56 242 Q52 170 56 100Z" fill="${C.coatDk}" opacity=".18"/>
+      <path d="M86 96 Q94 170 106 238" stroke="${C.coatLt}" stroke-width="3" fill="none" opacity=".5"/>
+      <path d="M57 92 L70 132 L83 92 L77 92 L70 112 L63 92Z" fill="${C.coatDk}"/>
+      <path d="M71 156 L76 240" stroke="${C.coatDk}" stroke-width="1.8" opacity=".7"/>
+      <path d="M57 122 v14 M83 122 v14" stroke="${C.coatDk}" stroke-width="1.4" opacity=".5"/>
+      <rect x="43" y="148" width="56" height="8" rx="2" fill="${C.coatDk}"/><rect x="66" y="146" width="11" height="12" rx="2" fill="none" stroke="${C.gold}" stroke-width="2"/>
+      <path d="M77 156 Q80 176 76 190" stroke="${C.coatDk}" stroke-width="4" stroke-linecap="round" fill="none"/>
+      ${hands(pose)}
+      <path d="M59 88 Q70 98 82 88 L84 96 Q70 106 57 96Z" fill="${C.scarf}"/>
+      <path d="M61 92 l3 2 M67 96 l3 1 M74 95 l3 -1" stroke="${C.gold}" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M72 99 L66 126 L74 124 L78 100Z" fill="${C.scarf}"/><path d="M68 112 l6 -1 M67 119 l6 -1" stroke="${C.gold}" stroke-width="1.2"/>
+      ${head()}
     </svg>`;
   }
 
-  function face(size = 40) {
-    return `<svg width="${size}" height="${size}" viewBox="40 22 80 80" aria-hidden="true">
-      <ellipse cx="80" cy="74" rx="38" ry="37" fill="${C.hair}"/><ellipse cx="80" cy="82" rx="29" ry="29" fill="${C.skin}"/>
-      <path d="M51 74 Q58 56 80 57 Q102 56 109 74 Q98 66 90 70 Q84 61 76 70 Q66 63 51 74Z" fill="${C.hair}"/>
-      <ellipse cx="69" cy="85" rx="4.2" ry="5.8" fill="${C.eye}"/><ellipse cx="91" cy="85" rx="4.2" ry="5.8" fill="${C.eye}"/>
-      <circle cx="70.6" cy="82.6" r="1.7" fill="#fff"/><circle cx="92.6" cy="82.6" r="1.7" fill="#fff"/>
-      <ellipse cx="62" cy="94" rx="5.5" ry="3.2" fill="${C.blush}" opacity=".55"/><ellipse cx="98" cy="94" rx="5.5" ry="3.2" fill="${C.blush}" opacity=".55"/>
-      <path d="M75 97 Q80 101.5 85 97" stroke="#A0522D" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <path d="M46 55 Q48 28 80 26 Q112 28 114 55 Z" fill="${C.cap}"/><rect x="45" y="50" width="70" height="9" rx="3.5" fill="${C.capDk}"/>
-      <circle cx="80" cy="42" r="7.5" fill="#FABF1A"/></svg>`;
+  function face(size = 44) {
+    return `<svg width="${size}" height="${size}" viewBox="44 16 52 52" aria-hidden="true">${head()}</svg>`;
   }
 
-  /* 인사말 배경: 구름·두 겹 언덕·하늘로 이어지는 별빛 선로와 작은 기차. 밤(다크)에는 별이 뜬다. */
-  function scene() {
-    const stars = [[90, 40], [210, 22], [330, 58], [460, 28], [560, 64], [640, 18], [760, 48], [880, 24], [950, 70], [150, 90], [400, 96], [700, 88]]
-      .map(([x, y], i) => `<circle class="star" cx="${x}" cy="${y}" r="${i % 3 ? 1.4 : 2.2}"/>`).join('');
-    const cloud = (x, y, s) => `<g class="cloud" transform="translate(${x} ${y}) scale(${s})"><ellipse cx="0" cy="10" rx="46" ry="16"/><circle cx="-18" cy="2" r="18"/><circle cx="8" cy="-6" r="24"/><circle cx="30" cy="4" r="16"/></g>`;
-    const bz = (t) => [(1 - t) ** 2 * 470 + 2 * t * (1 - t) * 730 + t * t * 1000, (1 - t) ** 2 * 190 + 2 * t * (1 - t) * 135 + t * t * 40];
-    const sleepers = Array.from({ length: 18 }, (_, i) => { const [x, y] = bz(i / 17); return `<path d="M${(x - 3).toFixed(1)} ${(y + 6).toFixed(1)} l6 -12" />`; }).join('');
-    return `<svg class="scene" viewBox="0 0 1000 220" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      ${stars}
-      ${cloud(120, 54, 1)}${cloud(400, 40, .8)}${cloud(860, 44, 1.1)}
-      <path class="hill1" d="M0 168 Q140 120 290 158 T600 146 T1000 136 V220 H0Z"/>
-      <path class="track" d="M470 190 Q730 135 1000 40" fill="none"/>
-      <g class="sleepers">${sleepers}</g>
-      <g class="train" transform="translate(676 136) rotate(-15)">
-        <circle class="puff" cx="58" cy="-16" r="6"/><circle class="puff" cx="70" cy="-26" r="8"/><circle class="puff" cx="86" cy="-32" r="10"/>
-        <rect x="-62" y="-14" width="34" height="16" rx="3" class="car"/><rect x="-24" y="-14" width="34" height="16" rx="3" class="car"/>
-        <rect x="14" y="-18" width="38" height="20" rx="4" class="loco"/><rect x="40" y="-28" width="8" height="12" rx="2" class="loco"/>
-        <rect x="-56" y="-10" width="7" height="6" rx="1.5" class="win"/><rect x="-44" y="-10" width="7" height="6" rx="1.5" class="win"/><rect x="-18" y="-10" width="7" height="6" rx="1.5" class="win"/><rect x="-6" y="-10" width="7" height="6" rx="1.5" class="win"/><rect x="20" y="-14" width="9" height="7" rx="1.5" class="win"/>
-        <circle cx="-54" cy="3" r="3" class="wheel"/><circle cx="-36" cy="3" r="3" class="wheel"/><circle cx="-16" cy="3" r="3" class="wheel"/><circle cx="2" cy="3" r="3" class="wheel"/><circle cx="22" cy="4" r="3.5" class="wheel"/><circle cx="42" cy="4" r="3.5" class="wheel"/>
-      </g>
-      <path class="hill2" d="M0 196 Q220 158 440 190 T1000 178 V220 H0Z"/>
-      <g class="flowers"><circle cx="90" cy="196" r="2.4"/><circle cx="130" cy="188" r="2"/><circle cx="240" cy="182" r="2.4"/><circle cx="330" cy="190" r="2"/><circle cx="520" cy="196" r="2.2"/></g>
-    </svg>`;
-  }
-
-  window.ART = { mascot, face, scene };
+  window.ART = { mascot, face };
 })();

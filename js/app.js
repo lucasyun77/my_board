@@ -87,8 +87,7 @@
           <h1>회장님, 오늘 챙길 일은 <em>${focusN}건</em>입니다</h1>
           <p class="hsub">기한 경과 ${overdue.length} · 오늘 기한 ${dueToday.length} · 결재 대기 ${S.waiting.length}</p></div>
         <div class="lvbadge"><div class="lv num">Lv.${S.wallet.level}</div><small>잔액 ${kwon(S.wallet.balance_won)}천원</small></div>
-        <div class="hero-char"><div class="bubble">${overdue.length ? `기한 지난 건부터<br>챙겨 볼까요?` : `오늘도 힘차게<br>출발합니다!`}</div>${ART.mascot('wave', 104)}</div>
-        ${ART.scene()}
+        <div class="hero-char"><div class="caption"><small>비서실장 서하</small>${overdue.length ? `“기한 지난 건부터<br>보고드리겠습니다.”` : `“오늘 일정은<br>순조롭습니다.”`}</div>${ART.mascot('stand', 196)}</div>
       </div>
       <div class="brief">
         <section class="panel" aria-labelledby="h-brief">
@@ -117,7 +116,7 @@
       </div>`;
   }
 
-  const guide = (pose, title, text) => `<div class="guide">${ART.mascot(pose, 64)}<p><b>${title}</b><br>${text}</p></div>`;
+  const guide = (pose, title, text) => `<div class="guide">${ART.mascot(pose, 108)}<p><b>${title}</b><br>${text}</p></div>`;
 
   /* ---------- ① 지시 관리 + 태그 ---------- */
   function currentFilter() { return S.ui.filter || { tags: [], mode: 'OR', status: 'all', org: '', due: '' }; }
@@ -247,7 +246,7 @@
     const ach = S.achievements.slice().reverse();
     return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N, 천원 단위 반올림. 목업에서는 Claude 평가 자리를 규칙 계산으로 대신합니다.</p></div></div>
       <section class="panel"><div class="levelbox">
-        ${ART.mascot(w.balance_won >= LEVEL_COST ? 'star' : 'idle', 72)}
+        ${ART.mascot(w.balance_won >= LEVEL_COST ? 'key' : 'stand', 120)}
         <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="big num">Lv.${w.level}</div></div>
         <div><div class="small muted">사용 가능 잔액</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.balance_won)}<span class="small muted">천원</span></div></div>
         <div><div class="small muted">누적 수익가치</div><div class="num" style="font-weight:900;font-size:24px">${kwon(w.total_won)}<span class="small muted">천원</span></div></div>
@@ -331,7 +330,7 @@
     }
     const last = S.ui.lastResult;
     const recentN = new Set(S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).map((a) => a.question_id)).size;
-    return head + guide('book', '벌이 차장의 한마디', '하루 한 세트면 충분해요. 틀린 문제는 다시 보기에 모아 둘게요.') + `
+    return head + guide('folder', '서하 실장', '하루 한 세트면 충분합니다. 틀린 문제는 다시 보기에 모아 두겠습니다.') + `
       ${last ? `<div class="explain" role="status">방금 ${last.n}문제 · 정답 ${last.c}개 · XP +${last.n}${last.mode === 'review' ? ` · 구성: 최근 ${last.r} / 랜덤 ${last.a}${last.nw ? ` / 새 문제 ${last.nw}` : ''}` : ''}</div>` : ''}
       <section class="panel"><div class="row" style="justify-content:space-between"><div><h3>오늘의 복습 도전</h3><p class="small muted" style="margin:4px 0 0">10문제 = 최근 7일 학습 50% + 전체 학습 이력 랜덤 50%. 하루 여러 번 도전할 수 있습니다. (최근 7일 풀이 ${recentN}문항)</p></div><button type="button" class="btn primary" data-act="startReview">도전 시작</button></div></section>
       <section><h3 style="margin-bottom:10px">과목 선택</h3><div class="subjects">${S.SUBJECTS.map((s) => { const qs = S.questions.filter((q) => q.subject === s); const done = new Set(S.attempts.filter((a) => qs.some((q) => q.id === a.question_id)).map((a) => a.question_id)).size; return `<button type="button" class="subject" data-act="startSubject" data-v="${s}"><span class="n">${s}</span><span class="small muted num">${qs.length}문항 · 푼 문항 ${done}</span><div class="bar" style="width:100%"><i style="width:${qs.length ? 100 * done / qs.length : 0}%"></i></div></button>`; }).join('')}</div>
@@ -376,7 +375,7 @@
     const nowH = new Date().getHours();
     const ranToday = runHours.filter((h) => h <= nowH);
     return `<div class="view-head"><div><h2>AI 사용 모니터링</h2><p>보고 스킬 <code>ai-usage-report</code> v0.1이 매시 정각 수집해 <code>POST /api/ai-usage</code>로 보냅니다. 수집 경로가 없는 항목은 미확인으로 둡니다.</p></div></div>
-      ${guide('lantern', '밤에는 쉬어요', '01시~07시에는 수집하지 않고, 나머지 시간엔 매시 정각에 기록해요.')}
+      ${guide('watch', '수집 시간 안내', '01시~07시에는 수집하지 않고, 그 외에는 매시 정각에 기록합니다.')}
       <div class="grid3">
         <section class="panel"><div class="small muted">오늘 토큰 (Claude) ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${((last.input_tokens + last.output_tokens) / 1e6).toFixed(2)}<span class="small muted">M</span></div><div class="small muted">입력 ${(last.input_tokens / 1e6).toFixed(2)}M · 출력 ${(last.output_tokens / 1e6).toFixed(2)}M</div></section>
         <section class="panel"><div class="small muted">최근 7일 비용 ${badge('측정')}</div><div class="num" style="font-weight:900;font-size:26px">${won(wk * RATE)}<span class="small muted">원</span></div><div class="small muted">$${wk.toFixed(2)} × ${won(RATE)}원(가정 환율)</div></section>
@@ -433,7 +432,7 @@
         <section class="panel"><h3>협상 규칙</h3><ul style="margin:8px 0 0;padding-left:18px"><li>근거(실측 데이터, 영향 인원 증빙, 재사용 가능성)를 내면 Claude가 수용 / 부분수용 / 거절과 사유를 답합니다.</li><li>건당 3회, N 상한 1.3.</li><li>근거 없이 올리지 않으며, 판단 기준을 매번 적습니다.</li><li>운영 2주 후 산정값 분포를 보고 계수를 1회 보정합니다.</li></ul></section>
         <section class="panel"><h3>변경 이력</h3><div class="tbl-wrap"><table><thead><tr><th>버전</th><th>적용일</th><th>사유</th></tr></thead><tbody>${S.rewardRules.map((r) => `<tr><td>${r.version}</td><td class="num">${r.effective_from}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></section>
       </div>
-      <section class="panel"><h3>협상 로그 전문</h3>${negos.length ? negos.map((n) => `<div class="nego" style="margin-top:8px"><span class="small muted">${esc(n.title)} · ${n.round}차</span><span><b>회장</b> ${esc(n.chairman_msg)}</span><span><b>Claude</b> [${n.verdict}] ${esc(n.claude_reply)} (N → ${n.n_after.toFixed(2)})</span></div>`).join('') : guide('idle', '아직 협상 기록이 없어요', '성과·레벨 메뉴에서 평가 건에 이의를 제기하면 여기에 전문이 남아요.')}</section>`;
+      <section class="panel"><h3>협상 로그 전문</h3>${negos.length ? negos.map((n) => `<div class="nego" style="margin-top:8px"><span class="small muted">${esc(n.title)} · ${n.round}차</span><span><b>회장</b> ${esc(n.chairman_msg)}</span><span><b>Claude</b> [${n.verdict}] ${esc(n.claude_reply)} (N → ${n.n_after.toFixed(2)})</span></div>`).join('') : guide('folder', '협상 기록 없음', '성과·레벨 메뉴에서 평가 건에 이의를 제기하시면 대화 전문을 이곳에 남깁니다.')}</section>`;
   }
 
   /* ---------- 라우팅 ---------- */
