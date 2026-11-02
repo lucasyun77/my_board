@@ -329,18 +329,18 @@
   }
   function viewSources() {
     const rows = [
-      ['1순위', 'Global-MMLU 한국어(ko) — CohereLabs', '한국어(전문 번역·검수)', 'MMLU 57과목 중 management, marketing, business_ethics, professional_accounting, 거시·미시경제, econometrics 등', 'Apache-2.0', '수입 권장. 상업 이용·수정·해설 추가 가능. 출처 표기.', 'https://huggingface.co/datasets/CohereLabs/Global-MMLU'],
-      ['1순위', 'OpenStax 경영 교재 (Principles of Management, Marketing, Introduction to Business, Organizational Behavior, Entrepreneurship, Principles of Economics)', '영어', '개념 읽기 본문 + 장별 복습 문제. "읽기" 단계 소재', 'CC BY 4.0 (교재별 확인)', '수입 권장. 번역·요약 허용, 출처 표기. Principles of Accounting은 CC BY-NC-SA라 제외 또는 비상업 조건 준수', 'https://openstax.org/subjects/business'],
+      ['승인', 'Global-MMLU 한국어(ko) — CohereLabs', '한국어(전문 번역·검수)', 'MMLU 57과목 중 management, marketing, business_ethics, professional_accounting, 거시·미시경제, econometrics 등', 'Apache-2.0', '수입 권장. 상업 이용·수정·해설 추가 가능. 출처 표기.', 'https://huggingface.co/datasets/CohereLabs/Global-MMLU'],
+      ['승인', 'OpenStax 경영 교재 (Principles of Management, Marketing, Introduction to Business, Organizational Behavior, Entrepreneurship, Principles of Economics)', '영어', '개념 읽기 본문 + 장별 복습 문제. "읽기" 단계 소재', 'CC BY 4.0 (교재별 확인)', '수입 권장. 번역·요약 허용, 출처 표기. Principles of Accounting은 CC BY-NC-SA라 제외 또는 비상업 조건 준수', 'https://openstax.org/subjects/business'],
       ['2순위', 'MMLU 원본 (cais/mmlu)', '영어', '위와 같은 과목, 영어 원문', 'MIT', '한국어판(Global-MMLU)이 있어 원문 대조용으로만', 'https://huggingface.co/datasets/cais/mmlu'],
-      ['조건부', 'KMMLU (HAERAE-HUB)', '한국어(국가자격시험 기반)', 'Accounting, Management, Marketing, Economics, Taxation 등', 'CC BY-ND 4.0', '문항 수정 금지. 원문 그대로 출제는 가능하나 AI 해설을 붙이는 방식이 변경에 해당하는지 검토 필요', 'https://huggingface.co/datasets/HAERAE-HUB/KMMLU'],
+      ['미사용', 'KMMLU (HAERAE-HUB)', '한국어(국가자격시험 기반)', 'Accounting, Management, Marketing, Economics, Taxation 등', 'CC BY-ND 4.0', '승인안에서 제외(변경 금지 라이선스)', 'https://huggingface.co/datasets/HAERAE-HUB/KMMLU'],
       ['보류', 'KMMLU-Redux / KMMLU-Pro (LGAI-EXAONE)', '한국어(전문자격)', '정제 2,587문항 / 전문자격 2,822문항', 'CC BY-NC-ND 4.0, 접근 동의 필요', '비상업·변경 금지. 사내 학습용이라도 법무 확인 전 사용 보류', 'https://huggingface.co/datasets/LGAI-EXAONE/KMMLU-Redux'],
       ['확인 필요', 'Virginia Tech "Strategic Management" 공개 교재', '영어', '전략경영 개념·문항', '교재 페이지에서 확인', '착수 시 라이선스 재확인', ''],
       ['제외', '큐넷 등 시험 기출 원문', '한국어', '-', '저작권 별도', '무단 수입 금지', '']
     ];
-    return `<section class="panel" aria-labelledby="h-src"><h3 id="h-src">문제은행 공개 자료 추천 (Claude 조사)</h3>
+    return `<section class="panel" aria-labelledby="h-src"><h3 id="h-src">문제은행 공개 자료 (Claude 추천 · 회장 승인)</h3>
       <p class="small muted" style="margin:4px 0 10px">2026-11-02 조사. 라이선스는 수입 직전 각 데이터 카드에서 다시 확인합니다. 모든 문항에 source·license·원문 ID를 보존합니다.</p>
       <div class="tbl-wrap"><table><thead><tr><th>판단</th><th>자료</th><th>언어</th><th>범위</th><th>라이선스</th><th>쓰는 방법</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr><td><span class="pill ${r[0] === '1순위' ? 'st-done' : r[0] === '제외' || r[0] === '보류' ? 'st-hold' : ''}">${r[0]}</span></td><td>${r[6] ? `<a href="${r[6]}" target="_blank" rel="noopener">${esc(r[1])}</a>` : esc(r[1])}</td><td>${r[2]}</td><td class="small">${r[3]}</td><td class="small">${r[4]}</td><td class="small">${r[5]}</td></tr>`).join('')}
+      ${rows.map((r) => `<tr><td><span class="pill ${r[0] === '승인' ? 'st-done' : r[0] === '제외' || r[0] === '보류' || r[0] === '미사용' ? 'st-hold' : ''}">${r[0]}</span></td><td>${r[6] ? `<a href="${r[6]}" target="_blank" rel="noopener">${esc(r[1])}</a>` : esc(r[1])}</td><td>${r[2]}</td><td class="small">${r[3]}</td><td class="small">${r[4]}</td><td class="small">${r[5]}</td></tr>`).join('')}
       </tbody></table></div>
       <p class="small" style="margin:10px 0 0"><b>추천 조합</b> · 문제는 Global-MMLU 한국어판, 개념 읽기는 OpenStax 요약, 해설이 없는 문항만 AI 해설(표시 필수). 과목 9개를 이 자료 범위에 맞춰 확정합니다.</p></section>`;
   }
