@@ -357,3 +357,15 @@
 .dir-progstat { display: inline-flex; gap: 6px; align-items: center; }
 .dir-aistat { color: var(--sub); }
 .dir-aistat.ok { color: var(--ok); font-weight: 700; }
+
+/* 비주얼 리포트 */
+.dir-visrow { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px 14px 0; }
+.dir-visbtn { border-color: var(--gold); color: var(--goldInk); }
+.dir-visual { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; background: var(--paper); }
+.dir-visual[hidden] { display: none; }
+.dir-visual-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.dir-visual-bar b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dir-visual-sp { flex: 1; }
+.dir-visual-msg { padding: 40px 16px; text-align: center; color: var(--sub); }
+.dir-visual-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+body.dir-vis-open { overflow: hidden; }

@@ -233,6 +233,8 @@
     setTimeout(() => { if (LIVE.state === 'loading' && !LIVE.asana && !LIVE.goals) { LIVE.state = 'off'; rerender(); } }, 75000);
     let db = null, mcp = null;
     try { [db, mcp] = await Promise.all([window.claude.use('db').catch(() => null), window.claude.use('mcp').catch(() => null)]); } catch (e) { /* 없음 */ }
+    try { const u = await window.claude.use('user'); LIVE.owner = u ? !!u.isOwner() : true; } catch (e) { LIVE.owner = true; }
+    if (LIVE.owner === false) { LIVE.db = db; LIVE.state = 'off'; rerender(); return; } /* 회장이 아닌 사람: 실데이터를 불러오지 않음(받은 비주얼 링크만 볼 수 있음) */
     LIVE.db = db; LIVE.mcp = mcp;
     if (!db && !mcp) { LIVE.state = 'off'; rerender(); return; }
     if (db) {
@@ -1049,6 +1051,14 @@ ${ctx}`;
     return `<details class="dir-repitem" data-rid="${esc(r.id)}" ${(REPGEN[d.id] || {}).open === r.id || REPOPEN[r.id] ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))}</span></summary>
         ${r.prompt ? `<p class="small muted dir-repprompt">요청: ${esc(r.prompt)}</p>` : ''}
         <div class="dir-repdoc">${mdHtml(r.body)}</div>
+        <div class="row dir-visrow">
+          ${(VISGEN[r.id] || {}).busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(VISGEN[r.id].stage || '만드는 중…')} <span data-velapsed="${esc(r.id)}">${Math.round((Date.now() - VISGEN[r.id].start) / 1000)}초</span></span>`
+            : `<button type="button" class="btn sm dir-visbtn" data-act="visMake" data-id="${esc(r.id)}" data-task="${esc(d.id)}">${r.visual_id ? '비주얼 다시 만들기' : '비주얼로 만들기'}</button>`}
+          ${r.visual_id ? `<button type="button" class="btn sm" data-act="visOpen" data-v="${esc(r.visual_id)}">비주얼 보기</button>
+          <button type="button" class="btn sm" data-act="visSlack" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 'v'] || !d.assignee || d.assignee === '미지정' || isGoal(d) ? 'disabled' : ''}>${REPSEND[r.id + 'v'] ? '보내는 중…' : r.visual_slack_at ? '비주얼 링크 다시 보내기' : `Slack으로 ${esc(d.assignee && d.assignee !== '미지정' && !isGoal(d) ? d.assignee + '님께 ' : '')}링크 보내기`}</button>
+          <button type="button" class="dir-link" data-act="visCopy" data-v="${esc(r.visual_id)}">링크 복사</button>` : ''}
+          ${(VISGEN[r.id] || {}).err ? `<p class="small dir-err" style="margin:0;flex-basis:100%">${esc(VISGEN[r.id].err)}</p>` : ''}
+        </div>
         <div class="row dir-repsend">
           ${isAsana(d) ? `<button type="button" class="btn sm" data-act="repAsana" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 'a'] ? 'disabled' : ''}>${REPSEND[r.id + 'a'] ? '다는 중…' : r.asana_at ? 'Asana 댓글 다시 달기' : 'Asana 댓글로 달기'}</button>` : ''}
           <button type="button" class="btn sm" data-act="repSlack" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 's'] || !d.assignee || d.assignee === '미지정' || isGoal(d) ? 'disabled' : ''} title="${isGoal(d) ? '목표는 담당이 부서라 개인 Slack으로 보낼 수 없습니다' : ''}">${REPSEND[r.id + 's'] ? '보내는 중…' : r.slack_at ? 'Slack 다시 보내기' : `Slack으로 ${esc(d.assignee && d.assignee !== '미지정' && !isGoal(d) ? d.assignee + '님께' : '')} 보내기`}</button>
@@ -1308,6 +1318,132 @@ ${ctx}`, { modelTier: 'default', cache: false });
     NIGHT.state = 'done'; toast(`밤 정기 리포트 ${n}건을 ${aiName(ai)}로 썼습니다`); rerender();
   }
   APP.acts.nightRun = () => { setTimeout(() => nightReports(true), 0); };
+
+  /* ================= 비주얼 리포트 (youtube-visual-manual · output-upgrade 지침을 담아 Claude가 한 장짜리 웹페이지로) ================= */
+  const BOARD_URL = 'https://claude.ai/artifact/RPfJCRcnbFSMvob3odPFW9';
+  const VISUAL_GUIDE = `당신은 아이센스그룹의 비주얼 설명서 제작자입니다. 아래 리포트를, 처음 보는 직원도 한 번에 이해하고 바로 행동할 수 있는 한 장짜리 인터랙티브 웹페이지로 다시 기획해 만드세요. 원 리포트의 순서를 그대로 따르지 말고 읽는 사람이 이해하는 순서로 다시 짭니다.
+
+[기획]
+1. 맨 앞 "이 리포트는 무엇을 말하려 하나" 칸: 누구를 위한 것인지, 보고 나서 무엇을 알게 되고 무엇을 해야 하는지 3~4줄.
+2. 바로 아래 전체를 한눈에 보는 지도: 요약표나 흐름도 하나.
+3. 차례: 지휘·의사결정용이면 결론 → 근거 → 선택지 비교 → 실행 계획. 방법·교육용이면 왜 필요한가 → 전체 그림 → 단계별 따라하기 → 자주 하는 실수 → 오늘 할 것. 서로 다른 것이 섞이거나 같은 것이 흩어지지 않게 묶습니다.
+4. 글로만 설명하면 머릿속에 그림이 안 그려지는 곳은 비주얼로 바꿉니다: 단계별로 움직이는 SVG 흐름도(재생·다음 단계 버튼), 나란히 놓은 비교 도식, 일정·진행 타임라인, 눌러서 체크하는 체크리스트, 필요하면 SVG 막대 차트. 화려함이 아니라 이해를 위해서만.
+5. 섹션마다 "아이센스 적용" 예시 1개: 블랙라벨(PC방)·벌툰(만화카페)·생전포차(한식 포차)·본사 업무(가맹 모집, 상권 분석, 점주 소통, 보고) 중 맞는 것. 바로 쓰는 문구나 프롬프트는 복사 버튼(navigator.clipboard, 실패하면 글자 선택)과 함께.
+6. 섹션마다 "조심할 점". 확인이 필요한 주장에는 "확인 필요" 표시.
+7. 맨 끝: "오늘 바로 해볼 것" 2~3개(누가·무엇을·언제), 그리고 "원 리포트 대비 달라진 점"을 짧게.
+
+[문장]
+합니다체. "AI·도구가 자동으로 해 주는 것 → 사람은 이것만 하면 됩니다 → 그래서 이 불편이 사라집니다" 화법. 어려운 말과 영어 직역은 쉽게 고치고, 용어는 하나로 통일하고 회사 업무에 빗댄 비유를 붙입니다. 단축키는 Windows 먼저, Mac 함께. 사실을 지어내지 말고 추정은 "(추정)". 연봉·임금 정보는 다루지 않습니다. 이해에 도움이 되면 충분히 길게 씁니다.
+
+[기술]
+- 완전한 HTML 문서 하나만 출력합니다(<!doctype html>로 시작, </html>로 끝). 설명 문장이나 코드블록 표시는 쓰지 않습니다.
+- 외부 파일·이미지·스크립트·글꼴을 부르지 않습니다. CSS·JS·SVG는 모두 문서 안에. 30KB 안쪽으로 간결하게.
+- 라이트·다크 모두: :root에 색 토큰, @media (prefers-color-scheme: dark)에서 토큰만 바꿈, body 배경을 토큰으로 지정.
+- 색: 베이지 바탕(#F1E9DE)·흰 종이 카드·짙은 갈색 글씨(#3D1E0F)·골드 포인트(#FABF1A), 다크는 짙은 갈색 바탕에 밝은 글씨. 본문 16px 이상, 제목은 굵게.
+- 폭 390px 휴대폰에서 가로 스크롤 없음(표·도식은 자기 상자 안에서만 가로 스크롤). 좌우 여백 16px 이상.
+- 모든 움직임은 prefers-reduced-motion을 존중하고, 멈춘 상태에서도 내용이 다 보여야 합니다. alert·confirm·외부 링크 이동 금지.`;
+  const VISGEN = {};
+  async function makeVisual(d, r) {
+    if (VISGEN[r.id] && VISGEN[r.id].busy) return;
+    const G = VISGEN[r.id] = { busy: true, start: Date.now(), stage: '비주얼 기획을 준비하는 중…' };
+    clearInterval(G.tick); G.tick = setInterval(() => { if (VISGEN[r.id] !== G || !G.busy) { clearInterval(G.tick); return; } const el = document.querySelector(`[data-velapsed="${CSS.escape(r.id)}"]`); if (el) el.textContent = Math.round((Date.now() - G.start) / 1000) + '초'; }, 1000);
+    rerender();
+    try {
+      const { llm } = await manualLLM('claude');
+      if (!llm) throw { code: 'no_llm', message: '이 화면에서는 Claude를 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다).' };
+      G.stage = '업무 맥락을 모으는 중…'; rerender();
+      const ctx = await taskContext(d);
+      G.stage = 'Claude가 비주얼 페이지를 만드는 중… (1~3분 걸릴 수 있습니다)'; rerender();
+      const out = await llm(`${VISUAL_GUIDE}
+
+[원 리포트]
+유형: ${r.kind || '리포트'}
+제목: ${r.title || ''}
+${r.body || ''}
+
+[업무 맥락]
+${ctx}`, { modelTier: 'default', cache: false });
+      let html = String((out && out.text) || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
+      const a = html.search(/<!doctype html|<html/i); if (a > 0) html = html.slice(a);
+      if (!/<\/html>\s*$/i.test(html)) { if (out && out.truncated) throw { code: 'truncated' }; if (!/<html/i.test(html)) throw { code: 'empty_completion' }; }
+      if (html.length > 240000) throw { code: 'too_big' };
+      const vid = 'v' + Date.now().toString(36);
+      const doc = { id: vid, task_id: d.id, report_id: r.id, title: r.title || d.title, task_title: d.title, assignee: d.assignee || '', html, created: new Date().toISOString(), by: 'claude' };
+      if (!LIVE.db) throw { code: 'no_db' };
+      await LIVE.db.doc('visuals/' + vid).set(doc);
+      await repMark(d, r, { visual_id: vid, visual_at: doc.created });
+      VISGEN[r.id] = { busy: false };
+      toast('비주얼 리포트를 만들었습니다');
+      openVisual(vid);
+    } catch (e) {
+      const c = e && e.code;
+      const msg = c === 'no_llm' || c === 'no_db' ? (e.message || 'claude.ai에서 연 현황판에서만 만들 수 있습니다.')
+        : c === 'truncated' ? '페이지가 너무 길어 중간에 끊겼습니다. 다시 눌러 주세요.'
+        : c === 'too_big' ? '페이지가 너무 커서 저장하지 못했습니다. 다시 눌러 주세요.'
+        : c === 'not_granted' || c === 'sampling_disabled' ? '이 현황판에서 Claude 사용이 허용되지 않았습니다.'
+        : c === 'rate_limited' ? '요청이 많거나 사용 한도에 걸렸습니다. 잠시 뒤에 다시 눌러 주세요.'
+        : '비주얼을 만들지 못했습니다(' + (c || (e && e.message) || '알 수 없는 오류') + '). 다시 눌러 주세요.';
+      VISGEN[r.id] = { busy: false, err: msg }; toast(msg);
+    } finally { clearInterval(G.tick); if (VISGEN[r.id] === G) G.busy = false; }
+    rerender();
+  }
+  const visualLink = (vid) => `${BOARD_URL}#v-${vid}`;
+
+  /* 화면 가득 보는 비주얼 뷰어 — 받은 링크(#v-아이디)로 열면 이것만 보인다 */
+  async function openVisual(vid) {
+    let box = document.getElementById('dir-visual');
+    if (!box) { box = document.createElement('div'); box.id = 'dir-visual'; box.className = 'dir-visual'; document.body.appendChild(box); }
+    box.hidden = false; document.body.classList.add('dir-vis-open');
+    box.innerHTML = '<div class="dir-visual-bar"><b>비주얼 리포트</b><span class="dir-visual-sp"></span><button type="button" class="btn sm" id="dir-visual-close">닫기</button></div><div class="dir-visual-msg">불러오는 중…</div>';
+    box.querySelector('#dir-visual-close').onclick = closeVisual;
+    let db = LIVE.db;
+    if (!db && hasClaude) { try { db = await window.claude.use('db'); } catch (e) { db = null; } }
+    if (!db) { box.querySelector('.dir-visual-msg').textContent = 'claude.ai에서 연 링크에서만 볼 수 있습니다.'; return; }
+    try {
+      const s = await db.doc('visuals/' + vid).get();
+      const v = s.exists ? s.data() : null;
+      if (!v || !v.html) { box.querySelector('.dir-visual-msg').textContent = '이 비주얼 리포트를 찾지 못했습니다. 지워졌거나 볼 권한이 없습니다.'; return; }
+      box.querySelector('.dir-visual-bar b').textContent = v.title || '비주얼 리포트';
+      const f = document.createElement('iframe');
+      f.className = 'dir-visual-frame'; f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('title', v.title || '비주얼 리포트'); f.srcdoc = v.html;
+      box.querySelector('.dir-visual-msg').replaceWith(f);
+    } catch (e) { box.querySelector('.dir-visual-msg').textContent = '불러오지 못했습니다(' + ((e && e.code) || '오류') + '). 볼 권한이 없을 수 있습니다.'; }
+  }
+  function closeVisual() {
+    const box = document.getElementById('dir-visual'); if (box) { box.hidden = true; box.innerHTML = ''; }
+    document.body.classList.remove('dir-vis-open');
+    if (/^#v-/.test(location.hash)) { try { location.replace(location.pathname + location.search + '#directives'); } catch (e) { location.hash = 'directives'; } }
+    if (/^#v-/.test(location.hash)) location.hash = LIVE.owner === false ? '' : 'directives';
+  }
+  function routeVisual() { const m = location.hash.match(/^#v-([A-Za-z0-9-]+)$/); if (m) openVisual(m[1]); }
+  window.addEventListener('hashchange', routeVisual);
+  setTimeout(routeVisual, 0);
+
+  APP.acts.visMake = (el) => { const d = find(el.dataset.task); const r = d && repsOf(d).find((x) => x.id === el.dataset.id); if (d && r) setTimeout(() => makeVisual(d, r), 0); };
+  APP.acts.visOpen = (el) => { setTimeout(() => openVisual(el.dataset.v), 0); };
+  APP.acts.visCopy = (el) => { const u = visualLink(el.dataset.v); const done = () => toast('비주얼 링크를 복사했습니다'); try { navigator.clipboard.writeText(u).then(done, () => toast(u)); } catch (e) { toast(u); } };
+  APP.acts.visSlack = (el) => {
+    const d = find(el.dataset.task); const r = d && repsOf(d).find((x) => x.id === el.dataset.id); if (!d || !r || !r.visual_id) return;
+    if (!LIVE.mcp) { toast('Slack에 연결된 보기에서만 보낼 수 있습니다'); return; }
+    REPSEND[r.id + 'v'] = true;
+    setTimeout(async () => {
+      try {
+        const who = await findSlackId(d);
+        if (!who) toast(`Slack에서 ${d.assignee}님을 찾지 못했습니다`);
+        else {
+          const lead = String(r.body || '').split('\n').map((x) => x.replace(/^[#\-*\s]+/, '').trim()).filter(Boolean).slice(0, 2).join(' ');
+          const msg = `[회장 현황판] ${d.assignee}님, "${r.title || d.title}" 비주얼 리포트를 보냅니다.\n업무: ${d.title}\n${lead ? '요약: ' + lead.slice(0, 200) + '\n' : ''}👉 <${visualLink(r.visual_id)}|비주얼 리포트 열기>`;
+          await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: msg });
+          await repMark(d, r, { visual_slack_at: new Date().toISOString() });
+          toast(`${d.assignee}님께 비주얼 리포트 링크를 보냈습니다`);
+        }
+      } catch (e) {
+        const c = e && e.code;
+        toast(c === 'server_unavailable' || c === 'upstream_error' ? 'Slack 응답이 없습니다. 메시지가 갔는지 확인한 뒤 다시 보내 주세요.' : c === 'needs_reauth' ? 'Slack 연결이 만료됐습니다. claude.ai 설정 → 커넥터에서 다시 연결해 주세요.' : 'Slack으로 보내지 못했습니다(' + (c || '오류') + ').');
+      }
+      REPSEND[r.id + 'v'] = false; rerender();
+    }, 0);
+  };
 
   /* ================= 태스크 삭제 ================= */
   async function deleteTask(d) {
@@ -1652,13 +1788,13 @@ ${ctx}`, { modelTier: 'default', cache: false });
 
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
   const closeDlg = () => { const b = document.querySelector('.dir-pane-bar [data-act="dirClose"]'); if (b) b.click(); };
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.ui.dirOpen) closeDlg(); });
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (document.body.classList.contains('dir-vis-open')) { closeVisual(); return; } if (S.ui.dirOpen) closeDlg(); });
   /* 패널 밖을 누르면 닫는다 — 다른 항목 제목을 누르면 그 항목으로 바뀐다 */
   document.addEventListener('click', (e) => {
     if (!e.isTrusted || !S.ui.dirOpen || !document.querySelector('.dir-pane')) return;
     const t = e.target;
     if (!t || !t.closest || !document.contains(t)) return;
-    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('[data-act="repOpen"]') || t.closest('[data-act="progOpen"]') || t.closest('.toast')) return;
+    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('[data-act="repOpen"]') || t.closest('[data-act="progOpen"]') || t.closest('.toast') || t.closest('#dir-visual')) return;
     closeDlg();
   }, true);
   window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; });
