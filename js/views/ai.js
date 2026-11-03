@@ -230,7 +230,7 @@
     const fShare = S.features || [];
     const FNAME = { chat: '채팅(턴)', code: '코드', skill: '스킬', connector: '커넥터', agent: '에이전트' };
     const rf = real && isToday && real.today_features ? Object.entries(real.today_features).map(([k, n]) => ({ name: FNAME[k] || k, n })) : null;
-    const rfMax = rf ? Math.max(1, ...rf.map((x) => x.n)) : 1;
+    const rfMax = rf ? Math.max(1, ...rf.map((x) => x.n || 0)) : 1;
     const scan = S.ui.aiScanState || {};
     const realPanel = `<section class="panel ai-real ${real ? 'on' : ''}" aria-live="polite">
         <div class="ai-real-head"><div><h3 style="margin:0">${real ? 'Claude 실데이터 표시 중' : '지금은 샘플(목업) 데이터입니다'} ${real ? badge('측정') : badge('미확인')}</h3>
@@ -278,7 +278,7 @@
 
       <div class="grid2">
         <section class="panel"><h3>기능별 사용 빈도 · ${real ? '오늘' : P.kpi} ${real ? (rf ? badge('측정') : badge('미확인')) : badge('추정')}</h3>
-          ${real ? (rf ? `<div class="ai-feat">${rf.map((f) => `<div class="barrow"><span>${esc(f.name)}</span><div class="bar"><i style="width:${(f.n / rfMax * 100).toFixed(0)}%;background:var(--gold)"></i></div><span class="num r">${won(f.n)}회</span></div>`).join('')}</div><p class="small muted ai-note">오늘 세션 기록의 도구 호출을 세었습니다(채팅=대화 턴 수). 주·월 단위 기능 빈도는 아직 모으지 않았습니다 ${badge('미확인')}</p>` : '<p class="muted">오늘 조사를 누르면 채워집니다.</p>') : `
+          ${real ? (rf ? `<div class="ai-feat">${rf.map((f) => f.n == null ? `<div class="barrow"><span>${esc(f.name)}</span><span class="small muted">아직 안 셈 — 「오늘 조사」를 누르면 채워짐</span><span class="r">${badge('미확인')}</span></div>` : `<div class="barrow"><span>${esc(f.name)}</span><div class="bar"><i style="width:${(f.n / rfMax * 100).toFixed(0)}%;background:var(--gold)"></i></div><span class="num r">${won(f.n)}회</span></div>`).join('')}</div><p class="small muted ai-note">오늘 세션 기록의 도구 호출을 세었습니다(채팅=대화 턴 수). 주·월 단위 기능 빈도는 아직 모으지 않았습니다 ${badge('미확인')}</p>` : '<p class="muted">오늘 조사를 누르면 채워집니다.</p>') : `
           <div class="ai-feat">${fShare.map((f) => {
             const n = Math.round(cur.calls * f.share / 100);
             return `<div class="barrow"><span>${esc(f.name)}</span><div class="bar est"><i style="width:${Math.min(100, f.share / Math.max(...fShare.map((x) => x.share)) * 100).toFixed(0)}%"></i></div><span class="num r">${won(n)}회</span></div>`;
@@ -298,7 +298,7 @@
 
       <div class="grid2">
         <section class="panel"><h3>상위 스킬 Top 10 · ${real ? '오늘' : P.kpi} ${badge('측정')}</h3>
-          ${real && !skills.length ? `<p class="muted">${isToday ? '오늘 실행된 스킬이 없습니다.' : '오늘 조사를 누르면 채워집니다.'}</p>` : ''}
+          ${real && !skills.length ? `<p class="muted">${isToday && real.today_features && real.today_features.skill != null ? '오늘 실행된 스킬이 없습니다.' : '아직 안 셌습니다. 「오늘 조사」를 누르면 채워집니다.'}</p>` : ''}
           <ol class="ai-skills">${skills.map(([name, n], i) => `<li><span class="rk num">${i + 1}</span><span class="nm">${esc(name)}</span><span class="bar"><i style="width:${(skMax ? n / skMax * 100 : 0).toFixed(0)}%"></i></span><span class="num r">${won(n)}회</span></li>`).join('')}</ol>
         </section>
         <section class="panel"><h3>수집 경로 점검</h3>
