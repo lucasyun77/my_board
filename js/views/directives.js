@@ -477,10 +477,17 @@
   const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<>"']+/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u.length > 60 ? u.slice(0, 57) + '…' : u}</a>`);
   const prioSelect = (d) => `<select class="dir-inline" aria-label="우선순위" data-act="dirPrio" data-id="${esc(d.id)}">${PRIOS.map((x) => `<option ${x === d.priority ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
 
+  /* 패널을 다시 그려도 흔들리지 않게: 처음 열 때만 움직임, 스크롤 위치 유지 */
+  const PANE = { shown: null, scroll: {} };
+  document.addEventListener('scroll', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('dir-pane-body') && S.ui.dirOpen) PANE.scroll[S.ui.dirOpen + '|' + (S.ui.paneTab || 'detail')] = t.scrollTop; }, true);
+  function restorePaneScroll() {
+    const b = document.querySelector('.dir-pane-body'); if (!b || !S.ui.dirOpen) return;
+    const v = PANE.scroll[S.ui.dirOpen + '|' + (S.ui.paneTab || 'detail')]; if (v) b.scrollTop = v;
+  }
   function detailDialog() {
     const d = S.ui.dirOpen && S.directives.find((x) => x.id === S.ui.dirOpen);
     document.body.classList.toggle('dir-lock', !!d);
-    if (!d) return '';
+    if (!d) { PANE.shown = null; return ''; }
     const edit = S.ui.dirEdit;
     const det = isAsana(d) ? DET[d.asana_gid] : null;
     const t = det && det.task ? det.task : null;
@@ -526,7 +533,9 @@
     }).join('') : `<li class="muted small">${det && det.state === 'loading' ? 'Asana 활동을 불러오는 중…' : det && det.state === 'err' ? esc(errText(det.err)) : !LIVE.mcp ? 'Asana에 연결된 보기에서만 활동이 보입니다.' : '아직 활동이 없습니다.'}</li>`) : '';
     const feedLocal = (d.log || []).map((l) => `<li class="dir-st s"><span class="dir-dot local" aria-hidden="true"></span><div class="small">${esc(l.text)} <span class="muted">· ${md(l.at)} · 현황판</span></div></li>`).join('');
 
-    return `<aside class="dir-pane" role="dialog" aria-labelledby="dlg-title" id="dir-dlg" tabindex="-1">
+    const enter = PANE.shown !== d.id; PANE.shown = d.id;
+    queueMicrotask(restorePaneScroll);
+    return `<aside class="dir-pane${enter ? ' enter' : ''}" role="dialog" aria-labelledby="dlg-title" id="dir-dlg" tabindex="-1">
       <div class="dir-pane-bar">
         <button type="button" class="dir-donebtn ${done ? 'on' : ''}" data-act="dirDone" data-id="${esc(d.id)}" aria-pressed="${done}"><span aria-hidden="true">✓</span>${done ? '완료됨' : '완료로 표시'}</button>
         ${!isGoal(d) ? `<button type="button" class="dir-iconbtn danger" data-act="dirAskDel" data-id="${esc(d.id)}" title="태스크 삭제">삭제</button>` : ''}
@@ -992,7 +1001,7 @@ ${ctx}`;
     const ai = aiOf(d);
     if (REPGEN[d.id] && REPGEN[d.id].busy) return;
     const G = REPGEN[d.id] = { busy: true, text: '', start: Date.now(), stage: '요청을 준비하는 중…' };
-    clearInterval(G.tick); G.tick = setInterval(() => { if (REPGEN[d.id] === G && G.busy) rerender(); else clearInterval(G.tick); }, 1000);
+    clearInterval(G.tick); G.tick = setInterval(() => { if (REPGEN[d.id] !== G || !G.busy) { clearInterval(G.tick); return; } const el = document.querySelector(`[data-elapsed="${CSS.escape(d.id)}"]`); if (el) el.textContent = Math.round((Date.now() - G.start) / 1000) + '초'; }, 1000);
     rerender();
     try {
       const { llm, used, fallback } = await manualLLM(ai);
@@ -1008,7 +1017,7 @@ ${REP_RULES}
 ${ctx}`;
       G.stage = used === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : 'Claude가 쓰는 중… (처음 한 번은 사용 허용 창이 뜹니다)'; rerender();
       let last = 0;
-      const r = await llm(prompt, { modelTier: 'quick', cache: false, onText: ({ text }) => { G.text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
+      const r = await llm(prompt, { modelTier: 'quick', cache: false, onText: ({ text }) => { G.text = text; if (Date.now() - last > 400) { last = Date.now(); const box = document.querySelector(`[data-live="${CSS.escape(d.id)}"]`); if (box) box.innerHTML = mdHtml(text); else rerender(); } } });
       const text = String((r && r.text) || '').trim();
       if (!text) throw { code: 'empty_completion' };
       const tm = text.match(/^#\s+(.+)$/m);
@@ -1068,11 +1077,11 @@ ${ctx}`;
         <div class="dir-recs">${recs ? recs.map((x, i) => `<div class="dir-rec ${sel === i ? 'on' : ''}">
             <button type="button" class="dir-rec-h" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}" aria-expanded="${sel === i}"><b>${esc(x.title)}</b><span class="small muted">${esc(x.why)}</span></button>
             ${sel === i ? `<div class="dir-rec-body"><label class="f">세부 요청(고쳐서 보낼 수 있습니다)<textarea id="rec-prompt" rows="5">${esc(x.prompt)}</textarea></label>
-              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy ? 'disabled' : ''}>${gen.busy ? `만드는 중… ${Math.round((Date.now() - (gen.start || Date.now())) / 1000)}초` : aiReady(ai) ? esc(aiName(ai)) + '에게 요청' : 'Claude로 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div>
+              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy ? 'disabled' : ''}>${gen.busy ? `만드는 중… <span data-elapsed="${esc(d.id)}">${Math.round((Date.now() - (gen.start || Date.now())) / 1000)}초</span>` : aiReady(ai) ? esc(aiName(ai)) + '에게 요청' : 'Claude로 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div>
               ${!aiReady(ai) && !gen.busy ? `<p class="small muted" style="margin:0">${esc(aiName(ai))}가 아직 연결되지 않아 이 요청은 Claude로 만듭니다.</p>` : ''}
               ${gen.note ? `<p class="small muted" style="margin:0">${esc(gen.note)}</p>` : ''}
               ${gen.err ? `<p class="small dir-err" style="margin:0" role="alert">${esc(gen.err)}</p>` : ''}
-              ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : `<p class="muted">${esc(gen.stage || '작성 중…')}</p>`}</div>` : ''}
+              ${gen.busy ? `<div class="dir-repdoc live" data-live="${esc(d.id)}">${gen.text ? mdHtml(gen.text) : `<p class="muted">${esc(gen.stage || '작성 중…')}</p>`}</div>` : ''}
               ${!gen.busy && gen.partial ? `<div class="dir-repdoc">${mdHtml(gen.partial)}</div>` : ''}</div>` : ''}
           </div>`).join('') : `<p class="small muted" style="margin:0"><span class="dir-spin sm" aria-hidden="true"></span>이 태스크에 맞는 추천을 고르는 중…</p>`}</div>
         ${gen.err && RECSEL[d.id] == null ? `<p class="small dir-err" style="margin:6px 0 0" role="alert">${esc(gen.err)}</p>` : ''}

@@ -173,7 +173,8 @@
 .dir-tl-group.none { border-style: dashed; }
 
 /* 오른쪽 상세 패널 (Asana 작업 상세 배치) */
-.dir-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100vw); z-index: 15; background: var(--paper); border-left: var(--hair); box-shadow: -12px 0 32px rgba(20, 10, 4, .16); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); animation: dir-slide .16s ease-out; }
+.dir-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100vw); z-index: 15; background: var(--paper); border-left: var(--hair); box-shadow: -12px 0 32px rgba(20, 10, 4, .16); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); }
+.dir-pane.enter { animation: dir-slide .16s ease-out; } /* 처음 열 때만 */
 .dir-pane:focus { outline: none; }
 @keyframes dir-slide { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
 .dir-pane-bar { display: flex; align-items: center; gap: 6px; padding: 10px 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--paper); }
