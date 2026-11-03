@@ -40,7 +40,7 @@
   };
   const hasClaude = !!(window.claude && typeof window.claude.use === 'function');
   const OVR = {}; /* 화면에서 바꾼 값: Asana가 따라올 때까지(최대 10분) 유지 */
-  const LIVE = { state: hasClaude ? 'loading' : 'off', db: null, mcp: null, people: {}, staff: [], cw: {}, goals: null, goalsAt: '', track: {}, asana: null, asanaAt: 0, asanaFrom: '', asanaErr: null, busy: false, timer: null };
+  const LIVE = { state: hasClaude ? 'loading' : 'off', db: null, mcp: null, people: {}, staff: [], cw: {}, cfg: null, reps: {}, plan: null, goals: null, goalsAt: '', track: {}, asana: null, asanaAt: 0, asanaFrom: '', asanaErr: null, busy: false, timer: null };
   const LIVE_TAGS = [
     ['lb-PC', '아이센스PC', '#2F6E4E', 'Asana 브랜드 필드'], ['lb-BT', '벌툰', '#C0392B', 'Asana 브랜드 필드'], ['lb-KK', '꼬치의품격', '#B7791F', 'Asana 브랜드 필드'], ['lb-SJ', '생전포차', '#D45D8C', 'Asana 브랜드 필드'],
     ['lk-지시', '업무지시', '#5B6FB8', '제목 머리말 [업무지시]'], ['lk-기획', '기획지시', '#2F8C7A', '제목 머리말 [기획지시]'], ['lk-보고', '보고요청', '#8C6A4F', '제목 머리말 [보고요청]'], ['lk-회장', '회장 할일', '#3D1E0F', '제목 머리말 [회장 할일]'],
@@ -237,6 +237,9 @@
       const err = () => {};
       db.doc('live/people').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && v.map && typeof v.map === 'object') { LIVE.people = v.map; LIVE.staff = Array.isArray(v.staff) ? v.staff.filter((x) => x && x.n && x.d) : []; rebuild(); rerender(); } }, err);
       db.doc('live/goals').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items)) { LIVE.goals = v.items.filter((g) => g && g.id && g.t); LIVE.goalsAt = String(v.at || '').slice(0, 10); rebuild(); } }, err);
+      db.doc('config/ai').onSnapshot((s) => { LIVE.cfg = s.exists ? s.data() : null; rerender(); }, err);
+      db.collection('reports').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.task_id) (m[v.task_id] = m[v.task_id] || []).push(Object.assign({}, v, { id: ds.id })); }); Object.values(m).forEach((a) => a.sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')))); LIVE.reps = m; rerender(); }, err);
+      db.doc('plans/' + new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)).onSnapshot((s) => { LIVE.plan = s.exists ? s.data() : null; rerender(); }, err);
       db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
       db.doc('live/asana').onSnapshot((s) => {
@@ -339,7 +342,7 @@
     if (!list.length) return emptyMsg();
     return `<div class="tbl-wrap"><table class="dir-tbl"><thead><tr><th>지시·목표</th><th>담당</th><th>지시일</th><th>기한</th><th>우선</th><th>상태</th><th>태그</th><th>Asana</th></tr></thead><tbody>
       ${list.map((d) => `<tr class="${isOverdue(d) ? 'overdue' : ''} ${S.ui.dirOpen === d.id ? 'dir-sel' : ''}">
-        <td data-label="지시">${srcPill(d)}${titleBtn(d)}${goalBar(d)}<div class="row dir-flags">${alerts(d)}</div>${d.memo ? `<div class="small muted dir-memo">메모 · ${esc(d.memo)}</div>` : ''}</td>
+        <td data-label="지시">${srcPill(d)}${titleBtn(d)}${goalBar(d)}<div class="row dir-flags">${alerts(d)}</div>${d.memo ? `<div class="small muted dir-memo">메모 · ${esc(d.memo)}</div>` : ''}${repLine(d)}</td>
         <td data-label="담당">${esc(d.org)}${d.assignee && d.assignee !== d.org ? `<div class="small muted">${esc(d.assignee)}</div>` : ''}</td>
         <td data-label="지시일" class="num">${md(d.issued_at)}</td>
         <td data-label="기한" class="num ${dueCls(d)}">${dueMd(d)}${isOpen(d) && !noDue(d) ? `<div class="small">${dLabel(d)}</div>` : ''}</td>
@@ -359,7 +362,7 @@
     return `<div class="kanban dir-kanban">${STATUSES.map((s) => { const c = list.filter((d) => d.status === s); return `<div class="col"><header><span>${s}</span><span class="num muted">${c.length}</span></header>
       ${c.map((d) => `<div class="card ${isOverdue(d) ? 'overdue' : ''} ${S.ui.dirOpen === d.id ? 'dir-sel' : ''}">${srcPill(d)}${titleBtn(d)}<div class="small muted">${esc(d.org)}${d.assignee && d.assignee !== d.org ? ' · ' + esc(d.assignee) : ''}</div>${goalBar(d)}
         <div class="row small"><span class="num ${dueCls(d)}">기한 ${dueMd(d)}${isOpen(d) && !noDue(d) ? ' · ' + dLabel(d) : ''}</span></div>
-        <div class="row">${prioPill(d.priority)}${alerts(d)}</div>${d.tags.length ? `<div class="row">${d.tags.map(chip).join('')}</div>` : ''}${statusSelect(d)}</div>`).join('') || '<div class="small muted dir-empty-col">없음</div>'}</div>`; }).join('')}</div>`;
+        <div class="row">${prioPill(d.priority)}${alerts(d)}</div>${repLine(d)}${d.tags.length ? `<div class="row">${d.tags.map(chip).join('')}</div>` : ''}${statusSelect(d)}</div>`).join('') || '<div class="small muted dir-empty-col">없음</div>'}</div>`; }).join('')}</div>`;
   }
 
   function timelineView(list) {
@@ -522,6 +525,7 @@
     return `<aside class="dir-pane" role="dialog" aria-labelledby="dlg-title" id="dir-dlg" tabindex="-1">
       <div class="dir-pane-bar">
         <button type="button" class="dir-donebtn ${done ? 'on' : ''}" data-act="dirDone" data-id="${esc(d.id)}" aria-pressed="${done}"><span aria-hidden="true">✓</span>${done ? '완료됨' : '완료로 표시'}</button>
+        ${!isGoal(d) ? `<button type="button" class="dir-iconbtn danger" data-act="dirAskDel" data-id="${esc(d.id)}" title="태스크 삭제">삭제</button>` : ''}
         <span class="dir-pane-sp"></span>
         ${isAsana(d) && safeUrl(d.source_url) ? `<a class="dir-iconbtn" href="${esc(d.source_url)}" target="_blank" rel="noopener noreferrer" title="Asana에서 열기">Asana ↗</a>` : ''}
         ${isAsana(d) && LIVE.mcp ? `<button type="button" class="dir-iconbtn" data-act="dirReload" data-id="${esc(d.id)}" title="새로고침" aria-label="상세 새로고침">↻</button>` : ''}
@@ -532,8 +536,10 @@
         ${done ? `<div class="dir-donebanner">이 작업은 완료되었습니다.${isPendingAck(d) ? ' 위쪽 「완료 알림」에서 확인하면 목록에서 정리되고 칭찬이 갑니다.' : d.ack && d.ack !== 'before' ? ' 확인 ' + esc(when(d.ack)) : ''}</div>` : ''}
         <div class="row small dir-pane-kind">${srcPill(d)}${alerts(d)}${det && det.state === 'loading' ? '<span class="muted">Asana에서 불러오는 중…</span>' : ''}</div>
         <h2 class="dir-pane-title" id="dlg-title">${esc(d.title)}</h2>
-        ${edit ? `<form class="form" data-form="dirEdit" data-id="${esc(d.id)}">${fieldsHtml('de', d)}<div class="row wide"><button class="btn primary">저장</button><button type="button" class="btn sm" data-act="dirEditToggle">취소</button></div></form>` : `${fields}${desc}${subs}${memo}`}
-        <section class="dir-feed"><h4>${isAsana(d) ? '댓글·활동' : '활동'}</h4><ul>${feedAsana}${feedLocal}</ul></section>
+        ${S.ui.dirDelAsk === d.id ? `<div class="explain dir-delask" role="alert"><b>${isAsana(d) ? 'Asana에서 이 태스크를 삭제합니다.' : '목록에서 삭제합니다.'}</b> ${isAsana(d) ? '하위 작업도 함께 지워지고 되돌리기 어렵습니다.' : ''}<div class="row" style="margin-top:8px">${S.ui.dirDelBusy ? '<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>지우는 중…</span>' : `<button type="button" class="btn sm dir-dangerbtn" data-act="dirDel" data-id="${esc(d.id)}">삭제</button><button type="button" class="btn sm" data-act="dirCancelDel">취소</button>`}</div></div>` : ''}
+        <div class="dir-panetabs" role="tablist">${[['detail', '상세'], ['rep', `AI 리포트 ${repsOf(d).length}`]].map(([v, l]) => `<button type="button" role="tab" data-act="paneTab" data-v="${v}" aria-selected="${(S.ui.paneTab || 'detail') === v}">${l}</button>`).join('')}</div>
+        ${S.ui.paneTab === 'rep' ? repTab(d) : edit ? `<form class="form" data-form="dirEdit" data-id="${esc(d.id)}">${fieldsHtml('de', d)}<div class="row wide"><button class="btn primary">저장</button><button type="button" class="btn sm" data-act="dirEditToggle">취소</button></div></form>` : `${fields}${desc}${subs}${memo}`}
+        ${S.ui.paneTab === 'rep' ? '' : `<section class="dir-feed"><h4>${isAsana(d) ? '댓글·활동' : '활동'}</h4><ul>${feedAsana}${feedLocal}</ul></section>`}
       </div>
       <form class="dir-composer" data-form="dirComment" data-id="${esc(d.id)}">
         ${avatar('윤')}<textarea id="dc-text" name="text" rows="2" placeholder="${isAsana(d) ? '댓글 추가 (Asana에 남습니다)' : '기록 추가'}" aria-label="댓글">${esc(S.ui.dirCmt && S.ui.dirCmt.id === d.id ? S.ui.dirCmt.text : '')}</textarea>
@@ -848,6 +854,133 @@
     addLog(d, changed.join('·') + ' 수정');
     toast(changed.join('·') + ' 저장 · 다음 동기화 때 Asana에 반영');
   };
+
+  /* ================= AI 리포트 (태스크별 도움 보고서) ================= */
+  const AI_DEFAULT = [{ id: 'claude', name: 'Claude', on: true }, { id: 'gemini', name: 'Gemini', on: false }, { id: 'gpt', name: 'ChatGPT', on: false }, { id: 'inhouse', name: '사내 서버', on: false }];
+  const REP_KINDS = ['자동 판단', '조언', '진행 지휘', '계획 세우기', '시장 조사', '위험 점검'];
+  const REPGEN = {};
+  const allAi = () => { const c = LIVE.cfg; return c && Array.isArray(c.providers) && c.providers.length ? c.providers.filter((p) => p && p.id) : AI_DEFAULT; };
+  const aiList = () => { const c = LIVE.cfg; const menu = c && c.menus && c.menus.directives; const p = allAi(); return Array.isArray(menu) && menu.length ? p.filter((x) => menu.includes(x.id)) : p; };
+  const aiOf = (d) => (LIVE.track[d.id] || {}).ai || (S.dirAi && S.dirAi[d.id]) || (LIVE.cfg && LIVE.cfg.defaultAi) || 'claude';
+  const aiName = (id) => (allAi().concat(AI_DEFAULT).find((x) => x.id === id) || { name: id }).name;
+  const aiReady = (id) => { const p = allAi().concat(AI_DEFAULT).find((x) => x.id === id); return !!(p && p.on) && id === 'claude'; };
+  const repsOf = (d) => (LIVE.reps[d.id] || (S.dirReps && S.dirReps[d.id]) || []);
+  const planOf = (d) => { const p = LIVE.plan; return p && Array.isArray(p.items) ? p.items.find((x) => x.task_id === d.id) : null; };
+  function repLine(d) {
+    const n = repsOf(d).length; const pl = planOf(d);
+    return `<div class="dir-repline"><button type="button" class="dir-repbtn ${n ? 'has' : ''}" data-act="repOpen" data-id="${esc(d.id)}">AI 리포트 <b class="num">${n}</b></button><span class="small muted">${esc(aiName(aiOf(d)))}${pl ? ` · 오늘 ${esc(pl.kind || '리포트')} ${esc(pl.status || '예정')}` : ''}</span></div>`;
+  }
+  /* 아주 작은 마크다운 표시기 (제목·목록·굵게·문단) */
+  function mdHtml(src) {
+    const lines = String(src || '').split('\n'); let out = ''; let inList = false;
+    const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    lines.forEach((l) => {
+      const m = l.match(/^\s*[-*]\s+(.*)$/) || l.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (m) { if (!inList) { out += '<ul>'; inList = true; } out += `<li>${inline(m[1])}</li>`; return; }
+      if (inList) { out += '</ul>'; inList = false; }
+      const h = l.match(/^(#{1,4})\s+(.*)$/);
+      if (h) out += `<h5>${inline(h[2])}</h5>`; else if (l.trim()) out += `<p>${inline(l)}</p>`;
+    });
+    if (inList) out += '</ul>';
+    return out;
+  }
+  async function makeReport(d, kind) {
+    const ai = aiOf(d);
+    if (!aiReady(ai)) { toast(`${aiName(ai)}는 아직 연결되지 않았습니다. 관리자 메뉴에서 연결하거나 Claude로 바꿔 주세요.`); return; }
+    if (REPGEN[d.id] && REPGEN[d.id].busy) return;
+    const sample = hasClaude ? await window.claude.use('sample') : null;
+    if (!sample) { toast('이 보기에서는 AI 리포트를 만들 수 없습니다(claude.ai 아티팩트에서만)'); return; }
+    REPGEN[d.id] = { busy: true, text: '' }; rerender();
+    if (isAsana(d) && LIVE.mcp) await loadDetail(d);
+    const det = isAsana(d) ? DET[d.asana_gid] : null;
+    const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 1500);
+    const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-8).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 300)}`).join('\n');
+    const prev = repsOf(d).slice(0, 3).map((r) => `- ${r.created ? r.created.slice(0, 10) : ''} ${r.kind}: ${r.title}`).join('\n');
+    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? `\n세컨드브레인: ${LIVE.cfg.secondBrain.name} (이 화면에서는 내용을 직접 읽지 못하므로, 참고하면 좋을 항목을 '세컨드브레인에서 확인' 으로 적어 주세요)` : '';
+    const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 아래 업무를 끝까지 해내도록 돕는 보고서를 한국어로 쓰세요.
+보고서 유형: ${kind === '자동 판단' ? '조언·진행 지휘·계획 세우기·시장 조사·위험 점검 중 지금 가장 도움이 되는 것 하나를 고르세요' : kind}
+규칙: 사실을 지어내지 말 것. 수치·사례를 추정하면 "(추정)"을 붙이고, 모르는 것은 "확인 필요"로 적을 것. 회장이 바로 쓸 수 있게 구체적인 다음 행동(누가·무엇을·언제)을 넣을 것. 900자 안팎. 연봉·임금 정보는 다루지 말 것.
+출력 형식: 첫 줄 "유형: (유형)", 둘째 줄 "# (보고서 제목)", 이어서 마크다운 본문(## 소제목, - 목록).
+
+업무: ${d.title}
+종류: ${SRC_LABEL[d.src] || '지시'} · 상태 ${d.status} · 우선 ${d.priority} · 기한 ${dueFull(d)} · 담당 ${d.org} ${d.assignee !== d.org ? d.assignee : ''}
+${isGoal(d) ? `지표: ${d.metric} · 현재 ${d.cur} → 목표 ${d.target} · 진척 ${d.pct}% / 계획 ${d.plan}%\n` : ''}설명: ${notes || '(없음)'}
+최근 댓글:
+${cmts || '(없음)'}
+현황판 메모: ${d.memo || '(없음)'}
+이전 리포트:
+${prev || '(없음)'}${sb}`;
+    let last = 0;
+    try {
+      const r = await sample(prompt, { modelTier: 'default', cache: false, onText: ({ text }) => { REPGEN[d.id].text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
+      const text = String((r && r.text) || '').trim();
+      const km = text.match(/^\s*유형\s*[:：]\s*(.+)$/m); const tm = text.match(/^#\s+(.+)$/m);
+      const body = text.replace(/^\s*유형\s*[:：].*$/m, '').replace(/^#\s+.+$/m, '').trim();
+      const rep = { id: 'r' + Date.now().toString(36), task_id: d.id, kind: km ? km[1].trim() : kind, title: tm ? tm[1].trim() : d.title, body, ai, by: 'manual', created: new Date().toISOString() };
+      if (LIVE.db) { await LIVE.db.doc('reports/' + rep.id).set(rep); } else { S.dirReps = S.dirReps || {}; (S.dirReps[d.id] = S.dirReps[d.id] || []).unshift(rep); }
+      REPGEN[d.id] = { busy: false, open: rep.id };
+      toast('AI 리포트를 만들었습니다');
+    } catch (e) {
+      REPGEN[d.id] = { busy: false, err: e && e.code === 'not_granted' ? 'Claude 사용이 허용되지 않았습니다.' : e && e.code === 'rate_limited' ? '잠시 뒤에 다시 시도해 주세요.' : '리포트를 만들지 못했습니다(' + (e && e.code || '오류') + ').' };
+    }
+    rerender();
+  }
+  function repTab(d) {
+    const reps = repsOf(d); const gen = REPGEN[d.id] || {}; const ai = aiOf(d); const pl = planOf(d);
+    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? LIVE.cfg.secondBrain.name : '';
+    return `<div class="dir-rep">
+      <div class="dir-fields">
+        <div class="dir-f"><span class="k">담당 AI</span><div class="v"><select class="dir-inline" aria-label="담당 AI" data-act="dirAi" data-id="${esc(d.id)}">${aiList().map((p) => `<option value="${esc(p.id)}" ${p.id === ai ? 'selected' : ''}>${esc(p.name)}${aiReady(p.id) ? '' : ' (연결 필요)'}</option>`).join('')}</select></div></div>
+        <div class="dir-f"><span class="k">세컨드브레인</span><div class="v small">${sb ? esc(sb) : '<span class="muted">지정 안 됨 · 관리자 메뉴에서 지정</span>'}</div></div>
+        <div class="dir-f"><span class="k">오늘 계획</span><div class="v small">${pl ? `${esc(pl.kind || '리포트')} · ${esc(pl.status || '예정')}` : '<span class="muted">매일 18:00에 AI가 필요한 태스크를 골라 리포트를 씁니다</span>'}</div></div>
+      </div>
+      <div class="row dir-repmake"><select id="rep-kind" aria-label="리포트 유형">${REP_KINDS.map((k) => `<option>${k}</option>`).join('')}</select>
+        <button type="button" class="btn primary sm" data-act="repMake" data-id="${esc(d.id)}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '작성 중…' : '지금 리포트 만들기'}</button>
+        ${aiReady(ai) ? '' : `<span class="small muted">${esc(aiName(ai))}는 연결 전이라 자동 작성 계획에만 올라갑니다</span>`}</div>
+      ${gen.err ? `<p class="small dir-err" style="margin:0">${esc(gen.err)}</p>` : ''}
+      ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : '<p class="muted">생각하는 중…</p>'}</div>` : ''}
+      <div class="dir-replist">${reps.map((r) => `<details class="dir-repitem" ${gen.open === r.id ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))} · ${r.by === 'schedule' ? '정기 작성' : '직접 요청'}</span></summary>
+        <div class="dir-repdoc">${mdHtml(r.body)}</div><div class="row"><button type="button" class="dir-link" data-act="repDel" data-id="${esc(r.id)}" data-task="${esc(d.id)}">이 리포트 지우기</button></div></details>`).join('') || '<p class="muted small" style="margin:0">아직 리포트가 없습니다.</p>'}</div>
+    </div>`;
+  }
+  APP.acts.repOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; S.ui.paneTab = 'rep'; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; focusLater('#dir-dlg'); };
+  APP.acts.paneTab = (el) => { S.ui.paneTab = el.dataset.v; };
+  APP.acts.repMake = (el) => { const d = find(el.dataset.id); const k = document.getElementById('rep-kind'); if (d) setTimeout(() => makeReport(d, k ? k.value : '자동 판단'), 0); };
+  APP.acts.repDel = (el) => {
+    const id = el.dataset.id; const tid = el.dataset.task;
+    if (LIVE.db) LIVE.db.doc('reports/' + id).delete().then(() => toast('리포트를 지웠습니다')).catch((e) => toast('지우지 못했습니다(' + (e && e.code || '오류') + ')'));
+    else if (S.dirReps && S.dirReps[tid]) S.dirReps[tid] = S.dirReps[tid].filter((r) => r.id !== id);
+  };
+  APP.changes.dirAi = (el) => {
+    const d = find(el.dataset.id); if (!d) return;
+    if (d.src && LIVE.db) writeTrack(d, { ai: el.value }, '담당 AI → ' + aiName(el.value));
+    else { S.dirAi = S.dirAi || {}; S.dirAi[d.id] = el.value; }
+  };
+
+  /* ================= 태스크 삭제 ================= */
+  async function deleteTask(d) {
+    if (isAsana(d)) {
+      if (!LIVE.mcp) { toast('Asana에 연결된 보기에서만 지울 수 있습니다'); return; }
+      S.ui.dirDelBusy = true; rerender();
+      try {
+        await LIVE.mcp.callTool(ASANA.server, 'delete_task', { task: d.asana_gid });
+      } catch (e) {
+        S.ui.dirDelBusy = false;
+        toast('삭제하지 못했습니다 — ' + errText(e) + (e && (e.code === 'server_unavailable' || e.code === 'upstream_error') ? ' 지워졌는지 새로고침으로 확인해 주세요.' : ''));
+        rerender(); return;
+      }
+      LIVE.asana = (LIVE.asana || []).filter((t) => String(t.gid) !== d.asana_gid);
+      delete OVR[d.id];
+      saveSnapshot(LIVE.asana);
+    }
+    const i = S.directives.findIndex((x) => x.id === d.id); if (i >= 0) S.directives.splice(i, 1);
+    S.ui.dirOpen = null; S.ui.dirDelAsk = null; S.ui.dirDelBusy = false;
+    toast(isAsana(d) ? 'Asana에서 태스크를 지웠습니다' : '목록에서 지웠습니다(목업)');
+    rerender();
+  }
+  APP.acts.dirAskDel = (el) => { S.ui.dirDelAsk = el.dataset.id; };
+  APP.acts.dirCancelDel = () => { S.ui.dirDelAsk = null; };
+  APP.acts.dirDel = (el) => { const d = find(el.dataset.id); if (d && !S.ui.dirDelBusy) setTimeout(() => deleteTask(d), 0); };
 
   /* ================= 완료 알림 → 확인 → Slack 칭찬 ================= */
   const ACK_LAUNCH = '2026-11-03T00:00:00Z'; /* 이 기능 이전에 끝난 일은 조용히 정리된 것으로 본다 */
@@ -1173,7 +1306,7 @@
     if (!e.isTrusted || !S.ui.dirOpen || !document.querySelector('.dir-pane')) return;
     const t = e.target;
     if (!t || !t.closest || !document.contains(t)) return;
-    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('.toast')) return;
+    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('[data-act="repOpen"]') || t.closest('.toast')) return;
     closeDlg();
   }, true);
   window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; });

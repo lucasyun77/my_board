@@ -291,3 +291,39 @@
 .dir-ack .dir-who { gap: 6px; }
 .dir-ack .dir-av { width: 22px; height: 22px; font-size: 11px; }
 .dir-ack textarea { min-height: 76px; background: var(--paper); }
+
+/* AI 리포트 줄·패널, 태스크 삭제 */
+.dir-repline { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.dir-repbtn { border: 1px dashed var(--line); background: var(--paper); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; color: var(--sub); cursor: pointer; }
+.dir-repbtn b { color: var(--ink); margin-left: 2px; }
+.dir-repbtn.has { border-style: solid; border-color: var(--info); color: var(--info); }
+.dir-repbtn.has b { color: var(--info); }
+.dir-repbtn:hover { border-color: var(--gold); color: var(--goldInk); }
+.dir-panetabs { display: flex; gap: 2px; border-bottom: 2px solid var(--line); margin-top: -4px; }
+.dir-panetabs button { border: 0; background: none; padding: 8px 12px; margin-bottom: -2px; border-bottom: 3px solid transparent; font-size: 14.5px; color: var(--sub); cursor: pointer; }
+.dir-panetabs button[aria-selected="true"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--gold); }
+.dir-rep { display: flex; flex-direction: column; gap: 12px; }
+.dir-repmake select { width: auto; }
+.dir-replist { display: flex; flex-direction: column; gap: 8px; }
+.dir-repitem { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.dir-repitem > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 10px 12px; list-style: none; }
+.dir-repitem > summary::-webkit-details-marker { display: none; }
+.dir-repitem > summary b { flex: 1 1 200px; min-width: 0; }
+.dir-repitem[open] > summary { border-bottom: 1px solid var(--line); }
+.dir-repitem .row { padding: 0 12px 10px; }
+.dir-repdoc { padding: 10px 14px; font-size: 14.5px; line-height: 1.7; overflow-wrap: anywhere; }
+.dir-repdoc.live { border: 1px dashed var(--gold); border-radius: 12px; background: var(--goldSoft); }
+.dir-repdoc h5 { font-size: 15px; margin: 10px 0 4px; }
+.dir-repdoc p { margin: 4px 0; }
+.dir-repdoc ul { margin: 4px 0; padding-left: 20px; }
+.dir-iconbtn.danger { color: var(--crit); }
+.dir-iconbtn.danger:hover { background: var(--pinkSoft); color: var(--crit); }
+.dir-delask { margin: 0; border-left: 3px solid var(--crit); }
+.dir-dangerbtn { background: var(--crit); border-color: var(--crit); color: #fff; font-weight: 700; }
+.dir-donebtn, .dir-iconbtn { white-space: nowrap; }
+@media (max-width: 520px) {
+  .dir-pane-bar { gap: 2px; padding-left: 10px; padding-right: max(10px, env(safe-area-inset-right, 0px)); }
+  .dir-pane-bar .dir-iconbtn { padding: 6px 6px; font-size: 13px; }
+  .dir-pane-bar [data-act="dirReload"] { display: none; }
+  .dir-donebtn { padding: 6px 9px; font-size: 13.5px; }
+}
