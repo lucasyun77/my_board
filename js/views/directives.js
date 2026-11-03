@@ -885,6 +885,14 @@
     return JSON.parse(t.slice(a, b + 1));
   };
   /* Claude sample과 같은 모양(함수 + .json)으로 돌려준다. 쓸 수 없으면 null */
+  /* 회장이 직접 누른 요청: 지정 AI를 못 쓰면 Claude로 대신한다(자동 작업은 대신하지 않음) */
+  async function manualLLM(id) {
+    let llm = null; try { llm = await getLLM(id); } catch (e) { llm = null; }
+    if (llm) return { llm, used: id, fallback: false };
+    if (id !== 'claude') { let c = null; try { c = await getLLM('claude'); } catch (e) { c = null; } if (c) return { llm: c, used: 'claude', fallback: true }; }
+    return { llm: null, used: id, fallback: false };
+  }
+  const withTimeout = (pr, ms) => Promise.race([pr, new Promise((r) => setTimeout(r, ms))]);
   async function getLLM(id) {
     if (id === 'inhouse') {
       if (!LIVE.mcp) return null;
@@ -927,7 +935,7 @@
   }
   /* 태스크 맥락 (리포트·추천 공통) */
   async function taskContext(d) {
-    if (isAsana(d) && LIVE.mcp) await loadDetail(d);
+    if (isAsana(d) && LIVE.mcp) { try { await withTimeout(loadDetail(d), 15000); } catch (e) { /* 상세 없이 진행 */ } }
     const det = isAsana(d) ? DET[d.asana_gid] : null;
     const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 1500);
     const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-8).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 300)}`).join('\n');
@@ -962,7 +970,7 @@ ${progOf(d).slice(0, 5).map((p) => `- ${p.date} [${p.signal}] ${(p.summary || []
     REC[d.id] = { busy: true, items: fresh ? null : old.length ? old : null }; RECSEL[d.id] = null; rerender();
     let items = null; let note = '';
     try {
-      const sample = await getLLM(utilAi());
+      const sample = fresh ? (await manualLLM(utilAi())).llm : await getLLM(utilAi());
       if (sample) {
         const ctx = await taskContext(d);
         const prompt = `아이센스그룹 윤석범 회장이 아래 업무에 대해 AI에게 맡길 수 있는 보고서·자료 5가지를 추천하세요. 이 업무를 끝까지 해내는 데 실제로 도움이 되는 것만 고르고, 서로 겹치지 않게 하세요. 특히 '최근 진행 기록'에 드러난 막힌 점·위험·빈틈을 먼저 해결하는 자료를 고르세요.${fresh && old.length ? `\n이미 보여 준 추천과는 다른 것으로 고르세요: ${old.map((x) => x.title).join(', ')}` : ''}
@@ -982,34 +990,49 @@ ${ctx}`;
   }
   async function makeReport(d, rec, promptText) {
     const ai = aiOf(d);
-    if (!aiReady(ai)) { REPGEN[d.id] = { busy: false, err: `${aiName(ai)}가 연결되지 않아 요청할 수 없습니다. 담당 AI를 바꿔 주세요.` }; toast(REPGEN[d.id].err); rerender(); return; }
     if (REPGEN[d.id] && REPGEN[d.id].busy) return;
-    REPGEN[d.id] = { busy: true, text: '', stage: `${aiName(ai)}에 요청을 보내는 중…` }; rerender();
-    let sample = null;
-    try { sample = await getLLM(ai); } catch (e) { sample = null; }
-    if (!sample) { REPGEN[d.id] = { busy: false, err: ai === 'inhouse' ? '사내 AI에 연결되지 않았습니다(회사 네트워크의 PC에서 Claude 데스크톱 앱으로 열어 주세요).' : '이 화면에서는 Claude를 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다).' }; toast(REPGEN[d.id].err); rerender(); return; }
-    REPGEN[d.id].stage = '업무 내용·댓글·진행 기록을 모으는 중…'; rerender();
-    const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 회장의 요청에 따라 아래 업무에 대한 자료를 만드세요.
+    const G = REPGEN[d.id] = { busy: true, text: '', start: Date.now(), stage: '요청을 준비하는 중…' };
+    clearInterval(G.tick); G.tick = setInterval(() => { if (REPGEN[d.id] === G && G.busy) rerender(); else clearInterval(G.tick); }, 1000);
+    rerender();
+    try {
+      const { llm, used, fallback } = await manualLLM(ai);
+      if (!llm) throw { code: 'no_llm', message: ai === 'inhouse' ? '사내 AI도 Claude도 이 화면에서 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다).' : '이 화면에서는 AI를 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다).' };
+      G.note = fallback ? '사내 AI가 연결 전이라 Claude로 만듭니다.' : '';
+      G.stage = '업무 내용·댓글·진행 기록을 모으는 중…'; rerender();
+      const ctx = await taskContext(d);
+      const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 회장의 요청에 따라 아래 업무에 대한 자료를 만드세요.
 회장의 요청: ${promptText}
 ${REP_RULES}
 출력 형식: 첫 줄 "# (제목)", 이어서 마크다운 본문(## 소제목, - 목록, 필요하면 표).
 
-${await taskContext(d)}`;
-    let last = 0;
-    REPGEN[d.id].stage = ai === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : 'Claude가 생각하는 중… (처음 한 번은 사용 허용 창이 뜹니다)'; rerender();
-    try {
-      const r = await sample(prompt, { modelTier: 'default', cache: false, onText: ({ text }) => { REPGEN[d.id].text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
+${ctx}`;
+      G.stage = used === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : 'Claude가 쓰는 중… (처음 한 번은 사용 허용 창이 뜹니다)'; rerender();
+      let last = 0;
+      const r = await llm(prompt, { modelTier: 'quick', cache: false, onText: ({ text }) => { G.text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
       const text = String((r && r.text) || '').trim();
+      if (!text) throw { code: 'empty_completion' };
       const tm = text.match(/^#\s+(.+)$/m);
       const body = text.replace(/^#\s+.+$/m, '').trim();
-      const rep = { id: 'r' + Date.now().toString(36), task_id: d.id, kind: rec ? rec.title : '직접 요청', title: tm ? tm[1].trim() : (rec ? rec.title : d.title), body, prompt: promptText, ai, by: 'manual', created: new Date().toISOString() };
+      const rep = { id: 'r' + Date.now().toString(36), task_id: d.id, kind: rec ? rec.title : '직접 요청', title: tm ? tm[1].trim() : (rec ? rec.title : d.title), body, prompt: promptText, ai: used, by: 'manual', created: new Date().toISOString() };
       if (LIVE.db) { await LIVE.db.doc('reports/' + rep.id).set(rep); } else { S.dirReps = S.dirReps || {}; (S.dirReps[d.id] = S.dirReps[d.id] || []).unshift(rep); }
       REPGEN[d.id] = { busy: false, open: rep.id }; RECSEL[d.id] = null;
-      toast('리포트를 만들었습니다 — 아래 「지난 요청」에 쌓였습니다');
+      toast(`리포트를 만들었습니다(${aiName(used)}) — 아래 「지난 요청」에 쌓였습니다`);
     } catch (e) {
       const c = e && e.code;
-      REPGEN[d.id] = { busy: false, err: c === 'not_granted' ? 'Claude 사용이 허용되지 않았습니다. 현황판 오른쪽 위 권한 메뉴에서 Claude 사용을 허용한 뒤 다시 눌러 주세요.' : c === 'rate_limited' ? '요청이 많습니다. 잠시 뒤에 다시 눌러 주세요.' : c === 'tool_error' ? '사내 AI가 거절했습니다: ' + String(e.message || '').slice(0, 120) : '리포트를 만들지 못했습니다(' + (c || (e && e.message) || '오류') + '). 다시 눌러 주세요.' };
-      toast(REPGEN[d.id].err);
+      const msg = c === 'no_llm' ? e.message
+        : c === 'not_granted' || c === 'sampling_disabled' ? '이 현황판에서 Claude 사용이 허용되지 않았습니다. 현황판 위쪽 권한 메뉴에서 Claude 사용을 허용한 뒤 다시 눌러 주세요.'
+        : c === 'rate_limited' ? '요청이 많거나 사용 한도에 걸렸습니다. 잠시 뒤에 다시 눌러 주세요.'
+        : c === 'session_expired' ? 'claude.ai 로그인이 만료됐습니다. 다시 로그인한 뒤 눌러 주세요.'
+        : c === 'refused' ? 'AI가 이 요청을 거절했습니다. 요청 문장을 바꿔 다시 눌러 주세요.'
+        : c === 'empty_completion' ? 'AI가 빈 답을 보냈습니다. 요청을 조금 줄여 다시 눌러 주세요.'
+        : c === 'prompt_too_large' ? '요청이 너무 깁니다. 요청 문장을 줄여 주세요.'
+        : c === 'tool_error' ? '사내 AI가 거절했습니다: ' + String(e.message || '').slice(0, 120)
+        : '리포트를 만들지 못했습니다(' + (c || (e && e.message) || '알 수 없는 오류') + '). 다시 눌러 주세요.';
+      REPGEN[d.id] = { busy: false, err: msg, partial: e && e.text ? String(e.text) : '' };
+      toast(msg);
+    } finally {
+      clearInterval(G.tick);
+      if (REPGEN[d.id] === G) G.busy = false;
     }
     rerender();
   }
@@ -1041,14 +1064,16 @@ ${await taskContext(d)}`;
 
       <section class="dir-repsec"><div class="row" style="justify-content:space-between"><h4 style="margin:0">${esc(aiName(ai))}가 만들어 드릴 수 있는 것</h4><button type="button" class="btn sm" data-act="recReset" data-id="${esc(d.id)}" ${rc.busy ? 'disabled' : ''}>${rc.busy ? '추천 만드는 중…' : '추천 리스트 바꾸기'}</button></div>
         ${rc.note ? `<p class="small muted" style="margin:4px 0 0">${esc(rc.note)}</p>` : ''}
-        ${aiReady(ai) ? '' : `<p class="small muted" style="margin:4px 0 0">${ai === 'inhouse' ? '사내 AI는 회사 네트워크의 PC에서 Claude 데스크톱 앱으로 열었을 때만 쓸 수 있습니다. 급하면 담당 AI를 Claude로 바꿔 요청할 수 있습니다.' : esc(aiName(ai)) + '는 연결 전이라 지금은 만들 수 없습니다. 담당 AI를 바꿔 주세요.'}</p>`}
+        ${aiReady(ai) ? '' : `<p class="small muted" style="margin:4px 0 0">${esc(aiName(ai))}가 아직 연결되지 않았습니다. 직접 요청하시면 Claude로 만들고, 밤 자동 작성은 연결된 뒤에 시작합니다.</p>`}
         <div class="dir-recs">${recs ? recs.map((x, i) => `<div class="dir-rec ${sel === i ? 'on' : ''}">
             <button type="button" class="dir-rec-h" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}" aria-expanded="${sel === i}"><b>${esc(x.title)}</b><span class="small muted">${esc(x.why)}</span></button>
             ${sel === i ? `<div class="dir-rec-body"><label class="f">세부 요청(고쳐서 보낼 수 있습니다)<textarea id="rec-prompt" rows="5">${esc(x.prompt)}</textarea></label>
-              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '만드는 중…' : esc(aiName(ai)) + '에게 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div>
-              ${!aiReady(ai) ? `<p class="small dir-err" style="margin:0">${ai === 'inhouse' ? '사내 AI가 연결되지 않아 요청할 수 없습니다. 위 「담당 AI」를 Claude로 바꾸면 바로 요청됩니다.' : esc(aiName(ai)) + '는 연결 전이라 요청할 수 없습니다.'}</p>` : ''}
+              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy ? 'disabled' : ''}>${gen.busy ? `만드는 중… ${Math.round((Date.now() - (gen.start || Date.now())) / 1000)}초` : aiReady(ai) ? esc(aiName(ai)) + '에게 요청' : 'Claude로 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div>
+              ${!aiReady(ai) && !gen.busy ? `<p class="small muted" style="margin:0">${esc(aiName(ai))}가 아직 연결되지 않아 이 요청은 Claude로 만듭니다.</p>` : ''}
+              ${gen.note ? `<p class="small muted" style="margin:0">${esc(gen.note)}</p>` : ''}
               ${gen.err ? `<p class="small dir-err" style="margin:0" role="alert">${esc(gen.err)}</p>` : ''}
-              ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : `<p class="muted">${esc(gen.stage || (ai === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : '생각하는 중…'))}</p>`}</div>` : ''}</div>` : ''}
+              ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : `<p class="muted">${esc(gen.stage || '작성 중…')}</p>`}</div>` : ''}
+              ${!gen.busy && gen.partial ? `<div class="dir-repdoc">${mdHtml(gen.partial)}</div>` : ''}</div>` : ''}
           </div>`).join('') : `<p class="small muted" style="margin:0"><span class="dir-spin sm" aria-hidden="true"></span>이 태스크에 맞는 추천을 고르는 중…</p>`}</div>
         ${gen.err && RECSEL[d.id] == null ? `<p class="small dir-err" style="margin:6px 0 0" role="alert">${esc(gen.err)}</p>` : ''}
         ${gen.busy && RECSEL[d.id] == null ? `<div class="dir-repdoc live" style="margin-top:8px">${gen.text ? mdHtml(gen.text) : '<p class="muted">작성 중…</p>'}</div>` : ''}
