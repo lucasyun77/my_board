@@ -433,7 +433,10 @@
     DET[k] = next; rerender();
   }
   const initial = (n) => (String(n || '?').trim()[0] || '?');
-  const avatar = (n, big) => `<span class="dir-av ${big ? 'lg' : ''}" aria-hidden="true">${esc(initial(n))}</span>`;
+  const ME = ['윤석범', '윤', '회장'];
+  const avatar = (n, big) => (ME.includes(String(n || '').trim()) && window.ASSETS && window.ASSETS.profile
+    ? `<span class="dir-av photo ${big ? 'lg' : ''}" aria-hidden="true"><img src="${esc(window.ASSETS.profile)}" alt="" width="28" height="28"></span>`
+    : `<span class="dir-av ${big ? 'lg' : ''}" aria-hidden="true">${esc(initial(n))}</span>`);
   const when = (iso) => { const x = new Date(iso); if (isNaN(x)) return ''; return `${x.getMonth() + 1}/${x.getDate()} ${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`; };
   function storyText(s) {
     let t = String(s.text || '');

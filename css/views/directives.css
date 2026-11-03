@@ -278,3 +278,5 @@
   .cw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cw-tbl td[data-label="이름"] { grid-column: 1 / -1; }
 }
+.dir-av.photo { background: #F3E2C2; overflow: hidden; }
+.dir-av.photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; display: block; }
