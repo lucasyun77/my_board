@@ -265,3 +265,6 @@ body { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.
   .portrait-frame img { width: 84px; height: 98px; }
   .caption { display: none; }
 }
+/* V12.1: 사이드바 프로필 — 원형 테두리 없이 네모 칸을 사진으로 꽉 채움 */
+.brand .logo { padding: 0; background: none; }
+.brand .logo .avatar-img { width: 100% !important; height: 100% !important; border-radius: inherit; box-shadow: none; object-fit: cover; object-position: center 18%; }
