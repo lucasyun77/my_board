@@ -327,3 +327,5 @@
   .dir-pane-bar [data-act="dirReload"] { display: none; }
   .dir-donebtn { padding: 6px 9px; font-size: 13.5px; }
 }
+.dir-repsend { gap: 6px 8px; padding-top: 8px !important; border-top: 1px dashed var(--line); margin: 0 12px; padding-left: 0 !important; padding-right: 0 !important; }
+.dir-repsend .dir-link { margin-left: auto; }

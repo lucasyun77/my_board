@@ -939,8 +939,13 @@ ${prev || '(없음)'}${sb}`;
         ${aiReady(ai) ? '' : `<span class="small muted">${esc(aiName(ai))}는 연결 전이라 자동 작성 계획에만 올라갑니다</span>`}</div>
       ${gen.err ? `<p class="small dir-err" style="margin:0">${esc(gen.err)}</p>` : ''}
       ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : '<p class="muted">생각하는 중…</p>'}</div>` : ''}
-      <div class="dir-replist">${reps.map((r) => `<details class="dir-repitem" ${gen.open === r.id ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))} · ${r.by === 'schedule' ? '정기 작성' : '직접 요청'}</span></summary>
-        <div class="dir-repdoc">${mdHtml(r.body)}</div><div class="row"><button type="button" class="dir-link" data-act="repDel" data-id="${esc(r.id)}" data-task="${esc(d.id)}">이 리포트 지우기</button></div></details>`).join('') || '<p class="muted small" style="margin:0">아직 리포트가 없습니다.</p>'}</div>
+      <div class="dir-replist">${reps.map((r) => `<details class="dir-repitem" data-rid="${esc(r.id)}" ${gen.open === r.id || REPOPEN[r.id] ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))} · ${r.by === 'schedule' ? '정기 작성' : '직접 요청'}</span></summary>
+        <div class="dir-repdoc">${mdHtml(r.body)}</div>
+        <div class="row dir-repsend">
+          ${isAsana(d) ? `<button type="button" class="btn sm" data-act="repAsana" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 'a'] ? 'disabled' : ''}>${REPSEND[r.id + 'a'] ? '다는 중…' : r.asana_at ? 'Asana 댓글 다시 달기' : 'Asana 댓글로 달기'}</button>` : ''}
+          <button type="button" class="btn sm" data-act="repSlack" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 's'] || !d.assignee || d.assignee === '미지정' || isGoal(d) ? 'disabled' : ''} title="${isGoal(d) ? '목표는 담당이 부서라 개인 Slack으로 보낼 수 없습니다' : ''}">${REPSEND[r.id + 's'] ? '보내는 중…' : r.slack_at ? 'Slack 다시 보내기' : `Slack으로 ${esc(d.assignee && d.assignee !== '미지정' && !isGoal(d) ? d.assignee + '님께' : '')} 보내기`}</button>
+          <span class="small muted">${[r.asana_at ? 'Asana 댓글 ' + esc(when(r.asana_at)) : '', r.slack_at ? 'Slack ' + esc(when(r.slack_at)) : ''].filter(Boolean).join(' · ')}</span>
+          <button type="button" class="dir-link" data-act="repDel" data-id="${esc(r.id)}" data-task="${esc(d.id)}">이 리포트 지우기</button></div></details>`).join('') || '<p class="muted small" style="margin:0">아직 리포트가 없습니다.</p>'}</div>
     </div>`;
   }
   APP.acts.repOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; S.ui.paneTab = 'rep'; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; focusLater('#dir-dlg'); };
@@ -955,6 +960,46 @@ ${prev || '(없음)'}${sb}`;
     const d = find(el.dataset.id); if (!d) return;
     if (d.src && LIVE.db) writeTrack(d, { ai: el.value }, '담당 AI → ' + aiName(el.value));
     else { S.dirAi = S.dirAi || {}; S.dirAi[d.id] = el.value; }
+  };
+
+  const REPSEND = {}; const REPOPEN = {};
+  document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('dir-repitem')) REPOPEN[t.dataset.rid] = t.open; }, true);
+  const repText = (d, r, max) => { const t = `[회장 현황판 AI 리포트] ${r.kind || '리포트'} — ${r.title || ''}\n업무: ${d.title}\n\n${r.body || ''}\n\n(${aiName(r.ai || 'claude')} 작성 · ${when(r.created)})`; return t.length > max ? t.slice(0, max - 20) + '\n…(이하 생략)' : t; };
+  async function repMark(d, r, patch) {
+    Object.assign(r, patch);
+    if (LIVE.db && LIVE.reps[d.id]) { try { await LIVE.db.doc('reports/' + r.id).update(patch); } catch (e) { /* 표시만 */ } }
+  }
+  APP.acts.repAsana = (el) => {
+    const d = find(el.dataset.task); const r = d && repsOf(d).find((x) => x.id === el.dataset.id); if (!d || !r || !isAsana(d)) return;
+    if (!LIVE.mcp) { toast('Asana에 연결된 보기에서만 댓글을 달 수 있습니다'); return; }
+    REPSEND[r.id + 'a'] = true;
+    setTimeout(async () => {
+      const ok = await commentAsana(d, repText(d, r, 9000));
+      REPSEND[r.id + 'a'] = false;
+      if (ok) { await repMark(d, r, { asana_at: new Date().toISOString() }); toast('리포트를 Asana 댓글로 달았습니다'); if (DET[d.asana_gid]) loadDetail(d, true); }
+      rerender();
+    }, 0);
+  };
+  APP.acts.repSlack = (el) => {
+    const d = find(el.dataset.task); const r = d && repsOf(d).find((x) => x.id === el.dataset.id); if (!d || !r) return;
+    if (!LIVE.mcp) { toast('Slack에 연결된 보기에서만 보낼 수 있습니다'); return; }
+    REPSEND[r.id + 's'] = true;
+    setTimeout(async () => {
+      try {
+        const who = await findSlackId(d);
+        if (!who) { toast(`Slack에서 ${d.assignee}님을 찾지 못했습니다`); }
+        else {
+          await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: repText(d, r, 3900) });
+          await repMark(d, r, { slack_at: new Date().toISOString(), slack_to: who.label });
+          if (d.src && !(LIVE.track[d.id] || {}).slack_id) writeTrack(d, { slack_id: who.id, slack_label: who.label });
+          toast(`${d.assignee}님께 Slack으로 리포트를 보냈습니다`);
+        }
+      } catch (e) {
+        const c = e && e.code;
+        toast(c === 'server_unavailable' || c === 'upstream_error' ? 'Slack 응답이 없습니다. 메시지가 갔는지 Slack에서 확인한 뒤 다시 보내 주세요.' : c === 'needs_reauth' ? 'Slack 연결이 만료됐습니다. claude.ai 설정 → 커넥터에서 다시 연결해 주세요.' : ['not_in_manifest', 'approval_required', 'consent_required'].includes(c) ? '이 페이지에서 Slack 사용이 아직 허용되지 않았습니다. 다시 누르면 허용 창이 뜹니다.' : 'Slack으로 보내지 못했습니다(' + (c || '오류') + ').');
+      }
+      REPSEND[r.id + 's'] = false; rerender();
+    }, 0);
   };
 
   /* ================= 태스크 삭제 ================= */
