@@ -97,7 +97,6 @@
 .dir-color input[type=color] { width: 52px; height: 40px; padding: 3px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; }
 
 /* 상세 창 */
-body.dir-lock { overflow: hidden; }
 .dir-dlg-back { position: fixed; inset: 0; z-index: 15; background: rgba(20, 10, 4, .5); display: flex; align-items: flex-start; justify-content: center; padding: max(24px, env(safe-area-inset-top, 0px)) 16px 24px; overflow-y: auto; }
 .dir-dlg { background: var(--paper); border: var(--hair); border-radius: 20px; width: 100%; max-width: 720px; padding: 20px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
 .dir-dlg:focus { outline: none; }
@@ -172,3 +171,83 @@ body.dir-lock { overflow: hidden; }
 .dir-srcseg { align-self: flex-start; max-width: 100%; overflow-x: auto; }
 .dir-srcseg .num { font-size: 12px; color: var(--sub); margin-left: 2px; }
 .dir-tl-group.none { border-style: dashed; }
+
+/* 오른쪽 상세 패널 (Asana 작업 상세 배치) */
+.dir-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100vw); z-index: 15; background: var(--paper); border-left: var(--hair); box-shadow: -12px 0 32px rgba(20, 10, 4, .16); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); animation: dir-slide .16s ease-out; }
+.dir-pane:focus { outline: none; }
+@keyframes dir-slide { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.dir-pane-bar { display: flex; align-items: center; gap: 6px; padding: 10px 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--paper); }
+.dir-pane-sp { flex: 1; }
+.dir-donebtn { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--paper); border-radius: 8px; padding: 6px 12px; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--ink); }
+.dir-donebtn span { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--sub); font-size: 11px; color: var(--sub); }
+.dir-donebtn:hover { border-color: var(--ok); color: var(--ok); }
+.dir-donebtn:hover span { border-color: var(--ok); color: var(--ok); }
+.dir-donebtn.on { background: rgba(46,139,87,.14); border-color: var(--ok); color: var(--ok); font-weight: 700; }
+.dir-donebtn.on span { background: var(--ok); border-color: var(--ok); color: #fff; }
+.dir-iconbtn { border: 0; background: none; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 14px; color: var(--sub); text-decoration: none; white-space: nowrap; }
+.dir-iconbtn:hover, .dir-iconbtn[aria-pressed="true"] { background: var(--paper2); color: var(--ink); }
+.dir-pane-body { flex: 1; overflow-y: auto; padding: 18px 24px 24px; padding-right: max(24px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; }
+.dir-donebanner { margin: -18px -24px 0; padding: 9px 24px; background: rgba(46,139,87,.14); color: var(--ok); font-size: 14px; font-weight: 700; }
+.dir-pane-kind { gap: 6px; }
+.dir-pane-kind:empty { display: none; }
+.main .dir-pane-title, .dir-pane-title { font-family: var(--sans); font-size: 23px; font-weight: 700; line-height: 1.4; letter-spacing: -.01em; margin: -4px 0 0; overflow-wrap: anywhere; }
+.dir-fields { display: flex; flex-direction: column; }
+.dir-f { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; min-height: 42px; padding: 4px 0; }
+.dir-f .k { font-size: 13.5px; color: var(--sub); }
+.dir-f .v { min-width: 0; overflow-wrap: anywhere; }
+.dir-f .dir-gbar { margin-top: 0; }
+.dir-who { display: inline-flex; align-items: center; gap: 8px; }
+.dir-who small { display: block; color: var(--sub); font-size: 12.5px; line-height: 1.2; }
+.dir-av { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--goldSoft); color: var(--goldInk); font-size: 13px; font-weight: 700; flex: none; }
+.dir-composer-foot .dir-av { width: 22px; height: 22px; font-size: 11px; margin-left: -4px; border: 2px solid var(--paper); }
+.dir-due { display: inline-flex; align-items: center; gap: 10px; }
+.dir-inline { width: auto !important; max-width: 100%; border-color: transparent !important; background: transparent !important; padding: 5px 8px !important; border-radius: 8px; cursor: pointer; }
+.dir-inline:hover, .dir-inline:focus { border-color: var(--line) !important; background: var(--paper) !important; }
+.dir-proj { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.dir-proj-name { font-size: 14px; }
+.dir-proj select { width: auto; padding: 4px 8px; }
+.dir-sec h4, .dir-feed h4 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+.dir-notes { white-space: pre-wrap; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir-subs { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.dir-subs li { display: flex; align-items: center; gap: 8px; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.dir-subs li small { margin-left: auto; color: var(--sub); }
+.dir-subs li.done { color: var(--sub); text-decoration: line-through; }
+.dir-chk { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--sub); font-size: 10px; flex: none; }
+.dir-subs li.done .dir-chk { background: var(--ok); border-color: var(--ok); color: #fff; }
+.dir-feed { margin: 0 -24px -24px; padding: 16px 24px 24px; background: var(--paper2); border-top: 1px solid var(--line); flex: 1; }
+.dir-feed ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.dir-st { display: flex; gap: 10px; align-items: flex-start; }
+.dir-st.c > div { flex: 1; min-width: 0; }
+.dir-st.c .h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.dir-st.c .t { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; margin-top: 2px; }
+.dir-st.s { color: var(--sub); }
+.dir-st.s .small { line-height: 1.5; }
+.dir-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin: 6px 10px 0; flex: none; }
+.dir-dot.local { background: var(--gold); }
+.dir-composer { border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; background: var(--paper); }
+.dir-composer textarea { min-height: 44px; resize: vertical; }
+.dir-composer-foot { grid-column: 2; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dir-composer-foot .small { display: inline-flex; align-items: center; gap: 6px; }
+.dir-tbl tr.dir-sel td { background: var(--goldSoft); }
+.dir-tbl tr.dir-sel td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+.card.dir-sel { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+@media (min-width: 1700px) {
+  body.dir-lock .main { padding-right: calc(min(660px, 100vw) + 16px); max-width: none; }
+}
+@media (max-width: 760px) {
+  body.dir-lock { overflow: hidden; }
+  .dir-pane { width: 100vw; border-left: 0; }
+  .dir-pane-body { padding: 14px 16px 20px; }
+  .dir-donebanner { margin: -14px -16px 0; padding: 9px 16px; }
+  .dir-feed { margin: 0 -16px -20px; padding: 14px 16px 20px; }
+  .dir-f { grid-template-columns: 88px minmax(0, 1fr); }
+  .dir-pane-title { font-size: 20px; }
+  .dir-pane-bar .dir-iconbtn { padding: 7px 8px; }
+}
+
+/* 필터 아래 탭: 태스크 · 조직별 이행률 · 태그 관리 */
+.dir-tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.dir-tabs button { border: 0; background: none; padding: 10px 16px; margin-bottom: -2px; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 500; color: var(--sub); cursor: pointer; white-space: nowrap; }
+.dir-tabs button:hover { color: var(--ink); }
+.dir-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--gold); }
+.dir-tabs .num { font-size: 12.5px; color: var(--sub); margin-left: 2px; }

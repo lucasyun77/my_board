@@ -322,7 +322,7 @@
   function listView(list) {
     if (!list.length) return emptyMsg();
     return `<div class="tbl-wrap"><table class="dir-tbl"><thead><tr><th>지시·목표</th><th>담당</th><th>지시일</th><th>기한</th><th>우선</th><th>상태</th><th>태그</th><th>Asana</th></tr></thead><tbody>
-      ${list.map((d) => `<tr class="${isOverdue(d) ? 'overdue' : ''}">
+      ${list.map((d) => `<tr class="${isOverdue(d) ? 'overdue' : ''} ${S.ui.dirOpen === d.id ? 'dir-sel' : ''}">
         <td data-label="지시">${srcPill(d)}${titleBtn(d)}${goalBar(d)}<div class="row dir-flags">${alerts(d)}</div>${d.memo ? `<div class="small muted dir-memo">메모 · ${esc(d.memo)}</div>` : ''}</td>
         <td data-label="담당">${esc(d.org)}${d.assignee && d.assignee !== d.org ? `<div class="small muted">${esc(d.assignee)}</div>` : ''}</td>
         <td data-label="지시일" class="num">${md(d.issued_at)}</td>
@@ -341,7 +341,7 @@
 
   function kanbanView(list) {
     return `<div class="kanban dir-kanban">${STATUSES.map((s) => { const c = list.filter((d) => d.status === s); return `<div class="col"><header><span>${s}</span><span class="num muted">${c.length}</span></header>
-      ${c.map((d) => `<div class="card ${isOverdue(d) ? 'overdue' : ''}">${srcPill(d)}${titleBtn(d)}<div class="small muted">${esc(d.org)}${d.assignee && d.assignee !== d.org ? ' · ' + esc(d.assignee) : ''}</div>${goalBar(d)}
+      ${c.map((d) => `<div class="card ${isOverdue(d) ? 'overdue' : ''} ${S.ui.dirOpen === d.id ? 'dir-sel' : ''}">${srcPill(d)}${titleBtn(d)}<div class="small muted">${esc(d.org)}${d.assignee && d.assignee !== d.org ? ' · ' + esc(d.assignee) : ''}</div>${goalBar(d)}
         <div class="row small"><span class="num ${dueCls(d)}">기한 ${dueMd(d)}${isOpen(d) && !noDue(d) ? ' · ' + dLabel(d) : ''}</span></div>
         <div class="row">${prioPill(d.priority)}${alerts(d)}</div>${d.tags.length ? `<div class="row">${d.tags.map(chip).join('')}</div>` : ''}${statusSelect(d)}</div>`).join('') || '<div class="small muted dir-empty-col">없음</div>'}</div>`; }).join('')}</div>`;
   }
@@ -412,55 +412,115 @@
         <div class="row wide"><button class="btn primary">${live ? '등록 + Asana 태스크 만들기' : '등록 + Asana 태스크 생성'}</button><button type="button" class="btn sm" data-act="dirNewToggle">취소</button></div></form></section>`;
   }
 
-  /* ---------- 상세 보기·편집 ---------- */
+  /* ---------- 상세 패널 (오른쪽, Asana 작업 상세처럼) ---------- */
+  const DET = {};
+  const DET_FIELDS = 'name,notes,assignee.name,due_on,completed,created_at,created_by.name,followers.name,memberships.project.name,memberships.section.name,permalink_url';
+  async function loadDetail(d, force) {
+    if (!d || !isAsana(d) || !LIVE.mcp) return;
+    const k = d.asana_gid; const cur = DET[k];
+    if (cur && cur.state === 'loading') return;
+    if (cur && cur.state === 'ok' && !force && Date.now() - cur.at < 300000) return;
+    DET[k] = Object.assign({}, cur || {}, { state: 'loading' }); rerender();
+    const [a, b] = await Promise.allSettled([
+      LIVE.mcp.callTool(ASANA.server, 'get_task', { task_id: k, include_comments: false, opt_fields: DET_FIELDS }, { cache: force ? { staleTime: 0, gcTime: 600000, refresh: true } : { staleTime: 120000, gcTime: 600000 } }),
+      LIVE.mcp.callTool(ASANA.server, 'get_task_stories', { task_id: k, limit: 50, sort_ascending: true }, { cache: force ? { staleTime: 0, gcTime: 600000, refresh: true } : { staleTime: 120000, gcTime: 600000 } })
+    ]);
+    const next = { state: 'ok', at: Date.now(), task: (cur && cur.task) || null, stories: (cur && cur.stories) || null, err: null };
+    if (a.status === 'fulfilled') { const p = a.value && a.value.payload; next.task = p && p.data ? p.data : p; } else next.err = a.reason;
+    if (b.status === 'fulfilled') { const p = b.value && b.value.payload; next.stories = Array.isArray(p) ? p : p && Array.isArray(p.data) ? p.data : []; } else next.err = next.err || b.reason;
+    if (a.status === 'rejected' && b.status === 'rejected') next.state = 'err';
+    DET[k] = next; rerender();
+  }
+  const initial = (n) => (String(n || '?').trim()[0] || '?');
+  const avatar = (n, big) => `<span class="dir-av ${big ? 'lg' : ''}" aria-hidden="true">${esc(initial(n))}</span>`;
+  const when = (iso) => { const x = new Date(iso); if (isNaN(x)) return ''; return `${x.getMonth() + 1}/${x.getDate()} ${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`; };
+  function storyText(s) {
+    let t = String(s.text || '');
+    const who = s.created_by && s.created_by.name ? String(s.created_by.name) : '';
+    if (who && t.startsWith(who + ' ')) t = t.slice(who.length + 1);
+    let m;
+    if ((m = t.match(/^moved this task from "(.+)" to "(.+)" in (.+)$/))) return `${m[3]}에서 "${m[1]}" → "${m[2]}"(으)로 옮김`;
+    if ((m = t.match(/^added this task to (.+)$/))) return `${m[1]}에 추가함`;
+    if ((m = t.match(/^assigned (?:this task )?to (.+)$/))) return `${m[1]}에게 배정함`;
+    if ((m = t.match(/^changed the due date to (.+)$/))) return `마감일을 ${m[1]}(으)로 바꿈`;
+    if (/^marked this task complete$/.test(t)) return '완료로 표시함';
+    if (/^marked incomplete$|^marked this task incomplete$/.test(t)) return '완료 취소함';
+    if (/^created this task$/.test(t)) return '이 작업을 만듦';
+    return t;
+  }
+  const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<>"']+/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u.length > 60 ? u.slice(0, 57) + '…' : u}</a>`);
+  const prioSelect = (d) => `<select class="dir-inline" aria-label="우선순위" data-act="dirPrio" data-id="${esc(d.id)}">${PRIOS.map((x) => `<option ${x === d.priority ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+
   function detailDialog() {
     const d = S.ui.dirOpen && S.directives.find((x) => x.id === S.ui.dirOpen);
     document.body.classList.toggle('dir-lock', !!d);
     if (!d) return '';
     const edit = S.ui.dirEdit;
-    const row = (k, v) => `<div class="dir-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    const det = isAsana(d) ? DET[d.asana_gid] : null;
+    const t = det && det.task ? det.task : null;
+    const fld = (k, v) => `<div class="dir-f"><span class="k">${k}</span><div class="v">${v}</div></div>`;
     const upGoal = isGoal(d) && d.up ? S.directives.find((x) => x.id === 'g' + d.up) : null;
-    const extra = isGoal(d) ? `
-        ${row('지표', esc(d.metric) || '<span class="muted">—</span>')}
-        ${row('현재 → 목표', `${esc(d.cur) || '—'} → ${esc(d.target) || '—'}`)}
-        ${row('진척', `<span class="num">${d.pct}%</span>${d.plan ? ` <span class="small muted">계획 ${d.plan}% (${d.pct - d.plan >= 0 ? '+' : '−'}${Math.abs(d.pct - d.plan)}%p)</span>` : ''}`)}
-        ${row('합의', `<span class="small">${d.agree}/4 단계 (회장·C레벨·본부·부서)</span>`)}
-        ${upGoal ? row('상위 목표', `<button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(upGoal.id)}">${esc(upGoal.code)} ${esc(upGoal.title)}</button>`) : ''}
-        ${row('출처', '<span class="small">아이센스 부서현황판 · 전사목표관리</span>')}` : '';
-    const memoForm = `<form class="form dir-quick" data-form="dirMemo" data-id="${esc(d.id)}">
-        ${isGoal(d) ? `<label class="f">진척률(%)<input type="number" id="dm-pct" name="pct" min="0" max="100" step="1" value="${d.pct}"></label>
-        <label class="f">현재값<input type="text" id="dm-cur" name="cur" value="${esc(d.cur)}" placeholder="예: 27개"></label>` : ''}
-        <label class="f wide">메모<textarea id="dm-memo" name="memo" rows="3" placeholder="진행 상황·다음 확인 사항">${esc(d.memo)}</textarea></label>
+    const done = d.status === '완료';
+    const project = isAsana(d) ? ((t && t.memberships || []).find((m) => m.project && m.project.gid === ASANA.project) || {}) : null;
+    const followers = t && Array.isArray(t.followers) ? t.followers : [];
+    const subtasks = t && Array.isArray(t.subtasks) ? t.subtasks : [];
+    const notes = t && typeof t.notes === 'string' ? t.notes : d.body;
+    const stories = det && Array.isArray(det.stories) ? det.stories : [];
+
+    const fields = `<div class="dir-fields">
+      ${fld('담당자', `<span class="dir-who">${avatar(d.assignee)}<span>${esc(d.assignee)}${d.org && d.org !== d.assignee ? `<small>${esc(d.org)}</small>` : ''}</span></span>`)}
+      ${fld('마감일', isGoal(d) ? `<span class="num ${dueCls(d)}">${esc(dueFull(d))}${isOpen(d) && !noDue(d) ? ' · ' + dLabel(d) : ''}</span>` : `<span class="dir-due"><input type="date" class="dir-inline" aria-label="마감일" data-act="dirDue" data-id="${esc(d.id)}" value="${noDue(d) ? '' : esc(d.due_at)}"><span class="small num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : ''}</span></span>`)}
+      ${fld(isGoal(d) ? '구분' : '프로젝트', isAsana(d) ? `<span class="dir-proj"><span class="dir-proj-name">${esc((project && project.project && project.project.name) || '[지시업무] ceo 윤석범')}</span>${statusSelect(d)}</span>` : isGoal(d) ? `${srcPill(d)}<span class="small muted">아이센스 부서현황판</span>` : `<span class="dir-proj"><span class="dir-proj-name">회장 지시(목업)</span>${statusSelect(d)}</span>`)}
+      ${isGoal(d) ? fld('상태', statusSelect(d)) : ''}
+      ${fld('우선순위', prioSelect(d))}
+      ${fld('태그', `<span class="row">${d.tags.map(chip).join('') || '<span class="muted small">없음</span>'}</span>`)}
+      ${isGoal(d) ? `${fld('지표', esc(d.metric) || '<span class="muted">—</span>')}${fld('현재 → 목표', `${esc(d.cur) || '—'} → ${esc(d.target) || '—'}`)}${fld('진척', goalBar(d) || '—')}${fld('합의', `<span class="small">${d.agree}/4 단계 (회장·C레벨·본부·부서)</span>`)}${upGoal ? fld('상위 목표', `<button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(upGoal.id)}">${esc(upGoal.code)} ${esc(upGoal.title)}</button>`) : ''}` : ''}
+      ${fld(isGoal(d) ? '등록 기준일' : '만든 날', `<span class="num">${esc(d.issued_at)}</span>${t && t.created_by && t.created_by.name ? ` <span class="small muted">· ${esc(t.created_by.name)}</span>` : ''}`)}
+      ${fld('결과물', linkOut(d.result_url, '결과물 열기'))}
+      ${!isAsana(d) && !isGoal(d) ? fld('원문', linkOut(d.source_url, '원문 열기')) : ''}
+      ${d.synced_fail ? fld('Asana 반영', `<span class="small crit">${esc(d.synced_fail)}</span> <button type="button" class="dir-link" data-act="dirRepush" data-id="${esc(d.id)}">다시 보내기</button>`) : ''}
+    </div>`;
+
+    const desc = `<section class="dir-sec"><h4>설명</h4>${notes ? `<div class="dir-notes">${linkify(notes)}</div>` : `<p class="muted small" style="margin:0">${det && det.state === 'loading' ? '불러오는 중…' : '설명이 없습니다.'}</p>`}</section>`;
+    const subs = isAsana(d) && subtasks.length ? `<section class="dir-sec"><h4>하위 작업 <span class="num muted">${subtasks.length}</span></h4><ul class="dir-subs">${subtasks.map((s) => `<li class="${s.completed ? 'done' : ''}"><span class="dir-chk" aria-hidden="true">${s.completed ? '✓' : ''}</span>${esc(s.name || '')}${s.assignee && s.assignee.name ? `<small>${esc(s.assignee.name)}</small>` : ''}</li>`).join('')}</ul></section>` : '';
+    const memo = `<section class="dir-sec"><h4>${isGoal(d) ? '진척 기록' : '현황판 메모'}</h4>
+      <form class="form dir-quick" data-form="dirMemo" data-id="${esc(d.id)}">
+        ${isGoal(d) ? `<label class="f">진척률(%)<input type="number" id="dm-pct" name="pct" min="0" max="100" step="1" value="${d.pct}"></label><label class="f">현재값<input type="text" id="dm-cur" name="cur" value="${esc(d.cur)}" placeholder="예: 27개"></label>` : ''}
+        <label class="f wide">메모<textarea id="dm-memo" name="memo" rows="2" placeholder="진행 상황·다음 확인 사항">${esc(d.memo)}</textarea></label>
         <label class="f wide">결과물 링크<input type="url" id="dm-res" name="result_url" value="${esc(safeUrl(d.result_url))}" placeholder="https://"></label>
         <div class="row wide"><button class="btn primary sm">${isGoal(d) ? '진척·메모 저장' : '메모·결과물 저장'}</button>
-          <button type="button" class="btn sm" data-act="dirEditToggle">전체 편집</button>
-          ${isOpen(d) && !isGoal(d) && (stl(d) || isOverdue(d)) ? `<button type="button" class="btn sm" data-act="dirNudge" data-id="${esc(d.id)}">담당자에게 확인 요청</button>` : ''}
-          ${isAsana(d) && d.synced_fail ? `<button type="button" class="btn sm" data-act="dirRepush" data-id="${esc(d.id)}">Asana에 다시 보내기</button>` : ''}</div>
-        ${isAsana(d) ? '<p class="small muted wide" style="margin:0">메모·결과물은 이 현황판에 저장되고, Asana 태스크에 댓글로도 남깁니다.</p>' : ''}
-        ${isGoal(d) ? '<p class="small muted wide" style="margin:0">진척은 이 현황판에 저장됩니다. 부서현황판 원본은 바뀌지 않습니다.</p>' : ''}
-      </form>`;
-    return `<div class="dir-dlg-back"><div class="dir-dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" id="dir-dlg" tabindex="-1">
-      <div class="dir-dlg-head"><div style="min-width:0"><div class="row small">${srcPill(d)}${prioPill(d.priority)}${statPill(d.status)}${alerts(d)}</div><h3 id="dlg-title">${esc(d.title)}</h3></div>
-        <button type="button" class="btn sm" data-act="dirClose" aria-label="닫기">닫기 ✕</button></div>
-      ${edit ? `<form class="form" data-form="dirEdit" data-id="${esc(d.id)}">${fieldsHtml('de', d)}<div class="row wide"><button class="btn primary">저장</button><button type="button" class="btn sm" data-act="dirEditToggle">취소</button></div></form>` : `
-      ${d.body ? `<p class="dir-body">${esc(d.body)}</p>` : ''}
-      ${goalBar(d)}
-      <div class="dir-kvs">
-        ${row('담당', d.assignee && d.assignee !== d.org ? `${esc(d.org)} · ${esc(d.assignee)}` : esc(d.org))}
-        ${row(isGoal(d) ? '등록 기준일' : '지시일', `<span class="num">${esc(d.issued_at)}</span>`)}
-        ${row('기한', `<span class="num ${dueCls(d)}">${esc(dueFull(d))}${isOpen(d) && !noDue(d) ? ' · ' + dLabel(d) : ''}</span>`)}
-        ${row('상태', statusSelect(d))}
-        ${row('마지막 갱신', isGoal(d) ? `<span class="num">${esc(d.track_at || '—')}</span>` : `<span class="num">${esc(d.updated_at)}</span> <span class="small muted">(${quiet(d)}일 전)</span>`)}
-        ${row('태그', `<span class="row">${d.tags.map(chip).join('') || '<span class="muted">없음</span>'}</span>`)}
-        ${extra}
-        ${isGoal(d) ? '' : row(isAsana(d) ? 'Asana' : '원문', isAsana(d) ? linkOut(d.source_url, 'Asana에서 열기') : linkOut(d.source_url, '원문 열기'))}
-        ${row('결과물', linkOut(d.result_url, '결과물 열기'))}
-        ${isGoal(d) ? '' : row('동기화', `<span class="small">${isAsana(d) ? '태스크 ' + esc(d.asana_gid) + (d.section ? ' · 구역 ' + esc(d.section) : '') : '태스크 ' + esc(d.asana_gid)} · ${syncCell(d)}</span>`)}
-        ${d.synced_fail ? row('실패 사유', `<span class="small crit">${esc(d.synced_fail)}</span>`) : ''}
+          ${isOpen(d) && !isGoal(d) && (stl(d) || isOverdue(d)) ? `<button type="button" class="btn sm" data-act="dirNudge" data-id="${esc(d.id)}">담당자에게 확인 요청</button>` : ''}</div>
+      </form></section>`;
+
+    const feedAsana = isAsana(d) ? (stories.length ? stories.map((s) => {
+      const isC = s.type === 'comment' || s.resource_subtype === 'comment_added';
+      const nm = s.created_by && s.created_by.name ? s.created_by.name : 'Asana';
+      return isC ? `<li class="dir-st c">${avatar(nm)}<div><div class="h"><b>${esc(nm)}</b><span class="small muted">${when(s.created_at)}</span></div><div class="t">${linkify(s.text || '')}</div></div></li>`
+        : `<li class="dir-st s"><span class="dir-dot" aria-hidden="true"></span><div class="small"><b>${esc(nm)}</b> ${esc(storyText(s))} <span class="muted">· ${when(s.created_at)}</span></div></li>`;
+    }).join('') : `<li class="muted small">${det && det.state === 'loading' ? 'Asana 활동을 불러오는 중…' : det && det.state === 'err' ? esc(errText(det.err)) : !LIVE.mcp ? 'Asana에 연결된 보기에서만 활동이 보입니다.' : '아직 활동이 없습니다.'}</li>`) : '';
+    const feedLocal = (d.log || []).map((l) => `<li class="dir-st s"><span class="dir-dot local" aria-hidden="true"></span><div class="small">${esc(l.text)} <span class="muted">· ${md(l.at)} · 현황판</span></div></li>`).join('');
+
+    return `<aside class="dir-pane" role="dialog" aria-labelledby="dlg-title" id="dir-dlg" tabindex="-1">
+      <div class="dir-pane-bar">
+        <button type="button" class="dir-donebtn ${done ? 'on' : ''}" data-act="dirDone" data-id="${esc(d.id)}" aria-pressed="${done}"><span aria-hidden="true">✓</span>${done ? '완료됨' : '완료로 표시'}</button>
+        <span class="dir-pane-sp"></span>
+        ${isAsana(d) && safeUrl(d.source_url) ? `<a class="dir-iconbtn" href="${esc(d.source_url)}" target="_blank" rel="noopener noreferrer" title="Asana에서 열기">Asana ↗</a>` : ''}
+        ${isAsana(d) && LIVE.mcp ? `<button type="button" class="dir-iconbtn" data-act="dirReload" data-id="${esc(d.id)}" title="새로고침" aria-label="상세 새로고침">↻</button>` : ''}
+        <button type="button" class="dir-iconbtn" data-act="dirEditToggle" aria-pressed="${!!edit}">${edit ? '편집 닫기' : '편집'}</button>
+        <button type="button" class="dir-iconbtn" data-act="dirClose" aria-label="패널 닫기" title="닫기 (Esc)">→|</button>
       </div>
-      ${memoForm}
-      <div class="dir-log"><div class="small muted" style="font-weight:700">이력</div><ul>${(d.log || []).map((l) => `<li><span class="num muted">${md(l.at)}</span> ${esc(l.text)}</li>`).join('') || '<li class="muted">아직 기록이 없습니다.</li>'}</ul></div>`}
-    </div></div>`;
+      <div class="dir-pane-body">
+        ${done ? '<div class="dir-donebanner">이 작업은 완료되었습니다.</div>' : ''}
+        <div class="row small dir-pane-kind">${srcPill(d)}${alerts(d)}${det && det.state === 'loading' ? '<span class="muted">Asana에서 불러오는 중…</span>' : ''}</div>
+        <h2 class="dir-pane-title" id="dlg-title">${esc(d.title)}</h2>
+        ${edit ? `<form class="form" data-form="dirEdit" data-id="${esc(d.id)}">${fieldsHtml('de', d)}<div class="row wide"><button class="btn primary">저장</button><button type="button" class="btn sm" data-act="dirEditToggle">취소</button></div></form>` : `${fields}${desc}${subs}${memo}`}
+        <section class="dir-feed"><h4>${isAsana(d) ? '댓글·활동' : '활동'}</h4><ul>${feedAsana}${feedLocal}</ul></section>
+      </div>
+      <form class="dir-composer" data-form="dirComment" data-id="${esc(d.id)}">
+        ${avatar('윤')}<textarea id="dc-text" name="text" rows="2" placeholder="${isAsana(d) ? '댓글 추가 (Asana에 남습니다)' : '기록 추가'}" aria-label="댓글">${esc(S.ui.dirCmt && S.ui.dirCmt.id === d.id ? S.ui.dirCmt.text : '')}</textarea>
+        <div class="dir-composer-foot"><span class="small muted">${followers.length ? '공동 작업자 ' + followers.map((f) => avatar(f.name)).join('') : ''}</span><button class="btn primary sm">댓글</button></div>
+      </form>
+    </aside>`;
   }
 
   /* ---------- 태그 관리 ---------- */
@@ -524,6 +584,7 @@
     const f = fullFilter();
     const list = filtered(f);
     const mode = S.ui.dirView || '목록';
+    const tab = S.ui.dirTab || 'task';
     const open = S.directives.filter(isOpen);
     const over = S.directives.filter(isOverdue), stale = S.directives.filter(stl);
     const wait = S.directives.filter((d) => d.status === '보고대기');
@@ -567,11 +628,10 @@
         <div id="saveViewBox"></div>
       </section>
 
-      <div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
+      <div class="dir-tabs" role="tablist" aria-label="지시 관리 화면">${[['task', '태스크', list.length], ['org', '조직별 이행률', null], ['tags', '태그 관리', S.tags.length]].map(([v, l, n]) => `<button type="button" role="tab" data-act="dirTab" data-v="${v}" aria-selected="${tab === v}">${l}${n != null ? ` <span class="num">${n}</span>` : ''}</button>`).join('')}</div>
+      ${tab === 'org' ? orgPanel() : tab === 'tags' ? viewTags() : `<div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
         <div class="seg" role="group" aria-label="보기 방식">${['목록', '칸반', '타임라인'].map((m) => `<button type="button" data-act="dirView" data-v="${m}" aria-pressed="${m === mode}">${m}</button>`).join('')}</div></div>
-      ${body}
-      ${orgPanel()}
-      ${viewTags()}
+      ${body}`}
       ${detailDialog()}`;
   }
 
@@ -582,12 +642,48 @@
 
   APP.acts.dirRefresh = () => {};
   APP.acts.dirNewToggle = () => { S.ui.dirNew = !S.ui.dirNew; if (!S.ui.dirNew) S.ui.dirDraft = null; if (S.ui.dirNew) focusLater('#dn-title'); };
-  APP.acts.dirOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-dlg')) S.ui.dirReturn = el.dataset.id; focusLater('#dir-dlg'); };
+  APP.acts.dirOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d), 0); focusLater('#dir-dlg'); };
+  APP.acts.dirReload = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d, true), 0); };
+  APP.acts.dirDone = (el) => {
+    const d = find(el.dataset.id); if (!d) return;
+    const prev = d.status;
+    d.status = prev === '완료' ? (d._before_done && d._before_done !== '완료' ? d._before_done : '진행') : '완료';
+    if (prev !== '완료') d._before_done = prev;
+    d.updated_at = S.today;
+    if (isAsana(d)) pushAsana(d, d.status === '완료' ? '완료로 표시' : '완료 취소');
+    else if (isGoal(d)) writeTrack(d, { status: d.status }, '상태 → ' + d.status);
+    else toast(d.status === '완료' ? '완료로 표시했습니다' : '완료를 취소했습니다');
+  };
+  APP.changes.dirDue = (el) => {
+    const d = find(el.dataset.id); if (!d || isGoal(d)) return;
+    d.due_at = el.value || (isAsana(d) ? NONE_DUE : d.due_at); d.updated_at = S.today;
+    if (isAsana(d)) pushAsana(d, '마감일 ' + (el.value || '없음')); else addLog(d, '마감일 → ' + d.due_at);
+  };
+  APP.changes.dirPrio = (el) => {
+    const d = find(el.dataset.id); if (!d || !PRIOS.includes(el.value)) return;
+    d.priority = el.value;
+    if (isAsana(d)) pushAsana(d, '우선순위 ' + el.value);
+    else if (isGoal(d)) writeTrack(d, { priority: el.value }, '우선순위 → ' + el.value);
+    else addLog(d, '우선순위 → ' + el.value);
+  };
+  APP.forms.dirComment = (fd, form) => {
+    const d = find(form.dataset.id); if (!d) return;
+    const text = (fd.get('text') || '').toString().trim();
+    if (!text) { toast('댓글 내용을 적어 주세요'); return; }
+    if (isAsana(d)) {
+      S.ui.dirCmt = { id: d.id, text };
+      commentAsana(d, text).then((ok) => { if (ok) { S.ui.dirCmt = null; toast('Asana에 댓글을 남겼습니다'); loadDetail(d, true); } else rerender(); });
+      return;
+    }
+    if (isGoal(d)) { writeTrack(d, {}, '댓글: ' + text); addLog(d, '댓글: ' + text); toast('기록을 남겼습니다'); return; }
+    addLog(d, '댓글: ' + text); toast('기록을 남겼습니다');
+  };
   APP.acts.dirClose = () => {
     S.ui.dirOpen = null; S.ui.dirEdit = false;
     if (S.ui.dirReturn) focusLater(`[data-act="dirOpen"][data-id="${S.ui.dirReturn}"]`);
   };
   APP.acts.dirEditToggle = () => { S.ui.dirEdit = !S.ui.dirEdit; focusLater(S.ui.dirEdit ? '#de-title' : '#dir-dlg'); };
+  APP.acts.dirTab = (el) => { S.ui.dirTab = el.dataset.v; };
   APP.acts.dirSrc = (el) => { setF({ src: el.dataset.v }); };
   APP.acts.dirAllow = () => { LIVE.asanaErr = null; fetchAsana(true, true); };
   APP.acts.dirSync = () => {
@@ -613,9 +709,9 @@
     const v = el.dataset.v; const f = fullFilter();
     const patch = { overdue: { due: 'overdue', status: 'all' }, stale: { due: 'stale', status: 'all' }, wait: { status: '보고대기', due: '' }, open: { status: 'open', due: '' } }[v];
     const on = v === 'wait' ? f.status === '보고대기' : v === 'open' ? f.status === 'open' && !f.due : f.due === v;
-    setF(on ? { status: 'all', due: '' } : patch);
+    setF(on ? { status: 'all', due: '' } : patch); S.ui.dirTab = 'task';
   };
-  APP.acts.dirOrg = (el) => { const f = fullFilter(); setF({ org: f.org === el.dataset.v ? '' : el.dataset.v }); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0); };
+  APP.acts.dirOrg = (el) => { const f = fullFilter(); setF({ org: f.org === el.dataset.v ? '' : el.dataset.v }); S.ui.dirTab = 'task'; setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0); };
   APP.acts.tagEdit = (el) => { S.ui.editTag = el.dataset.id; S.ui.delTag = null; focusLater('#tg-name'); setTimeout(() => { const fm = $('#dir-tagform'); if (fm) fm.scrollIntoView({ block: 'center' }); }, 0); };
   APP.acts.tagMove = (el) => {
     const sorted = S.tags.slice().sort((a, b) => a.sort - b.sort);
@@ -729,9 +825,8 @@
   };
 
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
-  const closeDlg = () => { const b = document.querySelector('.dir-dlg-head [data-act="dirClose"]'); if (b) b.click(); };
+  const closeDlg = () => { const b = document.querySelector('.dir-pane-bar [data-act="dirClose"]'); if (b) b.click(); };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.ui.dirOpen) closeDlg(); });
-  document.addEventListener('click', (e) => { if (e.target.classList && e.target.classList.contains('dir-dlg-back')) closeDlg(); });
   window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; });
 
   APP.views.directives = viewDirectives;
