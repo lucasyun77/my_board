@@ -329,3 +329,14 @@
 }
 .dir-repsend { gap: 6px 8px; padding-top: 8px !important; border-top: 1px dashed var(--line); margin: 0 12px; padding-left: 0 !important; padding-right: 0 !important; }
 .dir-repsend .dir-link { margin-left: auto; }
+.dir-repsec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.dir-repsec h4 { margin: 0; font-size: 15px; }
+.dir-recs { display: flex; flex-direction: column; gap: 6px; }
+.dir-rec { border: 1.5px solid var(--line); border-radius: 12px; background: var(--paper); }
+.dir-rec.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.dir-rec-h { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; padding: 10px 12px; cursor: pointer; color: var(--ink); }
+.dir-rec-h:hover b { color: var(--goldInk); }
+.dir-rec-h b { font-size: 14.5px; }
+.dir-rec-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.dir-rec-body textarea { min-height: 110px; }
+.dir-repprompt { margin: 0; padding: 8px 14px 0; }

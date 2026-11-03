@@ -857,7 +857,6 @@
 
   /* ================= AI 리포트 (태스크별 도움 보고서) ================= */
   const AI_DEFAULT = [{ id: 'claude', name: 'Claude', on: true }, { id: 'gemini', name: 'Gemini', on: false }, { id: 'gpt', name: 'ChatGPT', on: false }, { id: 'inhouse', name: '사내 서버', on: false }];
-  const REP_KINDS = ['자동 판단', '조언', '진행 지휘', '계획 세우기', '시장 조사', '위험 점검'];
   const REPGEN = {};
   const allAi = () => { const c = LIVE.cfg; return c && Array.isArray(c.providers) && c.providers.length ? c.providers.filter((p) => p && p.id) : AI_DEFAULT; };
   const aiList = () => { const c = LIVE.cfg; const menu = c && c.menus && c.menus.directives; const p = allAi(); return Array.isArray(menu) && menu.length ? p.filter((x) => menu.includes(x.id)) : p; };
@@ -884,73 +883,140 @@
     if (inList) out += '</ul>';
     return out;
   }
-  async function makeReport(d, kind) {
+  /* 태스크 맥락 (리포트·추천 공통) */
+  async function taskContext(d) {
+    if (isAsana(d) && LIVE.mcp) await loadDetail(d);
+    const det = isAsana(d) ? DET[d.asana_gid] : null;
+    const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 1500);
+    const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-8).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 300)}`).join('\n');
+    const prev = repsOf(d).slice(0, 5).map((r) => `- ${r.created ? r.created.slice(0, 10) : ''} ${r.kind}: ${r.title}`).join('\n');
+    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? `\n세컨드브레인: ${LIVE.cfg.secondBrain.name} (이 화면에서는 내용을 직접 읽지 못합니다. 참고하면 좋을 항목은 '세컨드브레인에서 확인'으로 적어 주세요)` : '';
+    return `업무: ${d.title}
+종류: ${SRC_LABEL[d.src] || '지시'} · 상태 ${d.status} · 우선 ${d.priority} · 기한 ${dueFull(d)} · 담당 ${d.org}${d.assignee !== d.org ? ' ' + d.assignee : ''}
+${isGoal(d) ? `지표: ${d.metric} · 현재 ${d.cur} → 목표 ${d.target} · 진척 ${d.pct}% / 계획 ${d.plan}%\n` : ''}설명: ${notes || '(없음)'}
+최근 댓글:
+${cmts || '(없음)'}
+현황판 메모: ${d.memo || '(없음)'}
+이미 만든 리포트:
+${prev || '(없음)'}${sb}`;
+  }
+  const REP_RULES = '규칙: 사실을 지어내지 말 것. 수치·사례를 추정하면 "(추정)"을 붙이고, 모르는 것은 "확인 필요"로 적을 것. 회장이 바로 쓸 수 있게 구체적인 다음 행동(누가·무엇을·언제)을 넣을 것. 연봉·임금 정보는 다루지 말 것. 한국어.';
+  const shortT = (d) => d.title.replace(/^\[[^\]]+\]\s*/, '').replace(/\s+—\s+[^—]+$/, '');
+  const defaultRecs = (d) => [
+    { title: '진행 점검과 다음 행동', why: '지금 어디까지 왔고 무엇이 막혔는지', prompt: `"${shortT(d)}"의 현재 진행 상황을 점검해 주세요. 끝난 것·남은 것·막힌 것을 나누고, 이번 주 안에 할 다음 행동 3가지를 담당자와 날짜까지 정해 주세요.` },
+    { title: '주차별 실행 계획서', why: '기한까지 무엇을 언제 할지', prompt: `"${shortT(d)}"를 기한 안에 끝내기 위한 주차별 실행 계획서를 만들어 주세요. 주차마다 목표·산출물·담당·완료 기준을 표로 정리해 주세요.` },
+    { title: '관련 시장·사례 조사', why: '판단에 필요한 바깥 정보', prompt: `"${shortT(d)}"와 관련해 참고할 시장 동향·경쟁사·국내외 사례를 정리해 주세요. 확실하지 않은 내용은 "확인 필요"로 표시하고, 우리 회사에 주는 시사점 3가지로 마무리해 주세요.` },
+    { title: '위험 요소와 대응책', why: '늦어지거나 틀어질 가능성', prompt: `"${shortT(d)}"가 늦어지거나 실패할 수 있는 위험 요소를 찾아 가능성·영향을 평가하고, 위험마다 미리 할 대응책과 담당을 정해 주세요.` },
+    { title: '담당자에게 보낼 지휘 메시지', why: '회장 이름으로 바로 보낼 초안', prompt: `"${shortT(d)}" 담당자(${d.assignee})에게 회장이 보낼 지휘 메시지 초안을 써 주세요. 기대하는 결과·기한·중간 보고 시점을 분명히 하고, 존중하는 말투로 5문장 안에 써 주세요.` }
+  ];
+  const REC = {}; const RECSEL = {};
+  const recsOf = (d) => (REC[d.id] && REC[d.id].items) || ((LIVE.track[d.id] || {}).recs && (LIVE.track[d.id] || {}).recs.items) || null;
+  async function loadRecs(d, fresh) {
+    if (REC[d.id] && REC[d.id].busy) return;
+    if (!fresh && recsOf(d)) return;
+    const old = recsOf(d) || [];
+    REC[d.id] = { busy: true, items: fresh ? null : old.length ? old : null }; RECSEL[d.id] = null; rerender();
+    let items = null; let note = '';
+    try {
+      const sample = hasClaude ? await window.claude.use('sample') : null;
+      if (sample) {
+        const ctx = await taskContext(d);
+        const prompt = `아이센스그룹 윤석범 회장이 아래 업무에 대해 Claude에게 맡길 수 있는 보고서·자료 5가지를 추천하세요. 이 업무를 끝까지 해내는 데 실제로 도움이 되는 것만 고르고, 서로 겹치지 않게 하세요.${fresh && old.length ? `\n이미 보여 준 추천과는 다른 것으로 고르세요: ${old.map((x) => x.title).join(', ')}` : ''}
+각 항목: title(20자 이내 명사형), why(40자 이내, 왜 도움이 되는지), prompt(Claude에게 보낼 구체적인 요청문 3~6문장. 무엇을 어떤 형식으로 만들지 적을 것).
+JSON 배열만 출력: [{"title":"","why":"","prompt":""}, ...]
+
+${ctx}`;
+        const v = await sample.json(prompt, { modelTier: 'quick', cache: false });
+        const arr = Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : null;
+        if (arr) items = arr.filter((x) => x && x.title && x.prompt).slice(0, 5).map((x) => ({ title: String(x.title).slice(0, 40), why: String(x.why || '').slice(0, 80), prompt: String(x.prompt).slice(0, 1500) }));
+      } else note = 'Claude 추천을 쓸 수 없어 기본 추천을 보여 드립니다';
+    } catch (e) { note = e && e.code === 'not_granted' ? 'Claude 사용이 허용되지 않아 기본 추천을 보여 드립니다' : '추천을 새로 만들지 못해 기본 추천을 보여 드립니다'; }
+    if (!items || items.length < 3) items = defaultRecs(d);
+    REC[d.id] = { busy: false, items, note };
+    if (d.src && LIVE.db && !note) writeTrack(d, { recs: { at: new Date().toISOString(), items } });
+    rerender();
+  }
+  async function makeReport(d, rec, promptText) {
     const ai = aiOf(d);
     if (!aiReady(ai)) { toast(`${aiName(ai)}는 아직 연결되지 않았습니다. 관리자 메뉴에서 연결하거나 Claude로 바꿔 주세요.`); return; }
     if (REPGEN[d.id] && REPGEN[d.id].busy) return;
     const sample = hasClaude ? await window.claude.use('sample') : null;
     if (!sample) { toast('이 보기에서는 AI 리포트를 만들 수 없습니다(claude.ai 아티팩트에서만)'); return; }
     REPGEN[d.id] = { busy: true, text: '' }; rerender();
-    if (isAsana(d) && LIVE.mcp) await loadDetail(d);
-    const det = isAsana(d) ? DET[d.asana_gid] : null;
-    const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 1500);
-    const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-8).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 300)}`).join('\n');
-    const prev = repsOf(d).slice(0, 3).map((r) => `- ${r.created ? r.created.slice(0, 10) : ''} ${r.kind}: ${r.title}`).join('\n');
-    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? `\n세컨드브레인: ${LIVE.cfg.secondBrain.name} (이 화면에서는 내용을 직접 읽지 못하므로, 참고하면 좋을 항목을 '세컨드브레인에서 확인' 으로 적어 주세요)` : '';
-    const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 아래 업무를 끝까지 해내도록 돕는 보고서를 한국어로 쓰세요.
-보고서 유형: ${kind === '자동 판단' ? '조언·진행 지휘·계획 세우기·시장 조사·위험 점검 중 지금 가장 도움이 되는 것 하나를 고르세요' : kind}
-규칙: 사실을 지어내지 말 것. 수치·사례를 추정하면 "(추정)"을 붙이고, 모르는 것은 "확인 필요"로 적을 것. 회장이 바로 쓸 수 있게 구체적인 다음 행동(누가·무엇을·언제)을 넣을 것. 900자 안팎. 연봉·임금 정보는 다루지 말 것.
-출력 형식: 첫 줄 "유형: (유형)", 둘째 줄 "# (보고서 제목)", 이어서 마크다운 본문(## 소제목, - 목록).
+    const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 회장의 요청에 따라 아래 업무에 대한 자료를 만드세요.
+회장의 요청: ${promptText}
+${REP_RULES}
+출력 형식: 첫 줄 "# (제목)", 이어서 마크다운 본문(## 소제목, - 목록, 필요하면 표).
 
-업무: ${d.title}
-종류: ${SRC_LABEL[d.src] || '지시'} · 상태 ${d.status} · 우선 ${d.priority} · 기한 ${dueFull(d)} · 담당 ${d.org} ${d.assignee !== d.org ? d.assignee : ''}
-${isGoal(d) ? `지표: ${d.metric} · 현재 ${d.cur} → 목표 ${d.target} · 진척 ${d.pct}% / 계획 ${d.plan}%\n` : ''}설명: ${notes || '(없음)'}
-최근 댓글:
-${cmts || '(없음)'}
-현황판 메모: ${d.memo || '(없음)'}
-이전 리포트:
-${prev || '(없음)'}${sb}`;
+${await taskContext(d)}`;
     let last = 0;
     try {
       const r = await sample(prompt, { modelTier: 'default', cache: false, onText: ({ text }) => { REPGEN[d.id].text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
       const text = String((r && r.text) || '').trim();
-      const km = text.match(/^\s*유형\s*[:：]\s*(.+)$/m); const tm = text.match(/^#\s+(.+)$/m);
-      const body = text.replace(/^\s*유형\s*[:：].*$/m, '').replace(/^#\s+.+$/m, '').trim();
-      const rep = { id: 'r' + Date.now().toString(36), task_id: d.id, kind: km ? km[1].trim() : kind, title: tm ? tm[1].trim() : d.title, body, ai, by: 'manual', created: new Date().toISOString() };
+      const tm = text.match(/^#\s+(.+)$/m);
+      const body = text.replace(/^#\s+.+$/m, '').trim();
+      const rep = { id: 'r' + Date.now().toString(36), task_id: d.id, kind: rec ? rec.title : '직접 요청', title: tm ? tm[1].trim() : (rec ? rec.title : d.title), body, prompt: promptText, ai, by: 'manual', created: new Date().toISOString() };
       if (LIVE.db) { await LIVE.db.doc('reports/' + rep.id).set(rep); } else { S.dirReps = S.dirReps || {}; (S.dirReps[d.id] = S.dirReps[d.id] || []).unshift(rep); }
-      REPGEN[d.id] = { busy: false, open: rep.id };
-      toast('AI 리포트를 만들었습니다');
+      REPGEN[d.id] = { busy: false, open: rep.id }; RECSEL[d.id] = null;
+      toast('리포트를 만들었습니다 — 아래 「지난 요청」에 쌓였습니다');
     } catch (e) {
       REPGEN[d.id] = { busy: false, err: e && e.code === 'not_granted' ? 'Claude 사용이 허용되지 않았습니다.' : e && e.code === 'rate_limited' ? '잠시 뒤에 다시 시도해 주세요.' : '리포트를 만들지 못했습니다(' + (e && e.code || '오류') + ').' };
     }
     rerender();
   }
-  function repTab(d) {
-    const reps = repsOf(d); const gen = REPGEN[d.id] || {}; const ai = aiOf(d); const pl = planOf(d);
-    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? LIVE.cfg.secondBrain.name : '';
-    return `<div class="dir-rep">
-      <div class="dir-fields">
-        <div class="dir-f"><span class="k">담당 AI</span><div class="v"><select class="dir-inline" aria-label="담당 AI" data-act="dirAi" data-id="${esc(d.id)}">${aiList().map((p) => `<option value="${esc(p.id)}" ${p.id === ai ? 'selected' : ''}>${esc(p.name)}${aiReady(p.id) ? '' : ' (연결 필요)'}</option>`).join('')}</select></div></div>
-        <div class="dir-f"><span class="k">세컨드브레인</span><div class="v small">${sb ? esc(sb) : '<span class="muted">지정 안 됨 · 관리자 메뉴에서 지정</span>'}</div></div>
-        <div class="dir-f"><span class="k">오늘 계획</span><div class="v small">${pl ? `${esc(pl.kind || '리포트')} · ${esc(pl.status || '예정')}` : '<span class="muted">매일 18:00에 AI가 필요한 태스크를 골라 리포트를 씁니다</span>'}</div></div>
-      </div>
-      <div class="row dir-repmake"><select id="rep-kind" aria-label="리포트 유형">${REP_KINDS.map((k) => `<option>${k}</option>`).join('')}</select>
-        <button type="button" class="btn primary sm" data-act="repMake" data-id="${esc(d.id)}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '작성 중…' : '지금 리포트 만들기'}</button>
-        ${aiReady(ai) ? '' : `<span class="small muted">${esc(aiName(ai))}는 연결 전이라 자동 작성 계획에만 올라갑니다</span>`}</div>
-      ${gen.err ? `<p class="small dir-err" style="margin:0">${esc(gen.err)}</p>` : ''}
-      ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : '<p class="muted">생각하는 중…</p>'}</div>` : ''}
-      <div class="dir-replist">${reps.map((r) => `<details class="dir-repitem" data-rid="${esc(r.id)}" ${gen.open === r.id || REPOPEN[r.id] ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))} · ${r.by === 'schedule' ? '정기 작성' : '직접 요청'}</span></summary>
+  function repItem(d, r) {
+    return `<details class="dir-repitem" data-rid="${esc(r.id)}" ${(REPGEN[d.id] || {}).open === r.id || REPOPEN[r.id] ? 'open' : ''}><summary><span class="pill">${esc(r.kind || '리포트')}</span><b>${esc(r.title || '')}</b><span class="small muted">${esc(aiName(r.ai || 'claude'))} · ${esc(when(r.created))}</span></summary>
+        ${r.prompt ? `<p class="small muted dir-repprompt">요청: ${esc(r.prompt)}</p>` : ''}
         <div class="dir-repdoc">${mdHtml(r.body)}</div>
         <div class="row dir-repsend">
           ${isAsana(d) ? `<button type="button" class="btn sm" data-act="repAsana" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 'a'] ? 'disabled' : ''}>${REPSEND[r.id + 'a'] ? '다는 중…' : r.asana_at ? 'Asana 댓글 다시 달기' : 'Asana 댓글로 달기'}</button>` : ''}
           <button type="button" class="btn sm" data-act="repSlack" data-id="${esc(r.id)}" data-task="${esc(d.id)}" ${REPSEND[r.id + 's'] || !d.assignee || d.assignee === '미지정' || isGoal(d) ? 'disabled' : ''} title="${isGoal(d) ? '목표는 담당이 부서라 개인 Slack으로 보낼 수 없습니다' : ''}">${REPSEND[r.id + 's'] ? '보내는 중…' : r.slack_at ? 'Slack 다시 보내기' : `Slack으로 ${esc(d.assignee && d.assignee !== '미지정' && !isGoal(d) ? d.assignee + '님께' : '')} 보내기`}</button>
           <span class="small muted">${[r.asana_at ? 'Asana 댓글 ' + esc(when(r.asana_at)) : '', r.slack_at ? 'Slack ' + esc(when(r.slack_at)) : ''].filter(Boolean).join(' · ')}</span>
-          <button type="button" class="dir-link" data-act="repDel" data-id="${esc(r.id)}" data-task="${esc(d.id)}">이 리포트 지우기</button></div></details>`).join('') || '<p class="muted small" style="margin:0">아직 리포트가 없습니다.</p>'}</div>
+          <button type="button" class="dir-link" data-act="repDel" data-id="${esc(r.id)}" data-task="${esc(d.id)}">이 리포트 지우기</button></div></details>`;
+  }
+  function repTab(d) {
+    const reps = repsOf(d); const gen = REPGEN[d.id] || {}; const ai = aiOf(d); const pl = planOf(d);
+    const auto = reps.filter((r) => r.by === 'schedule'); const mine = reps.filter((r) => r.by !== 'schedule');
+    const sb = LIVE.cfg && LIVE.cfg.secondBrain && LIVE.cfg.secondBrain.name ? LIVE.cfg.secondBrain.name : '';
+    const rc = REC[d.id] || {}; const recs = recsOf(d); const sel = RECSEL[d.id];
+    if (!recs && !rc.busy) setTimeout(() => loadRecs(d), 0);
+    return `<div class="dir-rep">
+      <div class="dir-fields">
+        <div class="dir-f"><span class="k">담당 AI</span><div class="v"><select class="dir-inline" aria-label="담당 AI" data-act="dirAi" data-id="${esc(d.id)}">${aiList().map((p) => `<option value="${esc(p.id)}" ${p.id === ai ? 'selected' : ''}>${esc(p.name)}${aiReady(p.id) ? '' : ' (연결 필요)'}</option>`).join('')}</select></div></div>
+        <div class="dir-f"><span class="k">세컨드브레인</span><div class="v small">${sb ? esc(sb) : '<span class="muted">지정 안 됨 · 관리자 메뉴에서 지정</span>'}</div></div>
+      </div>
+
+      <section class="dir-repsec"><h4>AI가 판단해 만든 리포트 <span class="num muted">${auto.length}</span></h4>
+        ${pl ? `<p class="small muted" style="margin:0 0 6px">오늘 계획: ${esc(pl.kind || '리포트')} · ${esc(pl.status || '예정')}</p>` : ''}
+        <div class="dir-replist">${auto.map((r) => repItem(d, r)).join('') || '<p class="muted small" style="margin:0">매일 18:00에 AI가 이 태스크에 필요하다고 판단하면 여기에 올라옵니다.</p>'}</div></section>
+
+      <section class="dir-repsec"><div class="row" style="justify-content:space-between"><h4 style="margin:0">Claude가 만들어 드릴 수 있는 것</h4><button type="button" class="btn sm" data-act="recReset" data-id="${esc(d.id)}" ${rc.busy ? 'disabled' : ''}>${rc.busy ? '추천 만드는 중…' : '추천 리스트 바꾸기'}</button></div>
+        ${rc.note ? `<p class="small muted" style="margin:4px 0 0">${esc(rc.note)}</p>` : ''}
+        ${aiReady(ai) ? '' : `<p class="small muted" style="margin:4px 0 0">${esc(aiName(ai))}는 연결 전이라 지금은 만들 수 없습니다. 담당 AI를 Claude로 바꾸면 바로 요청할 수 있습니다.</p>`}
+        <div class="dir-recs">${recs ? recs.map((x, i) => `<div class="dir-rec ${sel === i ? 'on' : ''}">
+            <button type="button" class="dir-rec-h" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}" aria-expanded="${sel === i}"><b>${esc(x.title)}</b><span class="small muted">${esc(x.why)}</span></button>
+            ${sel === i ? `<div class="dir-rec-body"><label class="f">세부 요청(고쳐서 보낼 수 있습니다)<textarea id="rec-prompt" rows="5">${esc(x.prompt)}</textarea></label>
+              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '만드는 중…' : 'Claude에게 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div></div>` : ''}
+          </div>`).join('') : `<p class="small muted" style="margin:0"><span class="dir-spin sm" aria-hidden="true"></span>이 태스크에 맞는 추천을 고르는 중…</p>`}</div>
+        ${gen.err ? `<p class="small dir-err" style="margin:6px 0 0">${esc(gen.err)}</p>` : ''}
+        ${gen.busy ? `<div class="dir-repdoc live" style="margin-top:8px">${gen.text ? mdHtml(gen.text) : '<p class="muted">생각하는 중…</p>'}</div>` : ''}
+      </section>
+
+      <section class="dir-repsec"><h4>지난 요청 리포트 <span class="num muted">${mine.length}</span></h4>
+        <div class="dir-replist">${mine.map((r) => repItem(d, r)).join('') || '<p class="muted small" style="margin:0">아직 요청해서 만든 리포트가 없습니다.</p>'}</div></section>
     </div>`;
   }
   APP.acts.repOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; S.ui.paneTab = 'rep'; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; focusLater('#dir-dlg'); };
   APP.acts.paneTab = (el) => { S.ui.paneTab = el.dataset.v; };
-  APP.acts.repMake = (el) => { const d = find(el.dataset.id); const k = document.getElementById('rep-kind'); if (d) setTimeout(() => makeReport(d, k ? k.value : '자동 판단'), 0); };
+  APP.acts.recPick = (el) => { const i = +el.dataset.v; RECSEL[el.dataset.id] = RECSEL[el.dataset.id] === i ? null : i; if (RECSEL[el.dataset.id] != null) focusLater('#rec-prompt'); };
+  APP.acts.recReset = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => loadRecs(d, true), 0); };
+  APP.acts.recRun = (el) => {
+    const d = find(el.dataset.id); const recs = d && recsOf(d); const rec = recs && recs[+el.dataset.v];
+    const ta = document.getElementById('rec-prompt'); const text = (ta ? ta.value : rec && rec.prompt || '').trim();
+    if (!d || !text) { toast('요청 내용을 적어 주세요'); return; }
+    if (rec) rec.prompt = text;
+    setTimeout(() => makeReport(d, rec, text), 0);
+  };
   APP.acts.repDel = (el) => {
     const id = el.dataset.id; const tid = el.dataset.task;
     if (LIVE.db) LIVE.db.doc('reports/' + id).delete().then(() => toast('리포트를 지웠습니다')).catch((e) => toast('지우지 못했습니다(' + (e && e.code || '오류') + ')'));
