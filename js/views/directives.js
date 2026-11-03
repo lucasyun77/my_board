@@ -36,9 +36,10 @@
     secName: { '지시할일후보': '지시', '수행 중': '진행', '대기': '보고대기', '완료': '완료', '보류중': '보류', '취소': '보류' },
     prioField: '1215612528697109', prioOpt: { '높음': '1215612528697112', '중간': '1215612528697111', '낮음': '1215612528697110' },
     brandField: '1215612428940515',
-    fields: 'name,assignee.name,due_on,created_at,modified_at,completed,memberships.section.name,memberships.project.gid,permalink_url,custom_fields.name,custom_fields.display_value'
+    fields: 'name,assignee.name,assignee.email,completed_at,due_on,created_at,modified_at,completed,memberships.section.name,memberships.project.gid,permalink_url,custom_fields.name,custom_fields.display_value'
   };
   const hasClaude = !!(window.claude && typeof window.claude.use === 'function');
+  const OVR = {}; /* 화면에서 바꾼 값: Asana가 따라올 때까지(최대 10분) 유지 */
   const LIVE = { state: hasClaude ? 'loading' : 'off', db: null, mcp: null, people: {}, staff: [], cw: {}, goals: null, goalsAt: '', track: {}, asana: null, asanaAt: 0, asanaFrom: '', asanaErr: null, busy: false, timer: null };
   const LIVE_TAGS = [
     ['lb-PC', '아이센스PC', '#2F6E4E', 'Asana 브랜드 필드'], ['lb-BT', '벌툰', '#C0392B', 'Asana 브랜드 필드'], ['lb-KK', '꼬치의품격', '#B7791F', 'Asana 브랜드 필드'], ['lb-SJ', '생전포차', '#D45D8C', 'Asana 브랜드 필드'],
@@ -81,6 +82,8 @@
       priority: tr.priority === '긴급' && priority === '높음' ? '긴급' : priority, status, tags,
       source_url: t.permalink_url || '', result_url: tr.result_url || '', memo: tr.memo || '',
       updated_at: String(t.modified_at || '').slice(0, 10) || S.today, asana_gid: String(t.gid), section: sec,
+      completed_at: t.completed_at || '', assignee_email: t.assignee && t.assignee.email ? String(t.assignee.email) : '',
+      ack: tr.ack || (status === '완료' && ((t.completed_at && t.completed_at < ACK_LAUNCH) || (!t.completed_at && String(t.modified_at || '') < ACK_LAUNCH)) ? 'before' : ''),
       log: Array.isArray(tr.log) ? tr.log.slice() : []
     };
     if (sec === '취소') d.log.unshift({ at: d.updated_at, text: 'Asana에서 취소 구역에 있음' });
@@ -115,6 +118,15 @@
     const list = [];
     (LIVE.asana || []).filter((t) => (t.memberships || []).some((m) => m && m.project && m.project.gid === ASANA.project)).forEach((t) => list.push(fromAsana(t)));
     (LIVE.goals || []).forEach((g) => list.push(fromGoal(g)));
+    list.forEach((d) => {
+      const o = OVR[d.id]; if (!o) return;
+      if (['title', 'due_at', 'priority', 'status'].every((k) => d[k] === o[k])) { if (o.completed_at && !d.completed_at) d.completed_at = o.completed_at; delete OVR[d.id]; return; }
+      if (Date.now() - o.at > 600000) { delete OVR[d.id]; return; }
+      ['title', 'due_at', 'priority', 'status'].forEach((k) => { d[k] = o[k]; });
+      if (o.completed_at) d.completed_at = o.completed_at;
+      if (d.status === '완료' && !(LIVE.track[d.id] || {}).ack) d.ack = '';
+      if (o.fail) d.synced_fail = o.fail;
+    });
     const keep = new Map(S.directives.filter((d) => d.src).map((d) => [d.id, d]));
     list.forEach((d) => { const old = keep.get(d.id); if (old) { d._st = d.status; if (old.synced_fail) d.synced_fail = old.synced_fail; } else d._st = d.status; });
     S.directives.splice(0, S.directives.length, ...list);
@@ -191,6 +203,7 @@
       if (d.priority === '긴급' || o.priority === '긴급') writeTrack(d, { priority: d.priority });
     }
     if (Object.keys(t).length === 1) return;
+    OVR[d.id] = { title: d.title, due_at: d.due_at, priority: d.priority, status: d.status, completed_at: d.completed_at || '', at: Date.now() };
     d.synced_fail = ''; d._pushing = true; rerender();
     try {
       const r = await LIVE.mcp.callTool(ASANA.server, 'update_tasks', { tasks: [t] });
@@ -199,8 +212,9 @@
       d._orig = { title: d.title, due_at: d.due_at, priority: d.priority, status: d.status };
       toast(`Asana에 반영했습니다 · ${why || '변경'}`);
       try { await LIVE.mcp.invalidate(ASANA.server, 'search_tasks'); } catch (e) { /* 캐시 없음 */ }
+      clearTimeout(LIVE.refetchT); LIVE.refetchT = setTimeout(() => fetchAsana(true), 4000);
     } catch (e) {
-      d.synced_fail = errText(e);
+      d.synced_fail = errText(e); if (OVR[d.id]) OVR[d.id].fail = d.synced_fail;
       toast('Asana 반영 실패 — ' + d.synced_fail);
     }
     d._pushing = false; rerender();
@@ -296,6 +310,7 @@
 
   function filtered(f) {
     let list = applyFilter(S.directives, f);
+    if (f.status !== '완료') list = list.filter((d) => !isAcked(d));
     if (f.due === 'today') list = list.filter((d) => isOpen(d) && d.due_at === S.today);
     if (f.due === 'd3') list = list.filter((d) => isOpen(d) && d.due_at >= S.today && d.due_at <= dayStr(3));
     if (f.due === 'stale') list = list.filter(stl);
@@ -514,7 +529,7 @@
         <button type="button" class="dir-iconbtn" data-act="dirClose" aria-label="패널 닫기" title="닫기 (Esc)">→|</button>
       </div>
       <div class="dir-pane-body">
-        ${done ? '<div class="dir-donebanner">이 작업은 완료되었습니다.</div>' : ''}
+        ${done ? `<div class="dir-donebanner">이 작업은 완료되었습니다.${isPendingAck(d) ? ' 위쪽 「완료 알림」에서 확인하면 목록에서 정리되고 칭찬이 갑니다.' : d.ack && d.ack !== 'before' ? ' 확인 ' + esc(when(d.ack)) : ''}</div>` : ''}
         <div class="row small dir-pane-kind">${srcPill(d)}${alerts(d)}${det && det.state === 'loading' ? '<span class="muted">Asana에서 불러오는 중…</span>' : ''}</div>
         <h2 class="dir-pane-title" id="dlg-title">${esc(d.title)}</h2>
         ${edit ? `<form class="form" data-form="dirEdit" data-id="${esc(d.id)}">${fieldsHtml('de', d)}<div class="row wide"><button class="btn primary">저장</button><button type="button" class="btn sm" data-act="dirEditToggle">취소</button></div></form>` : `${fields}${desc}${subs}${memo}`}
@@ -604,6 +619,7 @@
 
       ${syncBar()}
       ${newPanel()}
+      ${ackPanel(S.directives.filter(isPendingAck))}
 
       <div class="dir-stats" role="group" aria-label="경보·현황 (누르면 필터)">
         ${stat('overdue', '기한 경과', over.length, 'crit', f.due === 'overdue')}
@@ -633,7 +649,7 @@
       </section>
 
       <div class="dir-tabs" role="tablist" aria-label="지시 관리 화면">${[['task', '태스크', list.length], ['org', '조직별 이행률', null], ['tags', '태그 관리', S.tags.length], ['cw', '전사 지시', Object.keys(LIVE.cw || {}).length || null]].map(([v, l, n]) => `<button type="button" role="tab" data-act="dirTab" data-v="${v}" aria-selected="${tab === v}">${l}${n != null ? ` <span class="num">${n}</span>` : ''}</button>`).join('')}</div>
-      ${tab === 'org' ? orgPanel() : tab === 'tags' ? viewTags() : tab === 'cw' ? cwPanel() : `<div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
+      ${tab === 'org' ? orgPanel() : tab === 'tags' ? viewTags() : tab === 'cw' ? cwPanel() : `<div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${f.status !== '완료' && S.directives.some(isAcked) ? ` · <button type="button" class="dir-link" data-act="dirShowDone">확인 끝난 완료 ${S.directives.filter(isAcked).length}건 보기</button>` : ''}${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
         <div class="seg" role="group" aria-label="보기 방식">${['목록', '칸반', '타임라인'].map((m) => `<button type="button" data-act="dirView" data-v="${m}" aria-pressed="${m === mode}">${m}</button>`).join('')}</div></div>
       ${body}`}
       ${detailDialog()}`;
@@ -654,6 +670,7 @@
     d.status = prev === '완료' ? (d._before_done && d._before_done !== '완료' ? d._before_done : '진행') : '완료';
     if (prev !== '완료') d._before_done = prev;
     d.updated_at = S.today;
+    if (d.status === '완료') { d.completed_at = new Date().toISOString(); d.ack = ''; d.pendingAck = true; delete PR[d.id]; }
     if (isAsana(d)) pushAsana(d, d.status === '완료' ? '완료로 표시' : '완료 취소');
     else if (isGoal(d)) writeTrack(d, { status: d.status }, '상태 → ' + d.status);
     else toast(d.status === '완료' ? '완료로 표시했습니다' : '완료를 취소했습니다');
@@ -687,6 +704,7 @@
     if (S.ui.dirReturn) focusLater(`[data-act="dirOpen"][data-id="${S.ui.dirReturn}"]`);
   };
   APP.acts.dirEditToggle = () => { S.ui.dirEdit = !S.ui.dirEdit; focusLater(S.ui.dirEdit ? '#de-title' : '#dir-dlg'); };
+  APP.acts.dirShowDone = () => { setF({ status: '완료' }); };
   APP.acts.dirTab = (el) => { S.ui.dirTab = el.dataset.v; };
   APP.acts.dirSrc = (el) => { setF({ src: el.dataset.v }); };
   APP.acts.dirAllow = () => { LIVE.asanaErr = null; fetchAsana(true, true); };
@@ -730,6 +748,7 @@
   document.addEventListener('change', (e) => {
     const el = e.target; if (!el || el.dataset.act !== 'dirStatus') return;
     const d = find(el.dataset.id); if (!d) return;
+    if (d.status === '완료' && !d.ack) { d.completed_at = new Date().toISOString(); d.pendingAck = true; delete PR[d.id]; }
     if (isAsana(d)) pushAsana(d, '상태 ' + d.status);
     else if (isGoal(d)) writeTrack(d, { status: d.status }, '상태 → ' + d.status).then(() => toast('목표 상태를 저장했습니다'));
   });
@@ -827,6 +846,107 @@
     addLog(d, changed.join('·') + ' 수정');
     toast(changed.join('·') + ' 저장 · 다음 동기화 때 Asana에 반영');
   };
+
+  /* ================= 완료 알림 → 확인 → Slack 칭찬 ================= */
+  const ACK_LAUNCH = '2026-11-03T00:00:00Z'; /* 이 기능 이전에 끝난 일은 조용히 정리된 것으로 본다 */
+  const PR = {}; const ACKBUSY = {};
+  const isPendingAck = (d) => d.status === '완료' && !d.ack && (isAsana(d) || (!d.src && d.pendingAck));
+  const isAcked = (d) => d.status === '완료' && !!d.ack;
+  const fallbackPraise = (d) => `${d.assignee && d.assignee !== '미지정' ? d.assignee + '님' : '여러분'}, "${d.title.replace(/^\[[^\]]+\]\s*/, '').replace(/\s+—\s+[^—]+$/, '')}" 마무리해 주셔서 고맙습니다. 끝까지 챙겨 준 덕분에 한 걸음 나아갔습니다. 수고 많으셨습니다.\n— 윤석범`;
+
+  async function draftPraise(d) {
+    if (PR[d.id]) return;
+    const saved = (LIVE.track[d.id] || {}).praise_draft;
+    if (saved) { PR[d.id] = { state: 'ok', text: saved, by: '저장된 초안' }; return; }
+    PR[d.id] = { state: 'loading' }; rerender();
+    let text = ''; let note = '';
+    try {
+      const sample = hasClaude ? await window.claude.use('sample') : null;
+      if (sample) {
+        if (isAsana(d) && LIVE.mcp) await loadDetail(d);
+        const det = isAsana(d) ? DET[d.asana_gid] : null;
+        const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 700);
+        const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-5).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 200)}`).join('\n');
+        const prompt = `아이센스그룹 윤석범 회장이 업무를 끝낸 직원에게 보내는 Slack 칭찬 메시지를 써 주세요.\n조건: 한국어 존댓말, 2~3문장(150자 안팎), 그 직원이 실제로 한 일을 구체적으로 짚어 고마움을 전할 것, 과장·아부 표현 금지, 이모지는 많아야 1개, 마지막 줄은 "— 윤석범". 메시지 본문만 출력하세요.\n\n직원: ${d.assignee} (${d.org})\n업무: ${d.title}\n설명: ${notes || '(없음)'}\n최근 댓글:\n${cmts || '(없음)'}\n결과물 링크: ${safeUrl(d.result_url) || '(없음)'}\n현황판 메모: ${d.memo || '(없음)'}`;
+        const r = await sample(prompt, { modelTier: 'quick' });
+        text = String((r && r.text) || '').trim();
+      } else note = 'Claude 초안을 쓸 수 없어 기본 문구를 넣었습니다';
+    } catch (e) { note = e && e.code === 'not_granted' ? 'Claude 사용이 허용되지 않아 기본 문구를 넣었습니다' : 'Claude 초안 실패 — 기본 문구를 넣었습니다'; }
+    PR[d.id] = { state: 'ok', text: text || fallbackPraise(d), by: text ? 'Claude 초안' : note || '기본 문구' };
+    if (text && LIVE.db && d.src) writeTrack(d, { praise_draft: text });
+    rerender();
+  }
+
+  async function findSlackId(d) {
+    const tr = LIVE.track[d.id] || {};
+    if (tr.slack_id) return { id: tr.slack_id, label: tr.slack_label || d.assignee };
+    if (!LIVE.mcp) throw { code: 'not_granted' };
+    const q = d.assignee_email || d.assignee;
+    if (!q || q === '미지정') return null;
+    const r = await LIVE.mcp.callTool('Slack', 'slack_search_users', { query: q, response_format: 'concise', limit: 5 });
+    const p = r && r.payload;
+    const txt = typeof p === 'string' ? p : p && typeof p.results === 'string' ? p.results : JSON.stringify(p || '');
+    const hits = [...txt.matchAll(/\d+\.\s*([^\n]*?)\s+-\s+(U[A-Z0-9]{6,})\s+-/g)].map((m) => ({ label: m[1].trim(), id: m[2] }));
+    if (hits.length === 1 || (hits.length > 1 && d.assignee_email)) return hits[0];
+    const exact = hits.filter((h) => h.label.startsWith(d.assignee));
+    return exact.length === 1 ? exact[0] : null;
+  }
+
+  async function ackDone(d, text, send) {
+    if (ACKBUSY[d.id]) return;
+    ACKBUSY[d.id] = send ? 'Slack 보내는 중…' : '정리하는 중…'; rerender();
+    let slack = null;
+    try {
+      if (send) {
+        if (!text.trim()) { toast('칭찬 내용을 적어 주세요'); ACKBUSY[d.id] = null; rerender(); return; }
+        slack = await findSlackId(d);
+        if (!slack) { toast(`Slack에서 ${d.assignee}님을 찾지 못했습니다. "보내지 않고 확인"을 눌러 정리할 수 있습니다.`); ACKBUSY[d.id] = null; rerender(); return; }
+        await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: slack.id, message: text.trim() });
+      }
+    } catch (e) {
+      ACKBUSY[d.id] = null;
+      const c = e && e.code;
+      const msg = c === 'needs_reauth' ? 'Slack 연결이 만료됐습니다. claude.ai 설정 → 커넥터에서 다시 연결해 주세요.'
+        : c === 'server_not_connected' ? 'Slack 커넥터가 없습니다. claude.ai 설정 → 커넥터에서 추가해 주세요.'
+        : ['not_in_manifest', 'approval_required', 'consent_required'].includes(c) ? '이 페이지에서 Slack 사용이 허용되지 않았습니다. 다시 누르면 허용 창이 뜹니다.'
+        : c === 'server_unavailable' || c === 'upstream_error' ? 'Slack 응답이 없습니다. 메시지가 갔는지 Slack에서 확인한 뒤, 안 갔으면 다시 보내 주세요.'
+        : c === 'tool_error' ? 'Slack이 거절했습니다: ' + String(e.message || '').slice(0, 100)
+        : 'Slack으로 보내지 못했습니다(' + (c || '오류') + ').';
+      PR[d.id] = Object.assign({}, PR[d.id] || {}, { err: msg });
+      toast(msg); rerender(); return;
+    }
+    const at = new Date().toISOString();
+    d.ack = at; d.pendingAck = false;
+    if (d.src) await writeTrack(d, Object.assign({ ack: at, praise_sent: send ? text.trim() : '' }, slack ? { slack_id: slack.id, slack_label: slack.label } : {}), send ? 'Slack 칭찬 보냄 · 완료 확인' : '완료 확인(칭찬 안 보냄)');
+    else addLog(d, send ? 'Slack 칭찬 보냄(목업) · 완료 확인' : '완료 확인');
+    ACKBUSY[d.id] = null;
+    toast(send ? `${d.assignee}님에게 Slack으로 칭찬을 보냈고 목록에서 정리했습니다` : '확인하고 목록에서 정리했습니다');
+    rerender();
+  }
+
+  function ackPanel(list) {
+    if (!list.length) return '';
+    setTimeout(() => list.slice(0, 3).forEach((d) => draftPraise(d)), 0);
+    return `<section class="panel dir-acks" aria-labelledby="h-acks"><div class="row" style="justify-content:space-between"><h3 id="h-acks">완료 알림 <span class="num">${list.length}</span>건</h3><span class="small muted">확인을 누르면 목록에서 정리되고, 담당자에게 Slack으로 칭찬이 갑니다.</span></div>
+      <div class="dir-ack-list">${list.map((d) => {
+        const pr = PR[d.id]; const busy = ACKBUSY[d.id]; const noOne = !d.assignee || d.assignee === '미지정';
+        const doneAt = d.completed_at ? when(d.completed_at) : '';
+        return `<div class="dir-ack" data-id="${esc(d.id)}">
+          <div class="dir-ack-h"><span class="dir-ack-ck" aria-hidden="true">✓</span><div style="min-width:0"><button type="button" class="dir-title" data-act="dirOpen" data-id="${esc(d.id)}">${esc(d.title)}</button>
+            <div class="small muted"><span class="dir-who">${avatar(d.assignee)}${esc(d.assignee)}${d.org && d.org !== d.assignee ? ' · ' + esc(d.org) : ''}</span>${doneAt ? ' · 완료 ' + esc(doneAt) : ''}${isAsana(d) ? ' · Asana' : ''}</div></div></div>
+          ${noOne ? '<p class="small muted" style="margin:0">담당자가 지정되지 않아 칭찬을 보낼 사람이 없습니다.</p>' : `<label class="f">Slack 칭찬 <span class="small muted">${pr && pr.state === 'loading' ? '· Claude가 초안을 쓰는 중…' : pr && pr.by ? '· ' + esc(pr.by) + ' · 고쳐서 보낼 수 있습니다' : ''}</span><textarea id="pr-${esc(d.id)}" rows="3" ${pr && pr.state === 'loading' ? 'placeholder="초안을 쓰는 중…"' : ''}>${esc(pr && pr.text ? pr.text : pr && pr.state === 'loading' ? '' : fallbackPraise(d))}</textarea></label>`}
+          ${pr && pr.err ? `<p class="small dir-err" style="margin:0">${esc(pr.err)}</p>` : ''}
+          <div class="row">${busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(busy)}</span>` : `
+            ${noOne ? '' : `<button type="button" class="btn primary sm" data-act="ackSend" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>확인 · 칭찬 보내기</button>`}
+            <button type="button" class="btn sm" data-act="ackOnly" data-id="${esc(d.id)}">${noOne ? '확인' : '보내지 않고 확인'}</button>
+            ${noOne ? '' : `<button type="button" class="btn sm" data-act="ackRedraft" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>초안 다시 쓰기</button>`}`}</div>
+        </div>`;
+      }).join('')}</div></section>`;
+  }
+  const ackText = (el) => { const box = el.closest('.dir-ack'); const ta = box && box.querySelector('textarea'); return ta ? ta.value : ''; };
+  APP.acts.ackSend = (el) => { const d = find(el.dataset.id); if (!d) return; const t = ackText(el); PR[d.id] = Object.assign({}, PR[d.id] || {}, { text: t, err: '' }); if (!d.src) { if (!LIVE.mcp) { ackDone(d, t, false).then(() => toast('목업이라 Slack은 보내지 않고 정리했습니다')); return; } } setTimeout(() => ackDone(d, t, true), 0); };
+  APP.acts.ackOnly = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => ackDone(d, '', false), 0); };
+  APP.acts.ackRedraft = (el) => { const d = find(el.dataset.id); if (!d) return; delete PR[d.id]; if (LIVE.track[d.id]) LIVE.track[d.id].praise_draft = ''; setTimeout(() => draftPraise(d), 0); };
 
   /* ================= 전사 지시 (전 직원에게 같은 지시 → 개인별 Asana 하위 작업·진행 표시) ================= */
   const CW = { sending: null, confirm: null, delAsk: null, err: {}, busy: {} };

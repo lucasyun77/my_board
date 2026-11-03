@@ -280,3 +280,14 @@
 }
 .dir-av.photo { background: #F3E2C2; overflow: hidden; }
 .dir-av.photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; display: block; }
+
+/* 완료 알림 → 확인 → Slack 칭찬 */
+.dir-acks { border-color: var(--ok); background: linear-gradient(0deg, var(--paper), var(--paper)), var(--paper); }
+.dir-acks h3 .num { color: var(--ok); }
+.dir-ack-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 10px; margin-top: 10px; }
+.dir-ack { display: flex; flex-direction: column; gap: 8px; border: 1.5px solid var(--line); border-radius: 14px; padding: 12px; background: var(--paper2); min-width: 0; }
+.dir-ack-h { display: flex; gap: 10px; align-items: flex-start; }
+.dir-ack-ck { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 12px; font-weight: 700; margin-top: 2px; }
+.dir-ack .dir-who { gap: 6px; }
+.dir-ack .dir-av { width: 22px; height: 22px; font-size: 11px; }
+.dir-ack textarea { min-height: 76px; background: var(--paper); }
