@@ -76,5 +76,8 @@
     return `<svg width="${size}" height="${size}" viewBox="44 16 52 52" aria-hidden="true">${head()}</svg>`;
   }
 
-  window.ART = { mascot, face };
+  /* V12: 회장님이 주신 프로필 이미지로 교체. 기존 SVG 캐릭터는 쓰지 않음(함수 이름은 호환용으로 유지). */
+  const ASSETS = window.ASSETS || (window.ASSETS = { profile: 'assets/profile.webp', heroBg: 'assets/hero-bg.webp' });
+  const avatar = (size, label = '서하 실장') => `<img class="avatar-img" src="${ASSETS.profile}" alt="${label}" width="${size}" height="${size}" style="width:${size}px;height:${size}px">`;
+  window.ART = { mascot: (pose, size = 64) => avatar(Math.min(88, Math.round(size * 0.62))), face: (size = 44) => avatar(size), avatar };
 })();

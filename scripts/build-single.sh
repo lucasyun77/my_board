@@ -6,10 +6,11 @@ mkdir -p dist
 {
   echo '<title>회장 개인현황판</title>'
   echo '<meta name="claude:viewport-fit-sides" content="cover">'
-  echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700\&family=Noto+Sans+KR:wght@400;500;700;900\&display=swap">'
+  echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap">'
   echo '<style>'; cat css/style.css css/views/*.css; echo '</style>'
   sed -n '/<body>/,/<\/body>/p' index.html | sed '1d;$d' | grep -v '<script src='
   echo '<script>'; cat js/data.js; echo '</script>'
+  echo "<script>window.ASSETS={profile:'data:image/webp;base64,$(base64 -w0 assets/profile.webp)',heroBg:'data:image/webp;base64,$(base64 -w0 assets/hero-bg.webp)'};</script>"
   echo '<script>'; cat js/art.js; echo '</script>'
   echo '<script>'; cat js/app.js; echo '</script>'
   for f in js/views/*.js; do echo '<script>'; cat "$f"; echo '</script>'; done
