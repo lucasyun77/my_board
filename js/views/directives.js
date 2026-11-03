@@ -39,7 +39,7 @@
     fields: 'name,assignee.name,due_on,created_at,modified_at,completed,memberships.section.name,memberships.project.gid,permalink_url,custom_fields.name,custom_fields.display_value'
   };
   const hasClaude = !!(window.claude && typeof window.claude.use === 'function');
-  const LIVE = { state: hasClaude ? 'loading' : 'off', db: null, mcp: null, people: {}, goals: null, goalsAt: '', track: {}, asana: null, asanaAt: 0, asanaFrom: '', asanaErr: null, busy: false, timer: null };
+  const LIVE = { state: hasClaude ? 'loading' : 'off', db: null, mcp: null, people: {}, staff: [], cw: {}, goals: null, goalsAt: '', track: {}, asana: null, asanaAt: 0, asanaFrom: '', asanaErr: null, busy: false, timer: null };
   const LIVE_TAGS = [
     ['lb-PC', '아이센스PC', '#2F6E4E', 'Asana 브랜드 필드'], ['lb-BT', '벌툰', '#C0392B', 'Asana 브랜드 필드'], ['lb-KK', '꼬치의품격', '#B7791F', 'Asana 브랜드 필드'], ['lb-SJ', '생전포차', '#D45D8C', 'Asana 브랜드 필드'],
     ['lk-지시', '업무지시', '#5B6FB8', '제목 머리말 [업무지시]'], ['lk-기획', '기획지시', '#2F8C7A', '제목 머리말 [기획지시]'], ['lk-보고', '보고요청', '#8C6A4F', '제목 머리말 [보고요청]'], ['lk-회장', '회장 할일', '#3D1E0F', '제목 머리말 [회장 할일]'],
@@ -221,8 +221,9 @@
     if (!db && !mcp) { LIVE.state = 'off'; rerender(); return; }
     if (db) {
       const err = () => {};
-      db.doc('live/people').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && v.map && typeof v.map === 'object') { LIVE.people = v.map; rebuild(); } }, err);
+      db.doc('live/people').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && v.map && typeof v.map === 'object') { LIVE.people = v.map; LIVE.staff = Array.isArray(v.staff) ? v.staff.filter((x) => x && x.n && x.d) : []; rebuild(); rerender(); } }, err);
       db.doc('live/goals').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items)) { LIVE.goals = v.items.filter((g) => g && g.id && g.t); LIVE.goalsAt = String(v.at || '').slice(0, 10); rebuild(); } }, err);
+      db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
       db.doc('live/asana').onSnapshot((s) => {
         const v = s.exists ? s.data() : null;
@@ -628,8 +629,8 @@
         <div id="saveViewBox"></div>
       </section>
 
-      <div class="dir-tabs" role="tablist" aria-label="지시 관리 화면">${[['task', '태스크', list.length], ['org', '조직별 이행률', null], ['tags', '태그 관리', S.tags.length]].map(([v, l, n]) => `<button type="button" role="tab" data-act="dirTab" data-v="${v}" aria-selected="${tab === v}">${l}${n != null ? ` <span class="num">${n}</span>` : ''}</button>`).join('')}</div>
-      ${tab === 'org' ? orgPanel() : tab === 'tags' ? viewTags() : `<div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
+      <div class="dir-tabs" role="tablist" aria-label="지시 관리 화면">${[['task', '태스크', list.length], ['org', '조직별 이행률', null], ['tags', '태그 관리', S.tags.length], ['cw', '전사 지시', Object.keys(LIVE.cw || {}).length || null]].map(([v, l, n]) => `<button type="button" role="tab" data-act="dirTab" data-v="${v}" aria-selected="${tab === v}">${l}${n != null ? ` <span class="num">${n}</span>` : ''}</button>`).join('')}</div>
+      ${tab === 'org' ? orgPanel() : tab === 'tags' ? viewTags() : tab === 'cw' ? cwPanel() : `<div class="dir-resbar"><p class="small" style="margin:0"><b class="num">${list.length}</b>건 / 전체 ${S.directives.length}건${sumParts.length ? ` · <span class="muted">${esc(sumParts.join(' · '))}</span> <button type="button" class="dir-link" data-act="fReset">조건 지우기</button>` : ''}</p>
         <div class="seg" role="group" aria-label="보기 방식">${['목록', '칸반', '타임라인'].map((m) => `<button type="button" data-act="dirView" data-v="${m}" aria-pressed="${m === mode}">${m}</button>`).join('')}</div></div>
       ${body}`}
       ${detailDialog()}`;
@@ -822,6 +823,221 @@
     d.memo = memo; d.result_url = res; d.updated_at = S.today;
     addLog(d, changed.join('·') + ' 수정');
     toast(changed.join('·') + ' 저장 · 다음 동기화 때 Asana에 반영');
+  };
+
+  /* ================= 전사 지시 (전 직원에게 같은 지시 → 개인별 Asana 하위 작업·진행 표시) ================= */
+  const CW = { sending: null, confirm: null, delAsk: null, err: {}, busy: {} };
+  const CW_ST = { done: ['완료', 'st-done'], doing: ['진행 중', 'st-wait'], todo: ['미착수', ''], none: ['Asana 계정 없음', 'st-hold'], fail: ['생성 실패', 'p-urgent'], draft: ['보내기 전', 'st-hold'] };
+  const cwList = () => Object.values(LIVE.cw || {}).sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
+  const cwTargets = (c) => (LIVE.staff || []).filter((s) => !s.leave && (c.scope !== 'depts' || (c.depts || []).includes(s.d)));
+  const cwDepts = () => [...new Set((LIVE.staff || []).map((s) => s.d))];
+  const gidOf = (t) => (t && (t.gid || (t.task && t.task.gid) || (t.data && t.data.gid))) || '';
+  const nameOf = (t) => String((t && (t.name || (t.task && t.task.name) || (t.data && t.data.name))) || '');
+  const whoFromName = (nm) => { const m = String(nm).match(/^.* — ([^·—]+?)\s*·\s*\S+\s*$/); return m ? m[1].trim() : ''; };
+  function cwRows(c) {
+    const prog = (c.prog && c.prog.rows) || {};
+    const sent = c.sent || {};
+    const list = c.status === 'draft' ? cwTargets(c) : (Array.isArray(c.targets) && c.targets.length ? c.targets : cwTargets(c));
+    const sentAt = Date.parse(c.sent_at || '') || 0;
+    return list.map((s) => {
+      const p = prog[s.n] || {};
+      let st;
+      if (!s.gid) st = 'none';
+      else if (c.status === 'draft') st = 'draft';
+      else if (p.done) st = 'done';
+      else if (p.task || sent[s.n]) st = p.mod && sentAt && Date.parse(p.mod) > sentAt + 15 * 60000 ? 'doing' : 'todo';
+      else st = c.status === 'sending' ? 'todo' : 'fail';
+      return Object.assign({}, s, { st, task: p.task || sent[s.n] || '', url: p.url || '', done_at: p.done_at || '', mod: p.mod || '' });
+    });
+  }
+  const cwStat = (rows) => { const r = { n: 0, done: 0, doing: 0, todo: 0, other: 0 }; rows.forEach((x) => { if (x.st === 'none') { r.other++; return; } r.n++; if (x.st === 'done') r.done++; else if (x.st === 'doing') r.doing++; else if (x.st === 'todo' || x.st === 'draft') r.todo++; else r.other++; }); r.pct = r.n ? Math.round(100 * r.done / r.n) : 0; return r; };
+
+  async function cwSave(id, patch, create) {
+    if (!LIVE.db) { toast('저장할 곳이 없습니다(아티팩트에서만 동작)'); return false; }
+    try { if (create) await LIVE.db.doc('cw/' + id).set(patch); else await LIVE.db.doc('cw/' + id).update(patch); return true; } catch (e) { toast('저장 실패(' + (e && e.code || '오류') + ') — 편집 권한을 확인해 주세요'); return false; }
+  }
+
+  async function cwRefresh(c, quiet) {
+    if (!LIVE.mcp || !c || !c.code || c.status === 'draft') return null;
+    CW.busy[c.id] = true; CW.err[c.id] = null; rerender();
+    const gids = (c.targets || []).map((s) => s.gid).filter(Boolean);
+    const rows = {};
+    let ok = true;
+    for (let i = 0; i < gids.length; i += 50) {
+      try {
+        const r = await LIVE.mcp.callTool(ASANA.server, 'search_tasks', { text: c.code, is_subtask: true, assignee_any: gids.slice(i, i + 50).join(','), limit: 100, opt_fields: 'name,assignee.name,completed,completed_at,modified_at,permalink_url,parent.gid' }, { cache: { staleTime: 0, gcTime: 600000, refresh: true } });
+        const p = r && r.payload; const data = p && Array.isArray(p.data) ? p.data : Array.isArray(p) ? p : [];
+        data.forEach((t) => {
+          if (c.parent_gid && t.parent && t.parent.gid && t.parent.gid !== c.parent_gid) return;
+          const who = (t.assignee && t.assignee.name) || whoFromName(t.name);
+          const staff = (c.targets || []).find((s) => s.n === whoFromName(t.name)) || (c.targets || []).find((s) => s.n === who);
+          if (!staff) return;
+          rows[staff.n] = { task: String(t.gid), done: !!t.completed, done_at: t.completed_at || '', mod: t.modified_at || '', url: t.permalink_url || '' };
+        });
+      } catch (e) { ok = false; CW.err[c.id] = e; }
+    }
+    CW.busy[c.id] = false;
+    if (ok) { await cwSave(c.id, { prog: { at: new Date().toISOString(), rows } }); if (!quiet) toast('개인별 진행을 새로 불러왔습니다'); }
+    rerender();
+    return ok ? rows : null;
+  }
+
+  async function cwSend(c) {
+    if (!LIVE.mcp || !LIVE.db) { toast('Asana·저장소가 연결된 보기에서만 보낼 수 있습니다'); return; }
+    let sent = Object.assign({}, c.sent || {});
+    if (c.status !== 'draft') { const rows = await cwRefresh(c, true); if (rows) Object.entries(rows).forEach(([n, r]) => { sent[n] = r.task; }); }
+    const targets = (c.status === 'draft' ? cwTargets(c) : (c.targets || cwTargets(c))).map((s) => ({ n: s.n, d: s.d, g: s.g || '', p: s.p || '', gid: s.gid || '' }));
+    const todo = targets.filter((s) => s.gid && !sent[s.n]);
+    CW.sending = { id: c.id, done: 0, total: todo.length }; CW.confirm = null; rerender();
+    const code = c.code;
+    const notes = [c.body, c.due ? '기한: ' + c.due : '', '', '회장 현황판 전사 지시 · 진행하면서 이 작업에 댓글로 결과를 남기고, 끝나면 완료로 표시해 주세요.', '식별 코드: ' + code].filter((x) => x !== undefined).join('\n').trim();
+    let parent = c.parent_gid || '';
+    await cwSave(c.id, { status: 'sending', targets, code });
+    if (!parent) {
+      try {
+        const task = { name: `[전사지시] ${c.title}`, project_id: ASANA.project, section_id: ASANA.sec['진행'], notes: notes + `\n대상: ${c.scope === 'depts' ? (c.depts || []).join('·') : '전 직원'} ${targets.filter((s) => s.gid).length}명 (개인별 하위 작업)` };
+        if (c.due) task.due_on = c.due;
+        const r = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { default_project: ASANA.project, tasks: [task] });
+        const p = (r && r.payload) || {};
+        parent = gidOf((p.succeeded || [])[0]);
+        if (!parent) throw { code: 'tool_error', message: JSON.stringify((p.failed || [])[0] || p).slice(0, 160) };
+        await cwSave(c.id, { parent_gid: parent });
+      } catch (e) {
+        CW.sending = null;
+        await cwSave(c.id, { status: c.status === 'draft' ? 'draft' : 'partial' });
+        toast('상위 태스크를 만들지 못했습니다 — ' + errText(e) + (e && (e.code === 'server_unavailable' || e.code === 'upstream_error') ? ' Asana에 이미 생겼는지 확인한 뒤 다시 보내 주세요.' : ''));
+        rerender(); return;
+      }
+    }
+    const failed = [];
+    let unknown = false;
+    for (let i = 0; i < todo.length; i += 50) {
+      const chunk = todo.slice(i, i + 50);
+      try {
+        const r = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { tasks: chunk.map((s) => { const t = { name: `[전사지시] ${c.title} — ${s.n} · ${code}`, parent, assignee: s.gid, notes }; if (c.due) t.due_on = c.due; return t; }) });
+        const p = (r && r.payload) || {};
+        (p.succeeded || []).forEach((t) => { const nm = whoFromName(nameOf(t)); const s = chunk.find((x) => x.n === nm); if (s && gidOf(t)) sent[s.n] = gidOf(t); });
+        chunk.filter((s) => !sent[s.n]).forEach((s) => failed.push(s.n));
+      } catch (e) { unknown = unknown || !e || e.code !== 'tool_error'; chunk.forEach((s) => failed.push(s.n)); }
+      CW.sending.done = Math.min(todo.length, i + chunk.length);
+      await cwSave(c.id, { sent });
+      rerender();
+    }
+    CW.sending = null;
+    await cwSave(c.id, { status: failed.length ? 'partial' : 'sent', sent, failed, sent_at: c.sent_at || new Date().toISOString() });
+    toast(failed.length ? `${todo.length - failed.length}명에게 보냈고 ${failed.length}명은 실패했습니다${unknown ? '(일부는 생겼을 수 있어 다시 보내기 전에 확인합니다)' : ''}` : `${todo.length}명에게 Asana 지시를 보냈습니다`);
+    rerender();
+  }
+
+  function cwForm(c) {
+    const depts = cwDepts();
+    c = c || { title: '', body: '', due: '', scope: 'all', depts: [] };
+    return `<form class="form cw-form" data-form="cwSave" data-id="${esc(c.id || '')}">
+      <label class="f wide">지시 내용<input type="text" id="cw-title" name="title" required maxlength="120" value="${esc(c.title)}" placeholder="예: 세컨드브레인을 만드세요"></label>
+      <label class="f wide">설명·완료 기준<textarea id="cw-body" name="body" rows="3" placeholder="무엇을, 어디까지 하면 완료인지">${esc(c.body)}</textarea></label>
+      <label class="f">기한<input type="date" id="cw-due" name="due" value="${esc(c.due || '')}"></label>
+      <fieldset class="f dir-fs"><legend class="small muted">대상</legend><div class="row"><label class="chip"><input type="radio" name="scope" value="all" ${c.scope !== 'depts' ? 'checked' : ''}> 전 직원</label><label class="chip"><input type="radio" name="scope" value="depts" ${c.scope === 'depts' ? 'checked' : ''}> 부서 선택</label></div></fieldset>
+      <fieldset class="wide dir-fs"><legend class="small muted">부서 선택일 때 대상 부서</legend><div class="row">${depts.map((d) => `<label class="chip dir-tagcheck"><input type="checkbox" name="depts" value="${esc(d)}" ${(c.depts || []).includes(d) ? 'checked' : ''}>${esc(d)}</label>`).join('')}</div></fieldset>
+      <div class="row wide"><button class="btn primary">${c.id ? '초안 저장' : '초안으로 만들기'}</button><button type="button" class="btn sm" data-act="cwCancelForm">취소</button><span class="small muted">초안은 Asana로 보내기 전까지 아무에게도 가지 않습니다.</span></div>
+    </form>`;
+  }
+
+  function cwPanel() {
+    if (!LIVE.db) return `<section class="panel"><h3>전사 지시</h3><p class="muted" style="margin:6px 0 0">전 직원에게 같은 지시를 Asana 하위 작업으로 나눠 보내고 개인별 진행을 보는 화면입니다. claude.ai 아티팩트로 열었을 때만 동작합니다(직원 명단·Asana 연결 필요).</p></section>`;
+    const list = cwList();
+    const ui = S.ui.cw || {};
+    const sel = list.find((c) => c.id === ui.sel) || list[0];
+    const head = `<div class="row" style="justify-content:space-between"><div><h3 style="margin:0">전사 지시 ${badge('측정')}</h3><p class="small muted" style="margin:2px 0 0">등록하면 Asana에 상위 태스크 1건과 직원별 하위 작업을 만들어 각자에게 배정합니다. 진행은 직원이 하위 작업을 완료로 표시한 것으로 셉니다.</p></div><button type="button" class="btn primary sm" data-act="cwNew">+ 전사 지시 만들기</button></div>`;
+    const form = ui.form ? `<section class="panel cw-new"><h3>${ui.form === 'new' ? '새 전사 지시' : '초안 수정'}</h3>${cwForm(ui.form === 'new' ? null : list.find((c) => c.id === ui.form))}</section>` : '';
+    const cards = `<div class="cw-cards">${list.map((c) => {
+      const st = cwStat(cwRows(c));
+      const label = { draft: ['초안', 'st-hold'], sending: ['보내는 중', 'st-wait'], sent: ['보냄', 'st-done'], partial: ['일부 실패', 'p-urgent'] }[c.status] || ['초안', 'st-hold'];
+      return `<button type="button" class="cw-card ${sel && sel.id === c.id ? 'on' : ''}" data-act="cwSel" data-id="${esc(c.id)}" aria-pressed="${!!(sel && sel.id === c.id)}">
+        <span class="row small"><span class="pill ${label[1]}">${label[0]}</span>${c.due ? `<span class="muted num">기한 ${md(c.due)}</span>` : '<span class="muted">기한 미정</span>'}</span>
+        <b>${esc(c.title)}</b>
+        <span class="bar"><i style="width:${c.status === 'draft' ? 0 : st.pct}%"></i></span>
+        <span class="small muted num">${c.status === 'draft' ? `대상 ${st.n}명 · 아직 보내지 않음` : `완료 ${st.done}/${st.n} (${st.pct}%) · 진행 ${st.doing} · 미착수 ${st.todo}`}</span></button>`;
+    }).join('') || '<p class="muted">전사 지시가 없습니다.</p>'}</div>`;
+    return `<section class="panel cw-wrap">${head}</section>${form}${cards}${sel ? cwDetail(sel) : ''}`;
+  }
+
+  function cwDetail(c) {
+    const ui = S.ui.cw || {};
+    const f = Object.assign({ q: '', d: '', st: '', sort: 'dept' }, ui.f || {});
+    const rows = cwRows(c);
+    const st = cwStat(rows);
+    let shown = rows.filter((r) => (!f.d || r.d === f.d) && (!f.st || r.st === f.st || (f.st === 'notdone' && ['todo', 'doing', 'fail'].includes(r.st))) && (!f.q || (r.n + ' ' + r.d + ' ' + (r.g || '') + ' ' + (r.p || '')).includes(f.q)));
+    const ord = { fail: 0, todo: 1, doing: 2, done: 3, none: 4, draft: 1 };
+    shown = shown.sort((a, b) => f.sort === 'name' ? a.n.localeCompare(b.n, 'ko') : f.sort === 'status' ? ord[a.st] - ord[b.st] || a.d.localeCompare(b.d, 'ko') : f.sort === 'recent' ? String(b.mod || b.done_at).localeCompare(String(a.mod || a.done_at)) : a.d.localeCompare(b.d, 'ko') || a.n.localeCompare(b.n, 'ko'));
+    const byDept = cwDepts().map((d) => { const r = rows.filter((x) => x.d === d && x.st !== 'none'); const done = r.filter((x) => x.st === 'done').length; return { d, n: r.length, done, pct: r.length ? Math.round(100 * done / r.length) : 0 }; }).filter((x) => x.n).sort((a, b) => b.pct - a.pct || b.n - a.n);
+    const sending = CW.sending && CW.sending.id === c.id ? CW.sending : null;
+    const draft = c.status === 'draft';
+    const parentUrl = c.parent_gid ? `https://app.asana.com/0/${ASANA.project}/${c.parent_gid}` : '';
+    const err = CW.err[c.id];
+    const progAt = c.prog && c.prog.at ? `${md(new Date(c.prog.at))} ${hm(c.prog.at)} 기준` : '아직 안 불러옴';
+    const actions = sending ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span> Asana에 만드는 중 ${sending.done}/${sending.total}명 — 창을 닫지 마세요</span>`
+      : draft ? `<button type="button" class="btn primary sm" data-act="cwAskSend" data-id="${esc(c.id)}" ${LIVE.mcp ? '' : 'disabled'}>Asana로 보내기</button><button type="button" class="btn sm" data-act="cwEdit" data-id="${esc(c.id)}">초안 수정</button><button type="button" class="btn sm" data-act="cwAskDel" data-id="${esc(c.id)}">초안 삭제</button>`
+      : `<button type="button" class="btn sm" data-act="cwRefresh" data-id="${esc(c.id)}" ${CW.busy[c.id] || !LIVE.mcp ? 'disabled' : ''}>${CW.busy[c.id] ? '불러오는 중…' : '진행 새로고침'}</button>${c.status === 'partial' ? `<button type="button" class="btn primary sm" data-act="cwAskSend" data-id="${esc(c.id)}">실패한 ${(c.failed || []).length}명 다시 보내기</button>` : ''}${parentUrl ? `<a class="btn sm" href="${esc(parentUrl)}" target="_blank" rel="noopener noreferrer">Asana에서 열기 ↗</a>` : ''}`;
+    const confirm = CW.confirm === c.id ? `<div class="explain cw-confirm" role="alert"><b>${draft ? `${st.n}명` : `${(c.failed || []).length}명`}에게 Asana 하위 작업을 만듭니다.</b> 각 직원에게 Asana 알림이 갑니다. 보낸 뒤 되돌리려면 Asana에서 직접 지워야 합니다.${st.other ? ` Asana 계정이 없는 ${rows.filter((r) => r.st === 'none').length}명은 빠집니다.` : ''}${c.due ? '' : ' 기한이 비어 있습니다.'}
+      <div class="row" style="margin-top:8px"><button type="button" class="btn primary sm" data-act="cwSend" data-id="${esc(c.id)}">보내기</button><button type="button" class="btn sm" data-act="cwCancelSend">취소</button></div></div>` : '';
+    const delAsk = CW.delAsk === c.id ? `<div class="explain cw-confirm" role="alert">"${esc(c.title)}" 초안을 지웁니다. <div class="row" style="margin-top:8px"><button type="button" class="btn primary sm" data-act="cwDel" data-id="${esc(c.id)}">초안 삭제</button><button type="button" class="btn sm" data-act="cwCancelSend">취소</button></div></div>` : '';
+    return `<section class="panel cw-detail" aria-labelledby="cw-h">
+      <div class="cw-dhead"><div style="min-width:0"><h3 id="cw-h">${esc(c.title)}</h3><p class="small muted" style="margin:2px 0 0">${c.scope === 'depts' ? '대상 부서: ' + esc((c.depts || []).join('·')) : '대상: 전 직원'} · ${c.due ? '기한 ' + esc(c.due) : '기한 미정'}${draft ? '' : ' · 진행 ' + progAt}</p></div><div class="row">${actions}</div></div>
+      ${c.body ? `<p class="dir-notes" style="margin:10px 0 0">${linkify(c.body)}</p>` : ''}
+      ${confirm}${delAsk}
+      ${err ? `<p class="small dir-err" style="margin:8px 0 0">${esc(errText(err))}</p>` : ''}
+      <div class="cw-kpis">
+        <div><span class="small muted">대상</span><b class="num">${st.n}<small>명</small></b></div>
+        <div><span class="small muted">완료</span><b class="num ok">${draft ? '—' : st.done}<small>${draft ? '' : '명'}</small></b></div>
+        <div><span class="small muted">진행 중</span><b class="num">${draft ? '—' : st.doing}<small>${draft ? '' : '명'}</small></b></div>
+        <div><span class="small muted">미착수</span><b class="num warn">${draft ? '—' : st.todo}<small>${draft ? '' : '명'}</small></b></div>
+        <div><span class="small muted">완료율</span><b class="num">${draft ? '—' : st.pct + '%'}</b></div>
+      </div>
+      ${draft ? '' : `<details class="cw-depts" ${ui.deptOpen ? 'open' : ''}><summary class="small">부서별 완료율 ${byDept.length}개 부서</summary><div class="dir-org">${byDept.map((r) => `<button type="button" class="dir-org-row" data-act="cwDept" data-v="${esc(r.d)}"><span class="o">${esc(r.d)}</span><span class="bar"><i style="width:${r.pct}%"></i></span><span class="num p">${r.pct}%</span><span class="small muted m">완료 ${r.done}/${r.n}</span></button>`).join('')}</div></details>`}
+      <div class="form cw-filters">
+        <label class="f">이름·직급 검색<input type="text" id="cwf-q" data-act="cwF" data-k="q" value="${esc(f.q)}" placeholder="예: 김, 팀장"></label>
+        <label class="f">부서<select id="cwf-d" data-act="cwF" data-k="d"><option value="">전체</option>${cwDepts().map((d) => `<option ${f.d === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+        <label class="f">상태<select id="cwf-st" data-act="cwF" data-k="st"><option value="">전체</option>${[['notdone', '미완료 전체'], ['done', '완료'], ['doing', '진행 중'], ['todo', '미착수'], ['fail', '생성 실패'], ['none', 'Asana 계정 없음']].map(([v, l]) => `<option value="${v}" ${f.st === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f">정렬<select id="cwf-sort" data-act="cwF" data-k="sort">${[['dept', '부서순'], ['status', '안 한 사람 먼저'], ['name', '이름순'], ['recent', '최근 갱신순']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      </div>
+      <p class="small muted" style="margin:8px 0 4px">${shown.length}명 표시 / 명단 ${rows.length}명${rows.some((r) => r.st === 'none') ? ` (Asana 계정 없음 ${rows.filter((r) => r.st === 'none').length}명 포함)` : ''}${f.q || f.d || f.st ? ' · <button type="button" class="dir-link" data-act="cwFReset">조건 지우기</button>' : ''}</p>
+      <div class="tbl-wrap"><table class="dir-tbl cw-tbl"><thead><tr><th>이름</th><th>부서</th><th>상태</th><th>완료일·최근 갱신</th><th>Asana</th></tr></thead><tbody>
+        ${shown.map((r) => `<tr><td data-label="이름"><span class="dir-who">${avatar(r.n)}<span>${esc(r.n)}<small>${esc([r.g, r.p].filter(Boolean).join(' · '))}</small></span></span></td>
+          <td data-label="부서">${esc(r.d)}</td>
+          <td data-label="상태"><span class="pill ${CW_ST[r.st][1]}">${CW_ST[r.st][0]}</span></td>
+          <td data-label="갱신" class="num small">${r.done_at ? '완료 ' + esc(when(r.done_at)) : r.mod ? '갱신 ' + esc(when(r.mod)) : '—'}</td>
+          <td data-label="Asana" class="small">${r.url && safeUrl(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>` : r.task ? `<a href="https://app.asana.com/0/0/${esc(r.task)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>` : '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">조건에 맞는 직원이 없습니다.</td></tr>'}
+      </tbody></table></div>
+    </section>`;
+  }
+
+  const cwUi = (patch) => { S.ui.cw = Object.assign({}, S.ui.cw || {}, patch); };
+  const cwFind = (id) => (LIVE.cw || {})[id];
+  APP.acts.cwNew = () => { cwUi({ form: 'new' }); focusLater('#cw-title'); };
+  APP.acts.cwEdit = (el) => { cwUi({ form: el.dataset.id }); focusLater('#cw-title'); };
+  APP.acts.cwCancelForm = () => { cwUi({ form: null }); };
+  APP.acts.cwSel = (el) => { cwUi({ sel: el.dataset.id, f: { q: '', d: '', st: '', sort: 'dept' } }); CW.confirm = null; CW.delAsk = null; const c = cwFind(el.dataset.id); if (c && c.status !== 'draft' && (!c.prog || Date.now() - Date.parse(c.prog.at) > 600000)) setTimeout(() => cwRefresh(c, true), 0); };
+  APP.acts.cwAskSend = (el) => { CW.confirm = el.dataset.id; CW.delAsk = null; };
+  APP.acts.cwAskDel = (el) => { CW.delAsk = el.dataset.id; CW.confirm = null; };
+  APP.acts.cwCancelSend = () => { CW.confirm = null; CW.delAsk = null; };
+  APP.acts.cwSend = (el) => { const c = cwFind(el.dataset.id); if (c && !CW.sending) setTimeout(() => cwSend(c), 0); };
+  APP.acts.cwRefresh = (el) => { const c = cwFind(el.dataset.id); if (c) setTimeout(() => cwRefresh(c), 0); };
+  APP.acts.cwDel = (el) => { const c = cwFind(el.dataset.id); CW.delAsk = null; if (!c || c.status !== 'draft' || !LIVE.db) return; LIVE.db.doc('cw/' + c.id).delete().then(() => toast('초안을 지웠습니다')).catch((e) => toast('삭제 실패(' + (e && e.code || '오류') + ')')); };
+  APP.acts.cwDept = (el) => { const ui = S.ui.cw || {}; const f = Object.assign({ q: '', d: '', st: '', sort: 'dept' }, ui.f || {}); f.d = f.d === el.dataset.v ? '' : el.dataset.v; cwUi({ f, deptOpen: true }); };
+  APP.acts.cwFReset = () => { cwUi({ f: { q: '', d: '', st: '', sort: 'dept' } }); };
+  APP.changes.cwF = (el) => { const ui = S.ui.cw || {}; const f = Object.assign({ q: '', d: '', st: '', sort: 'dept' }, ui.f || {}); f[el.dataset.k] = el.value.trim(); cwUi({ f }); };
+  APP.forms.cwSave = (fd, form) => {
+    const g = (n) => (fd.get(n) || '').toString().trim();
+    const scope = g('scope') === 'depts' ? 'depts' : 'all';
+    const depts = fd.getAll('depts').map(String);
+    if (scope === 'depts' && !depts.length) { toast('대상 부서를 하나 이상 골라 주세요'); return; }
+    const data = { title: g('title'), body: g('body'), due: /^\d{4}-\d{2}-\d{2}$/.test(g('due')) ? g('due') : '', scope, depts: scope === 'depts' ? depts : [] };
+    const id = form.dataset.id;
+    if (id) { const c = cwFind(id); if (!c || c.status !== 'draft') { toast('보낸 지시는 여기서 고칠 수 없습니다'); return; } cwSave(id, data).then((ok) => ok && toast('초안을 저장했습니다')); cwUi({ form: null }); return; }
+    const nid = 'cw' + Date.now().toString(36);
+    const code = 'CW' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    cwSave(nid, Object.assign(data, { id: nid, code, status: 'draft', created: new Date().toISOString() }), true).then((ok) => { if (ok) { toast('초안을 만들었습니다 — 확인 후 Asana로 보내 주세요'); cwUi({ sel: nid }); rerender(); } });
+    cwUi({ form: null });
   };
 
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
