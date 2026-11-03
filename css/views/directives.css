@@ -340,3 +340,17 @@
 .dir-rec-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .dir-rec-body textarea { min-height: 110px; }
 .dir-repprompt { margin: 0; padding: 8px 14px 0; }
+
+/* 진행 기록 */
+.dir-repbtn.prog { border-color: var(--ok); color: var(--ok); }
+.dir-repbtn.prog b { color: var(--ok); }
+.dir-prog { display: flex; flex-direction: column; gap: 12px; }
+.dir-progboard { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--line); padding-left: 14px; margin-left: 4px; }
+.dir-progday { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.dir-progday::before { content: ""; position: absolute; left: -21px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); border: 2px solid var(--paper); }
+.dir-progday header { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.dir-progday ul { margin: 6px 0 0; padding-left: 18px; font-size: 14.5px; }
+.dir-progday details { margin-top: 6px; }
+.dir-progday details summary { cursor: pointer; color: var(--goldInk); }
+.dir-progsrc { list-style: none; padding-left: 0 !important; display: flex; flex-direction: column; gap: 6px; }
+.dir-progstat { display: inline-flex; gap: 6px; align-items: center; }
