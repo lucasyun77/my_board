@@ -662,7 +662,9 @@
 
   APP.acts.dirRefresh = () => {};
   APP.acts.dirNewToggle = () => { S.ui.dirNew = !S.ui.dirNew; if (!S.ui.dirNew) S.ui.dirDraft = null; if (S.ui.dirNew) focusLater('#dn-title'); };
-  APP.acts.dirOpen = (el) => { S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d), 0); focusLater('#dir-dlg'); };
+  APP.acts.dirOpen = (el) => {
+    if (S.ui.dirOpen === el.dataset.id && !el.closest('.dir-pane')) { S.ui.dirOpen = null; S.ui.dirEdit = false; return; }
+    S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d), 0); focusLater('#dir-dlg'); };
   APP.acts.dirReload = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d, true), 0); };
   APP.acts.dirDone = (el) => {
     const d = find(el.dataset.id); if (!d) return;
@@ -1166,6 +1168,14 @@
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
   const closeDlg = () => { const b = document.querySelector('.dir-pane-bar [data-act="dirClose"]'); if (b) b.click(); };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.ui.dirOpen) closeDlg(); });
+  /* 패널 밖을 누르면 닫는다 — 다른 항목 제목을 누르면 그 항목으로 바뀐다 */
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted || !S.ui.dirOpen || !document.querySelector('.dir-pane')) return;
+    const t = e.target;
+    if (!t || !t.closest || !document.contains(t)) return;
+    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('.toast')) return;
+    closeDlg();
+  }, true);
   window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; });
 
   APP.views.directives = viewDirectives;
