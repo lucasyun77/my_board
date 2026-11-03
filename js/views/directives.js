@@ -159,7 +159,7 @@
       LIVE.asana = data; LIVE.asanaAt = r.cache && r.cache.storedAt ? r.cache.storedAt : Date.now(); LIVE.asanaFrom = '실시간'; LIVE.asanaErr = null;
       saveSnapshot(data);
       rebuild();
-      if (!LIVE.collectTried) { LIVE.collectTried = true; setTimeout(() => dailyCollect(false), 4000); }
+      if (!LIVE.collectTried) { LIVE.collectTried = true; scheduleCollect(); }
     } catch (e) {
       LIVE.asanaErr = e;
       if (e && e.retryable && !retried) { LIVE.busy = false; setTimeout(() => fetchAsana(fresh, true), Math.min(60000, e.retryAfterMs || 1500 + Math.random() * 2000)); return; }
@@ -592,7 +592,7 @@
       <span class="small muted">Asana ${LIVE.busy ? '불러오는 중…' : `${esc(LIVE.asanaFrom || '없음')} · ${when} 기준`} · 1시간마다 새로고침</span>
       ${pend ? `<span class="dir-sync pend">보낼 변경 ${pend}건</span>` : nA ? '<span class="dir-sync ok">Asana와 맞춰짐</span>' : ''}
       <button type="button" class="btn sm" data-act="dirSync" ${LIVE.busy || !LIVE.mcp ? 'disabled' : ''}>${pend ? '보내고 새로고침' : '지금 새로고침'}</button>
-      ${LIVE.db && LIVE.mcp ? `<span class="small muted dir-progstat">진행 기록 ${PROGRUN.state === 'running' ? `모으는 중 ${PROGRUN.done}/${PROGRUN.total}` : PROGRUN.state === 'done' ? '오늘 모음' : '하루 1회 자동'} <button type="button" class="dir-link" data-act="progAll" ${PROGRUN.state === 'running' ? 'disabled' : ''}>지금 모으기</button></span>` : ''}
+      ${LIVE.db && LIVE.mcp ? `<span class="small muted dir-progstat">진행 기록 ${PROGRUN.state === 'running' ? `모으는 중 ${PROGRUN.done}/${PROGRUN.total}` : PROGRUN.state === 'done' ? '오늘 모음' : kstHour() >= COLLECT_HOUR ? '오늘 자동 조사 대기' : '오늘 22:00 이후 자동 조사'} <button type="button" class="dir-link" data-act="progAll" ${PROGRUN.state === 'running' ? 'disabled' : ''}>지금 모으기</button></span>` : ''}
       ${e ? `<span class="small dir-err">${esc(errText(e))}${needsAllow(e) ? ' <button type="button" class="dir-link" data-act="dirAllow">허용하고 불러오기</button>' : ''}</span>` : ''}
       ${!LIVE.mcp ? '<span class="small muted dir-mock">이 보기에서는 Asana를 부를 수 없어 저장본을 보여 드립니다.</span>' : ''}</div>`;
   }
@@ -1077,6 +1077,14 @@ ${await taskContext(d)}`;
   /* ================= 진행 기록 (Slack·회의록·산출물·Asana를 날짜별로 자동 정리, 하루 1회) ================= */
   const kstDay = (offset) => new Date(Date.now() + 9 * 3600000 + (offset || 0) * 86400000).toISOString().slice(0, 10);
   const progOf = (d) => LIVE.prog[d.id] || [];
+  const COLLECT_HOUR = 22; /* 자동 조사는 그날 22시(한국 시간) 이후 */
+  const kstHour = () => new Date(Date.now() + 9 * 3600000).getUTCHours();
+  function scheduleCollect() {
+    const h = (LIVE.cfg && LIVE.cfg.schedule && Number.isFinite(+LIVE.cfg.schedule.progress_hour)) ? +LIVE.cfg.schedule.progress_hour : COLLECT_HOUR;
+    if (kstHour() >= h) { setTimeout(() => dailyCollect(false), 4000); return; }
+    const now = new Date(Date.now() + 9 * 3600000); const at = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, 0, 30) - 9 * 3600000;
+    clearTimeout(LIVE.collectT); LIVE.collectT = setTimeout(() => dailyCollect(false), Math.max(5000, at - Date.now()));
+  }
   const PROGRUN = { state: '', done: 0, total: 0, one: {} };
   const SIGNAL = { '진전': 'st-done', '정체': 'st-hold', '위험': 'p-urgent', '정보 없음': '' };
   function keywords(d) {
@@ -1157,14 +1165,14 @@ ${found.join('\n\n').slice(0, 9000)}`, { modelTier: 'quick', cache: false });
     const list = progOf(d);
     const busy = PROGRUN.one[d.id] || (PROGRUN.state === 'running');
     return `<div class="dir-prog">
-      <div class="row" style="justify-content:space-between"><p class="small muted" style="margin:0">AI가 매일 한 번 Slack 공개 채널·회의록·산출물·Asana 활동에서 이 업무의 진행을 찾아 날짜별로 올립니다. AI 리포트 추천은 이 기록을 보고 고릅니다.</p>
+      <div class="row" style="justify-content:space-between"><p class="small muted" style="margin:0">AI가 매일 22:00 이후 한 번 Slack 공개 채널·회의록·산출물·Asana 활동에서 이 업무의 그날 진행을 찾아 날짜별로 올립니다. AI 리포트 추천은 이 기록을 보고 고릅니다.</p>
         <button type="button" class="btn sm" data-act="progOne" data-id="${esc(d.id)}" ${busy || !LIVE.mcp || !LIVE.db ? 'disabled' : ''}>${PROGRUN.one[d.id] ? '모으는 중…' : '이 업무만 지금 모으기'}</button></div>
       ${PROGRUN.err ? `<p class="small dir-err" style="margin:0">${esc(PROGRUN.err)}</p>` : ''}
       <div class="dir-progboard">${list.map((p) => `<article class="dir-progday">
           <header><b class="num">${esc(p.date)}</b><span class="pill ${SIGNAL[p.signal] || ''}">${esc(p.signal || '정보 없음')}</span><span class="small muted">${p.by === 'auto' ? 'AI 자동 조사' : '직접'} · ${esc(when(p.created))}</span></header>
           <ul>${(p.summary || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
           ${(p.sources || []).length ? `<details><summary class="small">근거 ${p.sources.length}건</summary><ul class="dir-progsrc">${p.sources.map((x) => `<li><span class="pill">${esc(srcLabel[x.type] || x.type || '기록')}</span> <span class="small">${esc(x.where)}${x.who ? ' · ' + esc(x.who) : ''}${x.when ? ' · ' + esc(x.when) : ''}</span><div class="small muted">${esc(x.gist)}</div></li>`).join('')}</ul></details>` : ''}
-        </article>`).join('') || `<p class="muted small" style="margin:0">${LIVE.db ? '아직 모은 기록이 없습니다. 매일 처음 현황판을 열 때 자동으로 모읍니다.' : 'claude.ai 아티팩트로 열었을 때만 동작합니다.'}</p>`}</div>
+        </article>`).join('') || `<p class="muted small" style="margin:0">${LIVE.db ? '아직 모은 기록이 없습니다. 매일 22:00 이후 현황판이 열려 있으면 자동으로 모읍니다.' : 'claude.ai 아티팩트로 열었을 때만 동작합니다.'}</p>`}</div>
     </div>`;
   }
   APP.acts.progOne = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => dailyCollect(true, d.id), 0); };
