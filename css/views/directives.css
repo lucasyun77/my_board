@@ -354,3 +354,5 @@
 .dir-progday details summary { cursor: pointer; color: var(--goldInk); }
 .dir-progsrc { list-style: none; padding-left: 0 !important; display: flex; flex-direction: column; gap: 6px; }
 .dir-progstat { display: inline-flex; gap: 6px; align-items: center; }
+.dir-aistat { color: var(--sub); }
+.dir-aistat.ok { color: var(--ok); font-weight: 700; }
