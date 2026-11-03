@@ -52,10 +52,11 @@
   const stl = (d) => !isGoal(d) && isStale(d);
 
   /* 데이터가 들어오면 다시 그린다 — 입력 중이면 포커스가 빠질 때까지 미룬다 */
-  let pendingRender = false;
+  let pendingRender = false; let lastTyped = 0;
+  document.addEventListener('input', () => { lastTyped = Date.now(); }, true);
   function rerender() {
     const a = document.activeElement;
-    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.closest('#view')) { pendingRender = true; return; }
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.closest('#view') && Date.now() - lastTyped < 3000) { pendingRender = true; clearTimeout(LIVE.rrT); LIVE.rrT = setTimeout(rerender, 3200); return; }
     const b = document.createElement('button'); b.type = 'button'; b.dataset.act = 'dirRefresh'; b.hidden = true;
     document.body.appendChild(b); b.click(); b.remove();
   }
@@ -981,11 +982,13 @@ ${ctx}`;
   }
   async function makeReport(d, rec, promptText) {
     const ai = aiOf(d);
-    if (!aiReady(ai)) { toast(`${aiName(ai)}는 아직 연결되지 않았습니다. 관리자 메뉴에서 연결하거나 Claude로 바꿔 주세요.`); return; }
+    if (!aiReady(ai)) { REPGEN[d.id] = { busy: false, err: `${aiName(ai)}가 연결되지 않아 요청할 수 없습니다. 담당 AI를 바꿔 주세요.` }; toast(REPGEN[d.id].err); rerender(); return; }
     if (REPGEN[d.id] && REPGEN[d.id].busy) return;
-    const sample = await getLLM(ai);
-    if (!sample) { toast(ai === 'inhouse' ? '사내 AI에 연결되지 않았습니다(회사 네트워크의 PC에서 Claude 데스크톱 앱으로 열어 주세요)' : '이 보기에서는 AI 리포트를 만들 수 없습니다(claude.ai 아티팩트에서만)'); return; }
-    REPGEN[d.id] = { busy: true, text: '' }; rerender();
+    REPGEN[d.id] = { busy: true, text: '', stage: `${aiName(ai)}에 요청을 보내는 중…` }; rerender();
+    let sample = null;
+    try { sample = await getLLM(ai); } catch (e) { sample = null; }
+    if (!sample) { REPGEN[d.id] = { busy: false, err: ai === 'inhouse' ? '사내 AI에 연결되지 않았습니다(회사 네트워크의 PC에서 Claude 데스크톱 앱으로 열어 주세요).' : '이 화면에서는 Claude를 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다).' }; toast(REPGEN[d.id].err); rerender(); return; }
+    REPGEN[d.id].stage = '업무 내용·댓글·진행 기록을 모으는 중…'; rerender();
     const prompt = `당신은 아이센스그룹 윤석범 회장의 업무 보좌 AI입니다. 회장의 요청에 따라 아래 업무에 대한 자료를 만드세요.
 회장의 요청: ${promptText}
 ${REP_RULES}
@@ -993,6 +996,7 @@ ${REP_RULES}
 
 ${await taskContext(d)}`;
     let last = 0;
+    REPGEN[d.id].stage = ai === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : 'Claude가 생각하는 중… (처음 한 번은 사용 허용 창이 뜹니다)'; rerender();
     try {
       const r = await sample(prompt, { modelTier: 'default', cache: false, onText: ({ text }) => { REPGEN[d.id].text = text; if (Date.now() - last > 500) { last = Date.now(); rerender(); } } });
       const text = String((r && r.text) || '').trim();
@@ -1003,7 +1007,9 @@ ${await taskContext(d)}`;
       REPGEN[d.id] = { busy: false, open: rep.id }; RECSEL[d.id] = null;
       toast('리포트를 만들었습니다 — 아래 「지난 요청」에 쌓였습니다');
     } catch (e) {
-      REPGEN[d.id] = { busy: false, err: e && e.code === 'not_granted' ? 'Claude 사용이 허용되지 않았습니다.' : e && e.code === 'rate_limited' ? '잠시 뒤에 다시 시도해 주세요.' : '리포트를 만들지 못했습니다(' + (e && e.code || '오류') + ').' };
+      const c = e && e.code;
+      REPGEN[d.id] = { busy: false, err: c === 'not_granted' ? 'Claude 사용이 허용되지 않았습니다. 현황판 오른쪽 위 권한 메뉴에서 Claude 사용을 허용한 뒤 다시 눌러 주세요.' : c === 'rate_limited' ? '요청이 많습니다. 잠시 뒤에 다시 눌러 주세요.' : c === 'tool_error' ? '사내 AI가 거절했습니다: ' + String(e.message || '').slice(0, 120) : '리포트를 만들지 못했습니다(' + (c || (e && e.message) || '오류') + '). 다시 눌러 주세요.' };
+      toast(REPGEN[d.id].err);
     }
     rerender();
   }
@@ -1039,10 +1045,13 @@ ${await taskContext(d)}`;
         <div class="dir-recs">${recs ? recs.map((x, i) => `<div class="dir-rec ${sel === i ? 'on' : ''}">
             <button type="button" class="dir-rec-h" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}" aria-expanded="${sel === i}"><b>${esc(x.title)}</b><span class="small muted">${esc(x.why)}</span></button>
             ${sel === i ? `<div class="dir-rec-body"><label class="f">세부 요청(고쳐서 보낼 수 있습니다)<textarea id="rec-prompt" rows="5">${esc(x.prompt)}</textarea></label>
-              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '만드는 중…' : esc(aiName(ai)) + '에게 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div></div>` : ''}
+              <div class="row"><button type="button" class="btn primary sm" data-act="recRun" data-id="${esc(d.id)}" data-v="${i}" ${gen.busy || !aiReady(ai) ? 'disabled' : ''}>${gen.busy ? '만드는 중…' : esc(aiName(ai)) + '에게 요청'}</button><button type="button" class="btn sm" data-act="recPick" data-id="${esc(d.id)}" data-v="${i}">접기</button></div>
+              ${!aiReady(ai) ? `<p class="small dir-err" style="margin:0">${ai === 'inhouse' ? '사내 AI가 연결되지 않아 요청할 수 없습니다. 위 「담당 AI」를 Claude로 바꾸면 바로 요청됩니다.' : esc(aiName(ai)) + '는 연결 전이라 요청할 수 없습니다.'}</p>` : ''}
+              ${gen.err ? `<p class="small dir-err" style="margin:0" role="alert">${esc(gen.err)}</p>` : ''}
+              ${gen.busy ? `<div class="dir-repdoc live">${gen.text ? mdHtml(gen.text) : `<p class="muted">${esc(gen.stage || (ai === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : '생각하는 중…'))}</p>`}</div>` : ''}</div>` : ''}
           </div>`).join('') : `<p class="small muted" style="margin:0"><span class="dir-spin sm" aria-hidden="true"></span>이 태스크에 맞는 추천을 고르는 중…</p>`}</div>
-        ${gen.err ? `<p class="small dir-err" style="margin:6px 0 0">${esc(gen.err)}</p>` : ''}
-        ${gen.busy ? `<div class="dir-repdoc live" style="margin-top:8px">${gen.text ? mdHtml(gen.text) : `<p class="muted">${ai === 'inhouse' ? '사내 AI가 쓰는 중… (업무시간에는 차례를 기다릴 수 있습니다)' : '생각하는 중…'}</p>`}</div>` : ''}
+        ${gen.err && RECSEL[d.id] == null ? `<p class="small dir-err" style="margin:6px 0 0" role="alert">${esc(gen.err)}</p>` : ''}
+        ${gen.busy && RECSEL[d.id] == null ? `<div class="dir-repdoc live" style="margin-top:8px">${gen.text ? mdHtml(gen.text) : '<p class="muted">작성 중…</p>'}</div>` : ''}
       </section>
 
       <section class="dir-repsec"><h4>지난 요청 리포트 <span class="num muted">${mine.length}</span></h4>
@@ -1059,6 +1068,7 @@ ${await taskContext(d)}`;
     const ta = document.getElementById('rec-prompt'); const text = (ta ? ta.value : rec && rec.prompt || '').trim();
     if (!d || !text) { toast('요청 내용을 적어 주세요'); return; }
     if (rec) rec.prompt = text;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     setTimeout(() => makeReport(d, rec, text), 0);
   };
   APP.acts.repDel = (el) => {
