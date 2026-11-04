@@ -175,7 +175,7 @@
   function viewValue() {
     ui();
     return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N (천원 단위 반올림) · 평가 → 협상 → 확정 → 잔액 적립 → ${kwon(LEVEL_COST)}천원마다 레벨업</p></div>
-        <button type="button" class="btn sm" data-act="tab" data-v="rules">계수표·협상 규칙 보기</button></div>
+        <button type="button" class="btn sm" data-act="tab" data-v="rules">보상 기준 보기 →</button></div>
       ${levelPanel()}${periodPanel()}${listPanel()}`;
   }
 
