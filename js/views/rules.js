@@ -183,7 +183,7 @@
     const hist = S.rewardRules.slice().sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1));
     const ok = exampleOk();
     return `<div class="view-head"><div><h2>보상 기준</h2><p>계수를 바꾸면 적용일과 사유를 남기고, 과거 확정분은 소급하지 않습니다.</p></div>
-        <div class="row"><span class="pill st-done">현재 ${esc(cur.version)}</span><span class="pill ${ok ? 'st-done' : 'p-urgent'}">${ok ? '공식 예시 재현 ✓' : '공식 예시 불일치'}</span></div></div>
+        <div class="row"><button type="button" class="btn sm" data-act="tab" data-v="value">← 성과·레벨</button><span class="pill st-done">현재 ${esc(cur.version)}</span><span class="pill ${ok ? 'st-done' : 'p-urgent'}">${ok ? '공식 예시 재현 ✓' : '공식 예시 불일치'}</span></div></div>
       <nav class="rl-jump" aria-label="이 화면 바로가기">${[['rl-formula', '공식·계수표'], ['rl-sim', '시뮬레이터'], ['rl-rule', '협상 규칙'], ['rl-hist', '변경 이력'], ['rl-log', '협상 로그']].map(([id, l]) => `<button type="button" class="btn sm" data-act="rulesJump" data-v="${id}">${l}</button>`).join('')}</nav>
       <section class="panel" id="rl-formula" aria-labelledby="h-rl-f"><h3 id="h-rl-f">산정 공식</h3><div class="formula">수익가치 V = B × L × F × S × A × N   (천원 단위 반올림)</div>
         <dl class="rl-dl">
