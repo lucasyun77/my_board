@@ -223,7 +223,7 @@
     </div>`;
   }
 
-  function viewNumbers() {
+  function viewCards() {
     const u = ui();
     const all = N().cards;
     const shown = all.filter((c) => !c.hidden);
@@ -236,7 +236,7 @@
     if (!tabs.some((t) => t[0] === u.group)) u.group = '전체';
     const list = u.group === '숨김' ? all.filter((c) => c.hidden) : u.group === '경보' ? alarms : u.group === '전체' ? shown : shown.filter((c) => c.group === u.group);
 
-    return `<div class="view-head"><div><h2>내가 보는 숫자</h2><p>매일 직접 확인하는 숫자만 모았습니다. 경보 기준을 넘은 숫자는 붉게 표시됩니다.</p></div>
+    return `<div class="nb-subhead"><p>매일 직접 확인하는 숫자만 모았습니다. 경보 기준을 넘은 숫자는 붉게 표시됩니다.</p>
         <button type="button" class="btn primary" data-act="numbersAddOpen" aria-expanded="${!!u.add}">＋ 숫자 추가</button></div>
       <div class="nb-summary" role="list">
         <button type="button" role="listitem" class="nb-sum${alarms.length ? ' alert' : ''}" data-act="numbersGroup" data-v="경보"><span>경보</span><b class="num">${alarms.length}</b></button>
@@ -313,6 +313,315 @@
     if (c.source === '미확인') c.source = '수기';
     closeAll();
     toast(same ? `${md(d)} 기록을 ${fmt(v)}${c.unit}(으)로 고쳤습니다` : `${md(d)} ${fmt(v)}${c.unit} 기록했습니다`);
+  };
+
+
+  /* =====================================================================
+     숫자 게시판 — 보고 싶은 숫자를 글로 등록하면 Claude가 찾아 모니터링 페이지를 만든다.
+     목업: Claude 응답은 화면 안 규칙으로 흉내 낸다(실서비스는 서버 함수에서 Anthropic API 호출, 키는 환경변수).
+     현황판에 있는 값만 '측정'/'추정'으로 계산하고, 원천이 없는 값은 '—'·미확인. 직원 급여는 쓰지 않는다.
+     ===================================================================== */
+  const HV = window.APP.HOUR_VALUE;
+  const sum = (a, f) => a.reduce((s, x) => s + (+f(x) || 0), 0);
+  const usage14 = () => S.usage.slice(-14);
+  const manualV = (pg, k) => (pg.manual && pg.manual[k] ? pg.manual[k].v : null);
+  const M = {
+    tok14: { label: '최근 14일 Claude 토큰', unit: 'M', f: () => ({ v: +(sum(usage14(), (u) => u.input_tokens + u.output_tokens) / 1e6).toFixed(1), s: '측정' }) },
+    cost14: { label: '최근 14일 Claude 비용(원화 환산)', unit: '원', f: () => ({ v: Math.round(sum(usage14(), (u) => u.cost_usd) * RATE), s: '측정' }) },
+    quota14: { label: '직원에게 지급한 토큰 한도(14일)', unit: 'M', manual: true },
+    unused14: { label: '쓰지 않은 토큰', unit: 'M', need: '지급 토큰 한도', f: (pg) => { const q = manualV(pg, 'quota14'); return q == null ? null : { v: +Math.max(0, q - M.tok14.f().v).toFixed(1), s: '수기' }; } },
+    useRate: { label: '토큰 사용률', unit: '%', need: '지급 토큰 한도', f: (pg) => { const q = manualV(pg, 'quota14'); return q ? { v: Math.round((100 * M.tok14.f().v) / q), s: '수기' } : null; } },
+    outputs: { label: '토큰으로 만든 산출물(성과 등록)', unit: '건', f: () => ({ v: S.achievements.length, s: '측정' }) },
+    outValue: { label: '산출물 추정가치(확정 합계)', unit: '원', f: () => ({ v: sum(S.achievements.filter((a) => a.status === '확정'), (a) => a.value_won), s: '추정' }) },
+    valuePerM: { label: '토큰 100만당 추정가치', unit: '원', f: () => { const t = M.tok14.f().v; return t ? { v: Math.round(M.outValue.f().v / t), s: '추정' } : null; } },
+    brandValue: { label: '브랜딩 가치', unit: '원', manual: true },
+    realized: { label: '돈으로 실현된 가치', unit: '원', manual: true },
+    savedH: { label: '월 절감시간(성과 등록 기준)', unit: '시간', f: () => ({ v: sum(S.achievements, (a) => (+a.saved_hours || 0) * (+a.headcount || 1)), s: '추정' }) },
+    prodYear: { label: '생산성 향상 연 환산 가치(예측)', unit: '원', f: () => ({ v: M.savedH.f().v * HV * 12, s: '추정' }) },
+    uplift: { label: '직원 생산성 향상률(도입 전후)', unit: '%', manual: true },
+    aiUsers: { label: 'AI를 쓰는 직원 수', unit: '명', manual: true },
+    cParticipants: { label: '콘테스트 참가 고객', unit: '명', manual: true },
+    cEntries: { label: '접수 작품', unit: '건', manual: true },
+    cTimeSaved: { label: '참가 고객이 아낀 시간(보고 기준)', unit: '시간', manual: true },
+    cImpr: { label: '콘테스트 노출 수', unit: '회', manual: true },
+    cCpm: { label: '광고 1천 회 노출 단가', unit: '원', manual: true },
+    cMedia: { label: '광고 대체 가치(노출 환산)', unit: '원', need: '노출 수·1천 회 단가', f: (pg) => { const i = manualV(pg, 'cImpr'); const c = manualV(pg, 'cCpm'); return i != null && c != null ? { v: Math.round((i * c) / 1000), s: '추정' } : null; } },
+    custom: { label: '요청한 숫자', unit: '', manual: true }
+  };
+  const mLabel = (pg, k) => (k === 'custom' && pg.customLabel ? pg.customLabel : M[k].label);
+  function mval(pg, k) {
+    const m = M[k]; if (!m) return { v: null, s: '미확인' };
+    if (m.f) { const r = m.f(pg); if (r) return r; }
+    const mv = pg.manual && pg.manual[k];
+    if (m.manual && mv) return { v: mv.v, s: '수기', d: mv.d };
+    return { v: null, s: '미확인' };
+  }
+  const shortWon = (v) => (Math.abs(v) >= 1e8 ? `${(v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억` : Math.abs(v) >= 1e4 ? `${Math.round(v / 1e4).toLocaleString('ko-KR')}만` : Number(v).toLocaleString('ko-KR'));
+  const showV = (v, unit) => (v == null ? '—' : unit === '원' ? `${shortWon(v)}<small>원</small>` : `${Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}${unit ? `<small>${esc(unit)}</small>` : ''}`);
+
+  /* ---------- Claude가 요청을 읽고 페이지를 구성(목업 규칙) ---------- */
+  const TPL = {
+    prod: () => ({
+      title: 'AI로 높아진 직원 생산성과 그 가치', head: 'prodYear', cover: 0,
+      summary: '성과·레벨에 등록된 AI 산출물의 절감시간을 모아 생산성 향상분을 돈으로 환산한 예측치입니다.',
+      blocks: [
+        { t: 'kpis', keys: ['savedH', 'prodYear', 'outValue', 'uplift', 'aiUsers'] },
+        { t: 'formula', lines: ['월 절감시간 = Σ(1인 월 절감시간 × 영향 인원) — 성과·레벨 등록 건 기준', '연 환산 가치(예측) = 월 절감시간 × 표준시간가치 30,000원 × 12개월 (표준시간가치는 급여가 아님)', '향상률은 같은 업무의 도입 전·후 소요시간을 비교해야 측정됩니다'] },
+        { t: 'trend', title: 'AI 사용량 추이(Claude 토큰, 일별)' },
+        { t: 'empty', title: '직원별 생산성', text: '직원별 AI 사용 로그와 업무 소요시간이 아직 연결되지 않아 비워 둡니다. 연결되면 이름 없이 조직 단위로만 보여 드리고, 급여·연봉 정보는 쓰지 않습니다.' },
+        { t: 'sources', items: [['성과·레벨 등록 건', '연결됨', '현황판 안'], ['Claude 사용량', '연결됨', '사용량 수집'], ['직원별 AI 사용 로그', '미연결', 'Claude·ChatGPT·Gemini 조직 관리자 사용량'], ['업무 소요시간 전·후 비교', '미연결', '부서별 표본 업무 측정']] }
+      ]
+    }),
+    contest: () => ({
+      title: '고객 생산성 콘테스트가 만든 브랜드 가치', head: 'cMedia', cover: 1,
+      summary: '고객이 AI로 생산성을 높인 사례를 콘테스트로 모으고, 그 노출이 회사 브랜드에 더한 가치를 봅니다.',
+      blocks: [
+        { t: 'kpis', keys: ['cParticipants', 'cEntries', 'cTimeSaved', 'cImpr', 'cCpm', 'cMedia', 'brandValue'] },
+        { t: 'formula', lines: ['광고 대체 가치(추정) = 노출 수 × 광고 1천 회 노출 단가 ÷ 1,000', '고객 생산성 = 참가 고객이 보고한 절감시간 합계(수기)', '브랜드 가치는 인지도 설문·검색량 같은 원천을 정해야 측정됩니다'] },
+        { t: 'empty', title: '콘테스트 회차별 추이', text: '아직 열린 콘테스트 기록이 없습니다. 회차가 쌓이면 참가·노출·가치 추이를 그립니다.' },
+        { t: 'sources', items: [['콘테스트 접수 시스템', '미연결', '접수 폼·심사표'], ['SNS·언론 노출 집계', '미연결', '광고 관리자·모니터링 도구'], ['브랜드 인지도 설문', '미연결', '분기 설문']] }
+      ]
+    }),
+    token: () => ({
+      title: '직원 AI 토큰: 안 쓴 양부터 실현된 돈까지', head: 'tok14', cover: 2,
+      summary: '지급한 토큰이 산출물 → 추정가치 → 브랜딩 가치 → 실제 돈으로 얼마나 이어졌는지 단계별로 봅니다.',
+      blocks: [
+        { t: 'funnel', keys: ['quota14', 'tok14', 'outputs', 'outValue', 'brandValue', 'realized'] },
+        { t: 'kpis', keys: ['unused14', 'useRate', 'cost14', 'valuePerM'] },
+        { t: 'trend', title: '토큰 사용 추이(Claude, 일별)' },
+        { t: 'formula', lines: ['쓰지 않은 토큰 = 지급 한도 − 사용 토큰', '토큰 100만당 추정가치 = 산출물 추정가치 ÷ 사용 토큰(M)', '돈으로 실현된 가치는 매출·비용 장부에서 확인된 금액만 넣습니다(꾸며 넣지 않음)'] },
+        { t: 'sources', items: [['Claude 사용량', '연결됨', '사용량 수집'], ['성과·레벨 산출물', '연결됨', '현황판 안'], ['직원별 지급 한도', '미연결', 'AI 도구 관리자 설정'], ['ChatGPT·Gemini 사용량', '미연결', '각 관리자 콘솔'], ['실현 금액', '미연결', '회계 장부']] }
+      ]
+    }),
+    custom: (req) => ({
+      title: req.replace(/\s+/g, ' ').trim().slice(0, 36) || '새 숫자', head: 'custom', cover: 3, customLabel: req.replace(/\s+/g, ' ').trim().slice(0, 24),
+      summary: '요청을 읽었지만 현황판 안에서 이 숫자의 원천을 찾지 못했습니다. 값을 직접 넣거나 원천을 알려 주시면 연결합니다.',
+      blocks: [
+        { t: 'kpis', keys: ['custom'] },
+        { t: 'sources', items: [['원천', '미정', '채팅으로 알려 주세요(예: “원천은 회계 장부”)']] }
+      ]
+    })
+  };
+  function pickTpl(req) {
+    if (/토큰|AI\s*비용|ai\s*비용/.test(req)) return 'token';
+    if (/콘테스트|공모|고객/.test(req)) return 'contest';
+    if (/생산성/.test(req)) return 'prod';
+    return 'custom';
+  }
+  function makePage(req) {
+    const kind = pickTpl(req);
+    const pg = Object.assign({ id: uid('pg'), req, kind, manual: {}, created: S.today, updated: S.today, ver: 1, chat: [] }, TPL[kind](req));
+    pg.chat.push({ r: 'u', t: req }, { r: 'c', t: foundMsg(pg) });
+    return pg;
+  }
+  function pageKeys(pg) { const ks = []; pg.blocks.forEach((b) => (b.keys || []).forEach((k) => { if (!ks.includes(k)) ks.push(k); })); return ks; }
+  function tally(pg) { const c = { 측정: 0, 수기: 0, 추정: 0, 미확인: 0 }; pageKeys(pg).forEach((k) => { c[mval(pg, k).s] += 1; }); return c; }
+  function foundMsg(pg) {
+    const c = tally(pg);
+    return `요청을 읽고 「${pg.title}」 페이지를 만들었습니다. 숫자 ${pageKeys(pg).length}개 중 현황판에서 바로 계산한 것 ${c.측정}개, Claude 추정 ${c.추정}개, 직접 넣은 값 ${c.수기}개, 원천이 없어 비워 둔 것 ${c.미확인}개입니다. 비워 둔 숫자는 꾸며 넣지 않았습니다.`;
+  }
+
+  const SEED_REQ = [
+    'AI로 각 직원의 생산성이 향상된 정도와 그것을 가치로 연결할 수 있는 예측치',
+    '고객들의 생산성을 콘테스트를 통하여 회사의 브랜드 가치를 향상시킨 가치',
+    '직원들에게 제공하는 AI 비용의 토큰양 중 비사용 토큰량과, 토큰을 산출물로 만든 것과 산출물의 추정가치·브랜딩 가치·돈으로 실현된 가치 측정'
+  ];
+  if (!N().pages) N().pages = SEED_REQ.map(makePage);
+  const pageById = (id) => N().pages.find((p) => p.id === id);
+
+  /* ---------- 채팅 명령(목업 규칙) ---------- */
+  const ADD_WORDS = [['실현', 'realized'], ['브랜딩', 'brandValue'], ['브랜드', 'brandValue'], ['비용', 'cost14'], ['토큰', 'tok14'], ['안 쓴', 'unused14'], ['비사용', 'unused14'], ['사용률', 'useRate'], ['산출물', 'outputs'], ['절감', 'savedH'], ['향상률', 'uplift'], ['노출', 'cImpr'], ['참가', 'cParticipants']];
+  const BLOCK_WORDS = [['추이', 'trend'], ['그래프', 'trend'], ['막대', 'trend'], ['공식', 'formula'], ['계산', 'formula'], ['원천', 'sources'], ['단계', 'funnel'], ['깔때기', 'funnel'], ['메모', 'note']];
+  const HELP = '목업에서는 이런 말을 알아듣습니다: “제목을 「…」로 바꿔”, “추이 그래프 넣어”, “실현된 가치 추가”, “공식 빼”, “메모: …”, “원천은 회계 장부”. 실서비스에서는 Claude가 자유롭게 페이지를 고칩니다.';
+  function claudeEdit(pg, text) {
+    const t = text.trim();
+    let m = t.match(/제목[을를은는]?\s*[「“"']?(.+?)[」”"']?\s*(?:으로|로)\s*(?:바꿔|변경|해)/);
+    if (m) { pg.title = m[1].trim().slice(0, 40); return `제목을 「${pg.title}」로 바꿨습니다.`; }
+    m = t.match(/^(?:메모|설명)\s*[:：]\s*(.+)/);
+    if (m) { pg.blocks.push({ t: 'note', text: m[1].slice(0, 200) }); return '메모를 페이지 아래에 붙였습니다.'; }
+    m = t.match(/원천[은는이]?\s*(.+?)(?:이야|이에요|입니다|야|예요)?$/);
+    if (m && !/빼|삭제|지워/.test(t)) {
+      let src = pg.blocks.find((b) => b.t === 'sources'); if (!src) { src = { t: 'sources', items: [] }; pg.blocks.push(src); }
+      src.items = src.items.filter((x) => x[1] !== '미정'); src.items.push([m[1].trim().slice(0, 40), '연결 요청', 'Claude가 연결 방법을 확인 중(목업)']);
+      return `원천 「${m[1].trim()}」을 기록했습니다. 연결되기 전까지 숫자는 미확인으로 둡니다.`;
+    }
+    if (/빼|삭제|지워|없애/.test(t)) {
+      const hit = BLOCK_WORDS.find(([w]) => t.includes(w));
+      if (hit) { const before = pg.blocks.length; pg.blocks = pg.blocks.filter((b) => b.t !== hit[1]); return before !== pg.blocks.length ? `「${hit[0]}」 영역을 뺐습니다.` : `「${hit[0]}」 영역은 원래 없습니다.`; }
+      const kh = ADD_WORDS.find(([w]) => t.includes(w));
+      if (kh) { let n = 0; pg.blocks.forEach((b) => { if (b.keys && b.keys.includes(kh[1])) { b.keys = b.keys.filter((k) => k !== kh[1]); n++; } }); return n ? `「${M[kh[1]].label}」 숫자를 뺐습니다.` : '그 숫자는 페이지에 없습니다.'; }
+    }
+    if (/추이|그래프|막대/.test(t)) {
+      if (pg.blocks.some((b) => b.t === 'trend')) return '추이 그래프는 이미 있습니다.';
+      pg.blocks.splice(1, 0, { t: 'trend', title: 'AI 사용량 추이(Claude 토큰, 일별)' });
+      return '현황판에 일별 기록이 있는 Claude 토큰 추이를 넣었습니다. 다른 숫자의 추이는 원천이 연결되면 그립니다.';
+    }
+    if (/추가|넣어|보여/.test(t)) {
+      const kh = ADD_WORDS.find(([w]) => t.includes(w));
+      if (kh) {
+        if (pageKeys(pg).includes(kh[1])) return `「${M[kh[1]].label}」은 이미 페이지에 있습니다.`;
+        let k = pg.blocks.find((b) => b.t === 'kpis'); if (!k) { k = { t: 'kpis', keys: [] }; pg.blocks.unshift(k); }
+        k.keys.push(kh[1]); const r = mval(pg, kh[1]);
+        return `「${M[kh[1]].label}」을 추가했습니다 — ${r.v == null ? '원천이 없어 미확인(—)으로 둡니다.' : `${r.s} 값입니다.`}`;
+      }
+    }
+    return null;
+  }
+  function chatTurn(pg, text) {
+    pg.chat.push({ r: 'u', t: text });
+    const reply = claudeEdit(pg, text);
+    if (reply) { pg.ver += 1; pg.updated = S.today; }
+    pg.chat.push({ r: 'c', t: reply || HELP });
+  }
+
+  /* ---------- 그리기: 게시판 ---------- */
+  const COVERS = ['nb-cv0', 'nb-cv1', 'nb-cv2', 'nb-cv3'];
+  function boardCard(pg) {
+    const h = mval(pg, pg.head);
+    const c = tally(pg);
+    const tot = pageKeys(pg).length;
+    return `<button type="button" class="nb-news" data-act="numbersOpen" data-id="${pg.id}" aria-label="${esc(pg.title)} 열기">
+      <div class="nb-cover ${COVERS[pg.cover % 4]}">
+        <span class="nb-cover-k">${esc(mLabel(pg, pg.head))} ${badge(h.s)}</span>
+        <span class="nb-cover-v num">${showV(h.v, M[pg.head].unit)}</span>
+        ${h.v == null && M[pg.head].need ? `<span class="nb-cover-need">${esc(M[pg.head].need)} 입력 필요</span>` : ''}
+      </div>
+      <div class="nb-news-body">
+        <h3>${esc(pg.title)}</h3>
+        <p class="nb-req">“${esc(pg.req.length > 70 ? pg.req.slice(0, 70) + '…' : pg.req)}”</p>
+        <div class="nb-meter" aria-label="숫자 ${tot}개 중 확인된 것 ${tot - c.미확인}개">${['측정', '추정', '수기', '미확인'].map((s) => (c[s] ? `<i class="s-${s === '측정' ? 'm' : s === '추정' ? 'e' : s === '수기' ? 'h' : 'u'}" style="flex:${c[s]}"></i>` : '')).join('')}</div>
+        <div class="nb-news-foot"><span>확인 ${tot - c.미확인}/${tot} · 미확인 ${c.미확인}</span><span>v${pg.ver} · ${md(pg.updated)}</span></div>
+      </div>
+    </button>`;
+  }
+  function viewBoard() {
+    const u = ui();
+    const pages = N().pages;
+    return `<section class="panel nb-ask">
+        <form data-form="numbersAsk" class="nb-ask-form">
+          <label class="f" for="nb-ask-in"><b class="nb-ask-t">보고 싶은 숫자를 글로 적어 주세요</b><span>Claude가 숫자를 찾아 카드로 올리고, 지켜보는 페이지를 만들어 드립니다.</span></label>
+          <textarea id="nb-ask-in" name="req" required maxlength="300" rows="2" placeholder="예: 이번 달 AI로 줄인 보고서 작성 시간과 그 가치"></textarea>
+          <div class="row"><button class="btn primary">Claude에게 찾아 달라고 하기</button><button type="button" class="btn" data-act="numbersStudio" data-id="">채팅으로 직접 만들기</button></div>
+        </form>
+      </section>
+      ${pages.length ? `<div class="nb-board">${pages.map(boardCard).join('')}</div>` : '<div class="nb-empty">아직 등록한 숫자가 없습니다. 위에 보고 싶은 숫자를 적어 보세요.</div>'}
+      <p class="small muted" style="margin:0">목업: Claude의 응답은 화면 안 규칙으로 흉내 냅니다. 실서비스에서는 서버에서 Claude가 원천을 찾고 페이지를 만듭니다. ${badge('미확인')}은 원천이 없어 비워 둔 숫자입니다.${u.lastNew ? '' : ''}</p>`;
+  }
+
+  /* ---------- 그리기: 모니터링 페이지 본문(상세·미리보기 공용) ---------- */
+  function kpiTile(pg, k, inStudio) {
+    const r = mval(pg, k); const m = M[k]; const u = ui();
+    const editing = !inStudio && u.pgEntry === pg.id + ':' + k;
+    return `<div class="nb-tile${r.v == null ? ' none' : ''}">
+      <span class="nb-tile-k">${esc(mLabel(pg, k))} ${badge(r.s)}</span>
+      <span class="nb-tile-v num">${showV(r.v, m.unit)}</span>
+      <span class="nb-tile-n">${r.v == null ? (m.need ? `${esc(m.need)}을(를) 넣으면 계산합니다` : '원천 없음 — 꾸며 넣지 않습니다') : r.d ? `${esc(r.d)} 입력` : r.s === '측정' ? '현황판 자동 계산' : r.s === '추정' ? 'Claude 산정' : ''}</span>
+      ${m.manual && !inStudio ? (editing ? `<form class="nb-tile-form" data-form="numbersPgVal" data-id="${pg.id}" data-k="${k}"><input type="number" step="any" name="v" required aria-label="${esc(mLabel(pg, k))} 값" value="${r.s === '수기' ? r.v : ''}"><button class="btn sm primary">저장</button><button type="button" class="btn sm" data-act="numbersPgEntry" data-v="">취소</button></form>` : `<button type="button" class="btn sm" data-act="numbersPgEntry" data-v="${pg.id}:${k}">${r.s === '수기' ? '값 고치기' : '값 넣기'}</button>`) : ''}
+    </div>`;
+  }
+  function tokTrend() {
+    const pts = S.usage.slice(-14).map((x) => ({ d: x.date, v: +((x.input_tokens + x.output_tokens) / 1e6).toFixed(2) }));
+    const max = Math.max(...pts.map((p) => p.v), 1e-9);
+    return `<div class="nb-trend nb-trend-lg" role="img" aria-label="최근 14일 Claude 토큰 추이">${pts.map((p, i) => `<div class="nb-bar${i === pts.length - 1 ? ' now' : ''}" title="${md(p.d)} · ${p.v}M"><div class="nb-col"><i style="height:${Math.max(4, Math.round((p.v / max) * 100))}%"></i></div><span>${i % 2 === pts.length % 2 ? '' : md(p.d)}</span></div>`).join('')}</div>`;
+  }
+  function blockHtml(pg, b, inStudio) {
+    switch (b.t) {
+      case 'kpis': return `<div class="nb-tiles">${b.keys.map((k) => kpiTile(pg, k, inStudio)).join('')}</div>`;
+      case 'funnel': return `<section class="nb-blk"><h4>지급 토큰에서 실현된 돈까지</h4><ol class="nb-funnel">${b.keys.map((k, i) => { const r = mval(pg, k); return `<li><span class="nb-step">${i + 1}</span><span class="nb-fk">${esc(mLabel(pg, k))}</span>${badge(r.s)}<b class="num">${showV(r.v, M[k].unit)}</b></li>`; }).join('')}</ol>${inStudio ? '' : `<div class="nb-tiles nb-tiles-sm">${b.keys.filter((k) => M[k].manual).map((k) => kpiTile(pg, k, false)).join('')}</div>`}</section>`;
+      case 'formula': return `<section class="nb-blk"><h4>이렇게 계산합니다</h4><ul class="nb-formula">${b.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></section>`;
+      case 'trend': return `<section class="nb-blk"><h4>${esc(b.title)} ${badge('측정')}</h4>${tokTrend()}</section>`;
+      case 'empty': return `<section class="nb-blk"><h4>${esc(b.title)} ${badge('미확인')}</h4><p class="nb-blank">${esc(b.text)}</p></section>`;
+      case 'sources': return `<section class="nb-blk"><h4>데이터 원천</h4><ul class="nb-src">${b.items.map(([n, st, how]) => `<li><span class="nb-src-st ${st === '연결됨' ? 'on' : ''}">${esc(st)}</span><b>${esc(n)}</b><span class="muted">${esc(how || '')}</span></li>`).join('')}</ul></section>`;
+      case 'note': return `<section class="nb-blk nb-note"><p>${esc(b.text)}</p></section>`;
+      default: return '';
+    }
+  }
+  const pageBody = (pg, inStudio) => `<div class="nb-page">
+      <div class="nb-page-hero ${COVERS[pg.cover % 4]}"><div><div class="nb-page-kicker">내가 보는 숫자 · v${pg.ver}</div><h3>${esc(pg.title)}</h3><p>${esc(pg.summary)}</p></div></div>
+      ${pg.blocks.map((b) => blockHtml(pg, b, inStudio)).join('')}
+    </div>`;
+
+  function viewPage(pg) {
+    const u = ui();
+    return `<div class="nb-pagebar">
+        <button type="button" class="btn" data-act="numbersBack">← 숫자 게시판</button>
+        <span class="nb-spacer"></span>
+        <button type="button" class="btn primary" data-act="numbersStudio" data-id="${pg.id}">Claude와 고치기</button>
+        <button type="button" class="btn" data-act="numbersRefind" data-id="${pg.id}">다시 찾기</button>
+        <button type="button" class="btn nb-danger" data-act="numbersPgDelAsk" data-id="${pg.id}">삭제</button>
+      </div>
+      ${u.pgDel === pg.id ? `<div class="nb-panel nb-confirm" role="alertdialog" aria-label="삭제 확인"><p style="margin:0 0 8px">「${esc(pg.title)}」 페이지와 넣은 값·대화 기록을 모두 지울까요? 되돌릴 수 없습니다.</p><div class="row"><button type="button" class="btn sm nb-danger" data-act="numbersPgDel" data-id="${pg.id}">삭제 확인</button><button type="button" class="btn sm" data-act="numbersPgDelAsk" data-id="">취소</button></div></div>` : ''}
+      <p class="nb-req nb-req-lg">요청: “${esc(pg.req)}” <span class="muted">· ${esc(pg.created)} 등록 · 마지막 수정 ${esc(pg.updated)}</span></p>
+      ${pageBody(pg, false)}`;
+  }
+
+  /* ---------- 그리기: 채팅 + 미리보기(Claude 데스크톱 앱처럼) ---------- */
+  function viewStudio(pg) {
+    const chat = pg ? pg.chat : [{ r: 'c', t: '어떤 숫자를 보고 싶으신가요? 글로 적어 주시면 찾아서 오른쪽에 페이지를 만들어 드립니다.' }];
+    return `<div class="nb-pagebar">
+        <button type="button" class="btn" data-act="${pg ? 'numbersOpen' : 'numbersBack'}" data-id="${pg ? pg.id : ''}">← ${pg ? '페이지로' : '숫자 게시판'}</button>
+        <span class="nb-studio-t">${pg ? esc(pg.title) : '새 숫자 페이지'}</span>
+      </div>
+      <div class="nb-studio">
+        <section class="nb-chat" aria-label="Claude와 대화">
+          <div class="nb-chat-log" id="nbChatLog" aria-live="polite">${chat.map((m) => `<div class="nb-msg ${m.r === 'u' ? 'me' : 'cl'}">${m.r === 'c' ? '<span class="nb-who">Claude</span>' : ''}${esc(m.t)}</div>`).join('')}</div>
+          <form class="nb-chat-form" data-form="numbersChat" data-id="${pg ? pg.id : ''}">
+            <textarea name="msg" rows="2" required maxlength="300" aria-label="메시지" placeholder="${pg ? '예: 실현된 가치 추가 / 추이 그래프 넣어 / 제목을 「…」로 바꿔' : '예: 가맹점별 AI 활용 교육 이수율'}"></textarea>
+            <button class="btn primary">보내기</button>
+          </form>
+          ${pg ? '' : '<p class="small muted" style="margin:0">첫 메시지가 숫자 요청이 되고, 게시판에 카드가 생깁니다.</p>'}
+        </section>
+        <section class="nb-artifact" aria-label="미리보기">
+          <div class="nb-artifact-bar"><span>미리보기</span>${pg ? `<span class="muted">v${pg.ver}</span>` : ''}</div>
+          ${pg ? pageBody(pg, true) : '<div class="nb-empty" style="margin:12px">메시지를 보내면 여기에 페이지가 나타납니다.</div>'}
+        </section>
+      </div>`;
+  }
+
+  /* ---------- 메뉴 화면 ---------- */
+  function viewNumbers() {
+    const u = ui();
+    const mode = u.mode || 'board';
+    const pg = u.open ? pageById(u.open) : null;
+    if ((mode === 'page') && !pg) u.mode = 'board';
+    const head = `<div class="view-head"><div><h2>내가 보는 숫자</h2><p>보고 싶은 숫자를 적으면 Claude가 찾아 카드로 올리고, 누르면 그 숫자를 지켜보는 페이지가 열립니다.</p></div>
+      <div class="seg" role="tablist" aria-label="보기"><button type="button" data-act="numbersMode" data-v="board" aria-pressed="${u.mode !== 'cards'}">숫자 게시판</button><button type="button" data-act="numbersMode" data-v="cards" aria-pressed="${u.mode === 'cards'}">핵심 숫자</button></div></div>`;
+    if (u.mode === 'cards') return head + viewCards();
+    if (u.mode === 'page') return head + viewPage(pg);
+    if (u.mode === 'studio') return head + viewStudio(pg);
+    return head + viewBoard();
+  }
+
+  const top = () => setTimeout(() => window.scrollTo(0, 0), 0);
+  const chatBottom = (focus) => setTimeout(() => { const l = document.getElementById('nbChatLog'); if (l) l.scrollTop = l.scrollHeight; const t = document.querySelector('[data-form="numbersChat"] textarea'); if (t && focus) t.focus({ preventScroll: true }); }, 0);
+  A.numbersMode = (el) => { const u = ui(); u.mode = el.dataset.v; u.open = null; top(); };
+  A.numbersBack = () => { const u = ui(); u.mode = 'board'; u.open = null; u.pgDel = null; top(); };
+  A.numbersOpen = (el) => { const u = ui(); u.mode = 'page'; u.open = el.dataset.id; u.pgEntry = null; u.pgDel = null; top(); };
+  A.numbersStudio = (el) => { const u = ui(); u.mode = 'studio'; u.open = el.dataset.id || null; top(); chatBottom(true); };
+  A.numbersPgEntry = (el) => { ui().pgEntry = el.dataset.v || null; if (el.dataset.v) setTimeout(() => { const i = document.querySelector('.nb-tile-form input'); if (i) i.focus(); }, 0); };
+  A.numbersPgDelAsk = (el) => { ui().pgDel = el.dataset.id || null; };
+  A.numbersPgDel = (el) => { const p = pageById(el.dataset.id); N().pages = N().pages.filter((x) => x.id !== el.dataset.id); A.numbersBack(); toast(`「${p ? p.title : ''}」 페이지를 지웠습니다`); };
+  A.numbersRefind = (el) => { const p = pageById(el.dataset.id); p.updated = S.today; p.chat.push({ r: 'u', t: '다시 찾아 줘' }, { r: 'c', t: foundMsg(p) }); toast('현황판 값을 다시 읽었습니다'); };
+
+  APP.forms.numbersAsk = (fd) => {
+    const req = (fd.get('req') || '').toString().trim(); if (!req) return;
+    const pg = makePage(req); N().pages.unshift(pg);
+    const u = ui(); u.mode = 'page'; u.open = pg.id; top();
+    toast('Claude가 숫자를 찾아 페이지를 만들었습니다(목업)');
+  };
+  APP.forms.numbersChat = (fd, form) => {
+    const text = (fd.get('msg') || '').toString().trim(); if (!text) return;
+    let pg = pageById(form.dataset.id);
+    if (!pg) { pg = makePage(text); N().pages.unshift(pg); ui().open = pg.id; }
+    else chatTurn(pg, text);
+    chatBottom(true);
+  };
+  APP.forms.numbersPgVal = (fd, form) => {
+    const pg = pageById(form.dataset.id); const k = form.dataset.k; const v = num(fd.get('v'));
+    if (!pg || !M[k] || !M[k].manual) return;
+    if (v == null) { toast('값을 숫자로 넣어 주세요'); return; }
+    pg.manual[k] = { v, d: S.today }; pg.updated = S.today; ui().pgEntry = null;
+    toast(`${mLabel(pg, k)}: ${Number(v).toLocaleString('ko-KR')}${M[k].unit} 기록(수기)`);
   };
 
   APP.views.numbers = viewNumbers;
