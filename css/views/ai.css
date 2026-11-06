@@ -101,3 +101,17 @@
   .view-head .ai-seg { width: 100%; }
   .view-head .ai-seg button { flex: 1; }
 }
+
+/* 실데이터 조사 */
+.ai-real { border-left: 4px solid var(--line); }
+.ai-real.on { border-left-color: var(--ok); }
+.ai-real:not(.on) { background: var(--goldSoft); border-color: transparent; border-left: 4px solid var(--gold); }
+.ai-real-head { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.ai-real-head > div:first-child { flex: 1 1 320px; min-width: 0; }
+.ai-real-head .btn.primary { min-height: 42px; padding: 8px 20px; font-size: 15.5px; }
+.ai-scan-msg { margin: 8px 0 0; color: var(--goldInk); font-weight: 500; }
+.ai-scan-msg:empty { display: none; }
+.ai-sess { margin-top: 10px; }
+.ai-sess > summary { cursor: pointer; color: var(--sub); }
+.ai-sess table { margin-top: 8px; }
+@media (max-width: 480px) { .ai-real-head .row, .ai-real-head .btn.primary { width: 100%; } }

@@ -188,7 +188,7 @@
   /* ---------- ⑦ 보상 기준 ---------- */
 
   /* ---------- 라우팅 ---------- */
-  const TABS = [['today', '오늘 할 일', null, '#3D1E0F'], ['directives', '지시 관리', null, '#E9A400'], ['ideas', '신사업', null, '#E46F8C'], ['value', '성과·레벨', null, '#2E8B57'], ['learn', '경영학습', null, '#5B6FB8'], ['ai', 'AI 사용', null, '#2F8C7A'], ['ops', '경영 현황', null, '#8C6A4F'], ['ideabank', '아이디어뱅크', null, '#C0392B']];
+  const TABS = [['today', '오늘 할 일', null, '#3D1E0F'], ['numbers', '내가 보는 숫자', null, '#1F2A4D'], ['directives', '지시 관리', null, '#E9A400'], ['ideas', '신사업', null, '#E46F8C'], ['value', '성과·레벨', null, '#2E8B57'], ['learn', '경영학습', null, '#5B6FB8'], ['ai', 'AI 사용', null, '#2F8C7A'], ['ops', '경영 현황', null, '#8C6A4F'], ['ideabank', '아이디어뱅크', null, '#C0392B']];
   // 사이드 메뉴에는 없지만 링크로 여는 화면(보상 기준은 성과·레벨의 버튼으로 연다). 값 = 사이드에서 켜 둘 메뉴
   const SUB_ROUTES = { rules: 'value' };
   /* 테마: 시스템 설정을 따르되, 버튼으로 바꾸면 이 브라우저에 기억 */

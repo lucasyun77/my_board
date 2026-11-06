@@ -173,7 +173,8 @@
 .dir-tl-group.none { border-style: dashed; }
 
 /* 오른쪽 상세 패널 (Asana 작업 상세 배치) */
-.dir-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100vw); z-index: 15; background: var(--paper); border-left: var(--hair); box-shadow: -12px 0 32px rgba(20, 10, 4, .16); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); animation: dir-slide .16s ease-out; }
+.dir-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100vw); z-index: 15; background: var(--paper); border-left: var(--hair); box-shadow: -12px 0 32px rgba(20, 10, 4, .16); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); }
+.dir-pane.enter { animation: dir-slide .16s ease-out; } /* 처음 열 때만 */
 .dir-pane:focus { outline: none; }
 @keyframes dir-slide { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
 .dir-pane-bar { display: flex; align-items: center; gap: 6px; padding: 10px 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--paper); }
@@ -327,3 +328,44 @@
   .dir-pane-bar [data-act="dirReload"] { display: none; }
   .dir-donebtn { padding: 6px 9px; font-size: 13.5px; }
 }
+.dir-repsend { gap: 6px 8px; padding-top: 8px !important; border-top: 1px dashed var(--line); margin: 0 12px; padding-left: 0 !important; padding-right: 0 !important; }
+.dir-repsend .dir-link { margin-left: auto; }
+.dir-repsec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.dir-repsec h4 { margin: 0; font-size: 15px; }
+.dir-recs { display: flex; flex-direction: column; gap: 6px; }
+.dir-rec { border: 1.5px solid var(--line); border-radius: 12px; background: var(--paper); }
+.dir-rec.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.dir-rec-h { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; padding: 10px 12px; cursor: pointer; color: var(--ink); }
+.dir-rec-h:hover b { color: var(--goldInk); }
+.dir-rec-h b { font-size: 14.5px; }
+.dir-rec-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.dir-rec-body textarea { min-height: 110px; }
+.dir-repprompt { margin: 0; padding: 8px 14px 0; }
+
+/* 진행 기록 */
+.dir-repbtn.prog { border-color: var(--ok); color: var(--ok); }
+.dir-repbtn.prog b { color: var(--ok); }
+.dir-prog { display: flex; flex-direction: column; gap: 12px; }
+.dir-progboard { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--line); padding-left: 14px; margin-left: 4px; }
+.dir-progday { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.dir-progday::before { content: ""; position: absolute; left: -21px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); border: 2px solid var(--paper); }
+.dir-progday header { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.dir-progday ul { margin: 6px 0 0; padding-left: 18px; font-size: 14.5px; }
+.dir-progday details { margin-top: 6px; }
+.dir-progday details summary { cursor: pointer; color: var(--goldInk); }
+.dir-progsrc { list-style: none; padding-left: 0 !important; display: flex; flex-direction: column; gap: 6px; }
+.dir-progstat { display: inline-flex; gap: 6px; align-items: center; }
+.dir-aistat { color: var(--sub); }
+.dir-aistat.ok { color: var(--ok); font-weight: 700; }
+
+/* 비주얼 리포트 */
+.dir-visrow { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px 14px 0; }
+.dir-visbtn { border-color: var(--gold); color: var(--goldInk); }
+.dir-visual { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; background: var(--paper); }
+.dir-visual[hidden] { display: none; }
+.dir-visual-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.dir-visual-bar b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dir-visual-sp { flex: 1; }
+.dir-visual-msg { padding: 40px 16px; text-align: center; color: var(--sub); }
+.dir-visual-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+body.dir-vis-open { overflow: hidden; }
