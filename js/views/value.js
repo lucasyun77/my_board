@@ -46,6 +46,8 @@
     S.valueSeeded = true;
   }
 
+  if (S.ui.value) S.ui.value.celebrate = null; // 축하 카드는 새로 열 때 남지 않게
+
   /* ---------- 메뉴 연결 약속: 활동 기록·받은 항목 ---------- */
   S.activity = S.activity || [];
   S.inbox = S.inbox || [];
@@ -376,7 +378,67 @@
       <p class="small muted">표본 ${list.length}건으로 낸 참고용 의견입니다. 건수가 쌓이면 더 정확해집니다. 공식과 계수는 바꾸지 않습니다.</p></section>`;
   }
 
-  const SUBTABS = [['list', '평가·확정'], ['game', '업적·기록'], ['analysis', '가치 분석']];
+  /* ---------- 월간 성과 리포트 ---------- */
+  const monthOf = (k) => { const [y, m] = S.today.slice(0, 7).split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+  const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+  const ymLabel = (ym) => `${ym.slice(0, 4)}년 ${+ym.slice(5)}월`;
+  function monthData(ym) {
+    const start = ym + '-01'; const end = monthEnd(ym);
+    const done = S.achievements.filter((a) => isDone(a) && a.confirmed_at >= start && a.confirmed_at <= end);
+    const sum = done.reduce((t, a) => t + a.value_won, 0);
+    const lvStart = 1 + S.levelUps.filter((l) => l.at < start).length; const lvEnd = 1 + S.levelUps.filter((l) => l.at <= end).length;
+    const negos = S.achievements.flatMap((a) => a.negotiations).filter((n) => n.created_at >= start && n.created_at <= end);
+    const nv = { '수용': 0, '부분수용': 0, '거절': 0 }; negos.forEach((n) => { nv[n.verdict] = (nv[n.verdict] || 0) + 1; });
+    const badges = badgeState().filter((b) => b.got && b.at >= start && b.at <= end);
+    return { ym, start, end, done, sum, top: done.slice().sort((a, b) => b.value_won - a.value_won).slice(0, 5), lvStart, lvEnd, negos: negos.length, nv, badges, agent: done.filter((a) => a.by_agent).length };
+  }
+  function reportMd(d, prev) {
+    const diff = d.sum - prev.sum;
+    return [`# 월간 성과 리포트 — ${ymLabel(d.ym)}`, '', `- 확정 수익가치: ${kwon(d.sum)}천원 (${d.done.length}건, 전월 대비 ${diff >= 0 ? '+' : '−'}${kwon(Math.abs(diff))}천원) [추정]`,
+      `- 레벨: Lv.${d.lvStart} → Lv.${d.lvEnd} (${titleOf(d.lvEnd)})`, `- 협상: ${d.negos}회 (수용 ${d.nv['수용']} · 부분수용 ${d.nv['부분수용']} · 거절 ${d.nv['거절']})`, `- 에이전트 수행 확정: ${d.agent}건`,
+      `- 새 업적: ${d.badges.length ? d.badges.map((b) => b.name).join(', ') : '없음'}`, '', '## 확정 Top 5', '', '| 순위 | 성과 | 확정일 | 수익가치(천원) |', '|---|---|---|---|',
+      ...(d.top.length ? d.top.map((a, i) => `| ${i + 1} | ${a.title.replace(/\|/g, '/')} | ${a.confirmed_at} | ${kwon(a.value_won)} |`) : ['| - | 확정 건 없음 | - | - |']), '', `_목업 데이터 · V = B×L×F×S×A×N · ${S.today} 생성_`].join('\n');
+  }
+  function reportPanel() {
+    const u = ui(); const k = Math.min(0, Math.max(-2, +(u.rMonth || 0)));
+    const d = monthData(monthOf(k)); const prev = monthData(monthOf(k - 1)); const diff = d.sum - prev.sum;
+    return `<section class="panel" aria-labelledby="h-vrep"><div class="val-lhead"><h3 id="h-vrep">월간 성과 리포트 <span class="muted small">${ymLabel(d.ym)}</span></h3>
+        <span class="row"><span class="seg" role="group" aria-label="월 선택">${[0, -1, -2].map((x) => `<button type="button" data-act="vAn" data-k="rMonth" data-v="${x}" aria-pressed="${k === x}">${x === 0 ? '이번 달' : ymLabel(monthOf(x)).slice(6)}</button>`).join('')}</span>
+        <button type="button" class="btn sm" data-act="vCopyMd">Markdown 복사</button></span></div>
+      <div class="val-antiles">
+        <div class="val-stat"><div class="small muted">확정 수익가치 ${badge('추정')}</div><div class="val-mid num">${kwon(d.sum)}<small>천원</small></div><div class="small ${diff >= 0 ? 'val-up' : 'val-down'}">전월 대비 ${diff >= 0 ? '▲' : '▼'} ${kwon(Math.abs(diff))}천원</div></div>
+        <div class="val-stat"><div class="small muted">확정 건수 ${badge('측정')}</div><div class="val-mid num">${d.done.length}<small>건</small></div><div class="small muted">에이전트 ${d.agent}건</div></div>
+        <div class="val-stat"><div class="small muted">레벨 변화 ${badge('측정')}</div><div class="val-mid num">Lv.${d.lvStart}${d.lvEnd !== d.lvStart ? ` → ${d.lvEnd}` : ''}</div><div class="small muted">${esc(titleOf(d.lvEnd))}</div></div>
+        <div class="val-stat"><div class="small muted">협상 ${badge('측정')}</div><div class="val-mid num">${d.negos}<small>회</small></div><div class="small muted">수용 ${d.nv['수용']} · 부분 ${d.nv['부분수용']} · 거절 ${d.nv['거절']}</div></div>
+      </div>
+      <h4 class="val-h4">확정 Top 5</h4>
+      ${d.top.length ? `<ol class="val-top">${d.top.map((a, i) => `<li><span class="val-rank num">${i + 1}</span><span class="val-ititle"><b>${esc(a.title)}</b><span class="small muted">확정 ${md(a.confirmed_at)} · ${esc((F_TYPES[a.output_type] || [''])[0])}${a.by_agent ? ' · 에이전트' : ''}</span></span><span class="val-mid num">${kwon(a.value_won)}<small>천원</small></span></li>`).join('')}</ol>` : '<p class="small muted">이 달에는 확정한 건이 없습니다.</p>'}
+      <h4 class="val-h4">이 달에 얻은 업적</h4>
+      ${d.badges.length ? `<ul class="val-titles">${d.badges.map((b) => `<li class="on cur"><span aria-hidden="true">${b.sym}</span><b>${esc(b.name)}</b><span class="small muted">${md(b.at)}</span></li>`).join('')}</ul>` : '<p class="small muted">이 달에 새로 얻은 업적이 없습니다.</p>'}
+      <details class="val-hist"><summary>Markdown 미리보기</summary><pre class="val-md">${esc(reportMd(d, prev))}</pre></details>
+    </section>`;
+  }
+  function copyText(text) {
+    const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (er) { ok = false; } ta.remove(); toast(ok ? '리포트를 Markdown으로 복사했습니다' : '복사가 막혀 있습니다. 미리보기에서 직접 선택해 복사하세요'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('리포트를 Markdown으로 복사했습니다'), fallback); else fallback();
+  }
+
+  /* ---------- 레벨업 축하 카드(움직임 줄이기 설정이면 정지 화면) ---------- */
+  function celebCard() {
+    const c = ui().celebrate; if (!c) return '';
+    const newTitle = titleOf(c.to) !== titleOf(c.from);
+    return `<div class="val-celeb-bg" data-act="vCelebClose" aria-hidden="true"></div>
+      <div class="val-celeb" role="dialog" aria-modal="true" aria-labelledby="h-celeb">
+        <div class="val-confetti" aria-hidden="true">${Array.from({ length: 14 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div>
+        <div class="small muted">레벨업</div>
+        <div id="h-celeb" class="val-celeb-lv num">Lv.${c.from} → Lv.${c.to}</div>
+        <div class="val-title">${newTitle ? `새 칭호 「${esc(titleOf(c.to))}」` : esc(titleOf(c.to))}</div>
+        <p>${kwon(LEVEL_COST * (c.to - c.from))}천원을 써서 ${c.to - c.from}단계 올랐습니다. 남은 잔액 <b class="num">${kwon(S.wallet.balance_won)}천원</b>.</p>
+        <div class="row"><button type="button" class="btn primary" data-act="vCelebClose">확인</button><button type="button" class="btn" data-act="vCelebClose" data-v="game">업적 보기</button></div>
+      </div>`;
+  }
+
+  const SUBTABS = [['list', '평가·확정'], ['game', '업적·기록'], ['analysis', '가치 분석'], ['report', '월간 리포트']];
   function viewValue() {
     const u = ui();
     if (!SUBTABS.some((t) => t[0] === u.tab)) u.tab = 'list';
@@ -385,7 +447,7 @@
         <button type="button" class="btn sm" data-act="tab" data-v="rules">보상 기준 보기 →</button></div>
       ${inboxPanel()}${levelPanel()}
       <div class="seg val-tabs" role="tablist" aria-label="성과·레벨 보기">${SUBTABS.map(([k, l]) => `<button type="button" role="tab" data-act="vTab" data-v="${k}" aria-selected="${u.tab === k}" aria-pressed="${u.tab === k}">${l}${k === 'list' && pend ? ` <span class="val-cnt">${pend}</span>` : ''}${k === 'game' ? ` <span class="val-cnt">${badgeState().filter((b) => b.got).length}</span>` : ''}</button>`).join('')}</div>
-      ${u.tab === 'game' ? gamePanel() : u.tab === 'analysis' ? analysisPanel() : periodPanel() + listPanel()}`;
+      ${u.tab === 'game' ? gamePanel() : u.tab === 'analysis' ? analysisPanel() : u.tab === 'report' ? reportPanel() : periodPanel() + listPanel()}${celebCard()}`;
   }
 
   /* ---------- 동작 ---------- */
@@ -411,7 +473,8 @@
       w.balance_won -= LEVEL_COST; w.level += 1;
       S.levelUps.push({ id: uid('lu'), spent_won: LEVEL_COST, level_after: w.level, at: S.today, balance_after: w.balance_won });
     }
-    ui().askLv = false;
+    ui().askLv = false; ui().celebrate = { from, to: w.level };
+    setTimeout(() => { const b = document.querySelector('.val-celeb .btn.primary'); if (b) b.focus(); }, 0);
     logAct('levelup', `레벨업 · Lv.${from} → Lv.${w.level} (${titleOf(w.level)})`, null);
     toast(w.level - from > 1 ? `Lv.${from} → Lv.${w.level} 달성` : `Lv.${w.level} 달성`);
   };
@@ -432,6 +495,12 @@
 
   APP.acts.vTab = (el) => { ui().tab = el.dataset.v; };
   APP.acts.vAn = (el) => { ui()[el.dataset.k] = el.dataset.v; };
+  APP.acts.vCopyMd = () => { const k = Math.min(0, Math.max(-2, +(ui().rMonth || 0))); copyText(reportMd(monthData(monthOf(k)), monthData(monthOf(k - 1)))); };
+  APP.acts.vCelebClose = (el) => { const u = ui(); u.celebrate = null; if (el.dataset.v) u.tab = el.dataset.v; };
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !document.querySelector('.val-celeb')) return;
+    const b = document.querySelector('.val-celeb [data-act="vCelebClose"]'); if (b) b.click();
+  });
   APP.acts.vInOpen = (el) => { const u = ui(); u.evalOpen = el.dataset.id || null; u.skip = null; };
   APP.acts.vInAskSkip = (el) => { ui().skip = el.dataset.id || null; };
   APP.acts.vInSkip = (el) => {

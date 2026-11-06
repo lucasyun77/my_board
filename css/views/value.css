@@ -108,8 +108,8 @@
 .val-titles li b { font-family: var(--serif); }
 .val-acts { margin: 6px 0 0; padding-left: 18px; font-size: 15px; display: grid; gap: 4px; }
 @media (max-width: 600px) {
-  .val-tabs { width: 100%; }
-  .val-tabs button { flex: 1 1 0; }
+  .val-tabs { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .val-tabs button { white-space: nowrap; }
   .val-badges { grid-template-columns: minmax(0, 1fr); }
   .val-inrow > .row { width: 100%; }
   .val-inrow > .row .btn { flex: 1 1 auto; }
@@ -139,3 +139,32 @@
 .val-reco { border-left: 4px solid var(--info); }
 @media (max-width: 1100px) { .val-angrid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .val-antiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ===== P3: 월간 리포트·레벨업 축하 카드 ===== */
+.val-h4 { margin: 18px 0 8px; font-size: 15px; font-weight: 700; }
+.val-up { color: var(--ok); font-weight: 700; }
+.val-down { color: var(--crit); font-weight: 700; }
+.val-top { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.val-top li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--paper2); min-width: 0; }
+.val-top .val-ititle { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.val-top .val-ititle b { font-size: 15px; overflow-wrap: anywhere; }
+.val-top .val-mid { white-space: nowrap; }
+.val-rank { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; background: var(--paper); border: 1.5px solid var(--line); }
+.val-top li:first-child .val-rank { background: var(--gold); border-color: var(--goldInk); color: #3D1E0F; }
+.val-md { margin: 8px 0 0; padding: 12px; border-radius: 12px; background: var(--paper2); font-family: var(--mono); font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+
+.val-celeb-bg { position: fixed; inset: 0; background: rgba(26,18,12,.55); z-index: 90; cursor: pointer; }
+.val-celeb { position: fixed; z-index: 91; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 32px)); background: var(--paper); border: 2px solid var(--gold); border-radius: 22px; padding: 28px 22px 22px; text-align: center; display: grid; gap: 8px; justify-items: center; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.3); animation: val-pop .45s cubic-bezier(.2,1.4,.4,1) both; }
+.val-celeb p { margin: 4px 0 8px; font-size: 15px; }
+.val-celeb .row { justify-content: center; }
+.val-celeb-lv { font-family: var(--serif); font-size: 36px; font-weight: 700; line-height: 1.2; }
+.val-confetti { position: absolute; inset: 0; pointer-events: none; }
+.val-confetti i { position: absolute; top: -12px; left: calc(var(--i) * 7% + 2%); width: 8px; height: 14px; border-radius: 2px; background: var(--gold); opacity: .9; animation: val-fall 1.6s ease-in calc(var(--i) * 60ms) both; }
+.val-confetti i:nth-child(3n) { background: var(--ok); }
+.val-confetti i:nth-child(3n+1) { background: var(--pink); }
+@keyframes val-pop { from { transform: translate(-50%, -46%) scale(.85); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+@keyframes val-fall { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(380px) rotate(320deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .val-celeb { animation: none; }
+  .val-confetti { display: none; }
+}
