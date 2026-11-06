@@ -2058,32 +2058,62 @@ JSON 객체만 출력: {"why":"", ..., "body":"", "subs":["",""]}`, { modelTier:
     rerender();
   }
 
-  async function ideaRecs() {
-    const M = IDEA.modal = { kind: 'recs', busy: true, err: '' }; rerender();
+  async function ideaRecs(dept, who) {
+    if (IDEA.recGen && IDEA.recGen.busy) return;
+    const G = IDEA.recGen = { busy: true, err: '', start: Date.now() }; rerender();
     try {
       const { llm, used } = await manualLLM(utilAi());
       if (!llm) throw { code: 'no_llm' };
-      const goals = S.directives.filter(isGoal).filter(isOpen).slice(0, 30).map((d) => `- [${d.org}] ${d.title} (진척 ${d.pct}% / 계획 ${d.plan}%)`).join('\n');
-      const tasks = S.directives.filter((d) => !isGoal(d) && isOpen(d)).slice(0, 30).map((d) => `- ${shortT(d)} (${d.assignee}, ${d.status})`).join('\n');
-      const loads = deptsAll().map((dp) => { const ppl = staffList().filter((s) => s.d === dp); const n = ppl.reduce((a, s) => a + loadOf(s.n).tasks.length, 0); return `${dp}: 인원 ${ppl.length}명, 진행 중 지시 ${n}건`; }).join('\n');
-      const have = Object.values(ideasMap()).map((x) => x.title).join(', ');
+      const st = who ? staffOf(who) : null; if (st && !dept) dept = st.d;
+      const line = (d) => `- ${shortT(d)} (${d.assignee}, ${d.status}${noDue(d) ? '' : ', 기한 ' + d.due_at})`;
+      const goalsOf = (dp) => S.directives.filter((d) => isGoal(d) && isOpen(d) && (!dp || d.org === dp)).slice(0, 30).map((d) => `- [${d.org}] ${d.title} (진척 ${d.pct}% / 계획 ${d.plan}%)`).join('\n');
+      let target, ctx;
+      if (who) {
+        const l = loadOf(who);
+        target = `${who}${st && st.g ? ' ' + st.g : ''}님(${dept || '부서 미정'}) 한 사람에게 맡길 새 지시 아이디어 5가지를 추천하세요. 이 사람의 부서 목표를 앞당기고 지금 하는 일과 겹치지 않는 것을 고르세요. 업무 부하가 ${l.label}(진행 중 ${l.tasks.length}건)이니 ${l.lv === 'hi' ? '가볍고 짧게 끝낼 수 있는 것 위주로' : '알맞은 크기로'} 고르세요. dept는 "${dept || ''}", who는 "${who}"로 적으세요.`;
+        ctx = `${who}님이 지금 하는 지시:\n${l.tasks.map(line).join('\n') || '(없음)'}\n${dept || ''} 부서 목표:\n${goalsOf(dept) || '(없음)'}`;
+      } else if (dept) {
+        const ppl = staffList().filter((s) => s.d === dept);
+        target = `${dept}에 맡길 새 지시 아이디어 5가지를 추천하세요. 부서 목표 중 늦은 것을 앞당기거나 아무도 맡지 않은 빈틈을 메우는 것을 먼저 고르세요. 담당은 아래 명단에서 일이 덜 몰린 사람으로 고르세요. dept는 "${dept}"로 적으세요.`;
+        ctx = `${dept} 부서 목표:\n${goalsOf(dept) || '(없음)'}\n${dept} 진행 중 지시:\n${S.directives.filter((d) => !isGoal(d) && isOpen(d) && d.org === dept).slice(0, 20).map(line).join('\n') || '(없음)'}\n${dept} 명단과 부하:\n${ppl.map((s) => `- ${s.n}${s.g ? ' ' + s.g : ''}: ${loadOf(s.n).label}(진행 중 ${loadOf(s.n).tasks.length}건)`).join('\n') || '(명단 없음)'}`;
+      } else {
+        target = '회장이 지금 각 부서·사람에게 내리면 좋을 새 지시 아이디어 5가지를 추천하세요. 전사·부서 목표 중 늦은 것을 앞당기거나 아무도 맡지 않은 빈틈을 메우는 것을 먼저 고르고, 일이 몰린 부서·사람은 피하세요.';
+        ctx = `전사·부서 목표:\n${goalsOf('') || '(없음)'}\n진행 중 지시:\n${S.directives.filter((d) => !isGoal(d) && isOpen(d)).slice(0, 30).map(line).join('\n') || '(없음)'}\n부서별 부하:\n${deptsAll().map((dp) => { const ppl = staffList().filter((s) => s.d === dp); return `${dp}: 인원 ${ppl.length}명, 진행 중 지시 ${ppl.reduce((a, s) => a + loadOf(s.n).tasks.length, 0)}건`; }).join('\n') || '(없음)'}`;
+      }
+      const have = Object.values(ideasMap()).filter((x) => (!dept || x.dept === dept)).map((x) => x.title).join(', ');
+      const prev = IDEA.recs && IDEA.recs.items && IDEA.recs.dept === (dept || '') && IDEA.recs.who === (who || '') ? IDEA.recs.items.map((r) => r.title).join(', ') : '';
       const v = await llm.json(`${ID_RULES}
-회장이 지금 각 부서·사람에게 내리면 좋을 새 지시 아이디어 5가지를 추천하세요. 전사·부서 목표 중 늦은 것을 앞당기거나, 아무도 맡지 않은 빈틈을 메우는 것을 먼저 고르세요. 일이 몰린 부서·사람은 피하고 여유 있는 곳에 배정하세요.${have ? `\n이미 후보에 있는 것과 겹치지 않게: ${have}` : ''}${IDEA.recs && IDEA.recs.items ? `\n직전에 추천한 것과도 다르게: ${IDEA.recs.items.map((r) => r.title).join(', ')}` : ''}
-각 항목: title(30자 이내), dept(아래 부서 이름 중 하나), who(담당 추천, 모르면 빈칸), why(왜 지금 필요한가 60자 이내), first(담당자가 첫 주에 할 일 40자 이내).
+${target}${have ? `\n이미 후보에 있는 것과 겹치지 않게: ${have}` : ''}${prev ? `\n직전에 추천한 것과도 다르게: ${prev}` : ''}
+각 항목: title(30자 이내), dept(부서 이름), who(담당 추천, 모르면 빈칸), why(왜 지금 필요한가 60자 이내), first(담당자가 첫 주에 할 일 40자 이내).
 JSON 배열만 출력: [{"title":"","dept":"","who":"","why":"","first":""}, ...]
 
-전사·부서 목표:
-${goals || '(없음)'}
-진행 중 지시:
-${tasks || '(없음)'}
-부서별 부하:
-${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
-      const arr = (Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : []).filter((o) => o && o.title).slice(0, 5).map((o) => ({ title: String(o.title).slice(0, 60), dept: String(o.dept || '').slice(0, 30), who: String(o.who || '').slice(0, 20), why: String(o.why || '').slice(0, 120), first: String(o.first || '').slice(0, 80) }));
+${ctx}`, { modelTier: 'quick', cache: false });
+      const arr = (Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : []).filter((o) => o && o.title).slice(0, 5).map((o) => ({ title: String(o.title).slice(0, 60), dept: String(o.dept || dept || '').slice(0, 30), who: String(o.who || who || '').slice(0, 20), why: String(o.why || '').slice(0, 120), first: String(o.first || '').slice(0, 80) }));
       if (!arr.length) throw { code: 'empty_completion' };
-      IDEA.recs = { at: new Date().toISOString(), items: arr, ai: used };
+      IDEA.recs = { at: new Date().toISOString(), items: arr, ai: used, dept: dept || '', who: who || '' };
       if (LIVE.db) LIVE.db.doc('idearecs/latest').set(IDEA.recs).catch(() => {});
-    } catch (e) { M.err = aiErr(e); }
-    M.busy = false; if (IDEA.modal === M) rerender();
+    } catch (e) { G.err = aiErr(e); }
+    G.busy = false; rerender();
+  }
+  function recBox() {
+    const rc = S.ui.idRec; if (!rc) return '';
+    const R = IDEA.recs; const G = IDEA.recGen || {};
+    const ppl = staffList().filter((s) => !rc.dept || s.d === rc.dept);
+    const tgt = (r) => [r.dept, r.who].filter(Boolean).join(' · ') || '전체';
+    return `<div class="id-recbox" role="region" aria-label="AI 추천 아이디어">
+      <div class="row" style="justify-content:space-between"><b>🎲 AI 추천 아이디어 5개</b><button type="button" class="dir-link" data-act="idRecs">접기</button></div>
+      <div class="form id-recf">
+        <label class="f">누구에게 — 부서<select id="idr-dept" data-act="idRecF" data-k="dept"><option value="">전체 부서</option>${deptsAll().map((d) => `<option ${rc.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+        <label class="f">담당자${picker({ key: 'rec', id: 'idr-who', list: staffList(), pri: rc.dept || '', value: rc.who || '', empty: rc.dept ? '부서 안 누구나' : '누구나', act: 'idRecF', data: { k: 'who' }, load: true, label: '추천받을 담당자' })}</label>
+        <div class="f id-recgo"><button type="button" class="btn primary" data-act="idRecRun" ${G.busy ? 'disabled' : ''}>${G.busy ? '뽑는 중…' : R && R.items && R.dept === (rc.dept || '') && R.who === (rc.who || '') ? '다시 뽑기' : '아이디어 5개 뽑기'}</button></div>
+      </div>
+      <p class="small muted" style="margin:6px 0 0">${rc.who ? `${esc(rc.who)}님이 지금 하는 일·부하·부서 목표를 보고 고릅니다.` : rc.dept ? `${esc(rc.dept)}의 목표·진행 중 지시·사람별 부하를 보고 고릅니다.` : '전사 목표·진행 중 지시·부서별 부하를 보고 고릅니다.'} 「후보로 등록」하면 아래 지시 후보 목록에 추가되고, 아직 아무에게도 가지 않습니다.</p>
+      ${G.busy ? '<p class="small" style="margin:8px 0 0"><span class="dir-spin sm" aria-hidden="true"></span> 고르는 중… (10~30초)</p>' : ''}${G.err ? `<p class="small dir-err" style="margin:8px 0 0">${esc(G.err)}</p>` : ''}
+      ${R && R.items ? `<p class="small muted" style="margin:10px 0 6px">대상: <b>${esc(tgt(R))}</b> · ${esc(aiName(R.ai || 'claude'))} · ${esc(when(R.at))}</p>
+      <ol class="id-recs">${R.items.map((r, i) => `<li><b>${esc(r.title)}</b><span class="small muted">${esc(r.dept || '부서 미정')}${r.who ? ' · ' + esc(r.who) + ' ' + loadPill(staffOf(r.who) ? r.who : '') : ''}</span><p class="small" style="margin:4px 0">${esc(r.why)}</p>${r.first ? `<p class="small muted" style="margin:0">첫 주: ${esc(r.first)}</p>` : ''}
+        <div class="row" style="margin-top:6px">${r.added && ideasMap()[r.added] ? `<span class="pill st-done">✓ 지시 후보에 등록됨</span><button type="button" class="btn sm" data-act="idRecGo" data-id="${esc(r.added)}">열어서 다듬기</button>` : `<button type="button" class="btn primary sm" data-act="idRecAdd" data-i="${i}">후보로 등록</button>`}${appLinks(recPrompt(r), ['claude'])}</div></li>`).join('')}</ol>
+      <div class="row" style="margin-top:8px">${appLinks(`아이센스그룹(외식·여가 프랜차이즈 본사) 회장입니다. ${tgt(R) === '전체' ? '각 부서' : tgt(R)}에게 내리면 좋을 새 지시 아이디어를 같이 생각해 주세요. AI가 추천한 것: ${R.items.map((r) => r.title).join(', ')}`)}</div>` : ''}
+    </div>`;
   }
   const recPrompt = (r) => `아이센스그룹 회장으로서 ${r.dept || '부서'}${r.who ? ' ' + r.who : ''}에게 「${r.title}」를 지시하려 합니다. 이유: ${r.why}. 이 지시를 어떻게 구체화하면 좋을지(목표·결과물·진행 순서·위험) 같이 생각해 주세요.`;
 
@@ -2141,15 +2171,17 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
           : String(b.updated || '').localeCompare(String(a.updated || '')));
     const who = staffList().filter((s) => !f.dept || s.d === f.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
     const nf = S.ui.idNew;
-    const form = nf ? `<section class="panel"><h3>새 지시 후보</h3><form class="form" data-form="idNew">
+    const form = nf ? `<div class="id-newbox"><b>새 지시 후보</b><form class="form" data-form="idNew">
         <label class="f wide">무엇을 시킬까요<input type="text" id="idn-title" name="title" required maxlength="120" value="${esc(nf.title || '')}" placeholder="예: 생전포차 점심 메뉴 시범 운영"></label>
         <label class="f">부서<select id="idn-dept" name="dept" data-act="idNewDept"><option value="">미정</option>${deptsAll().map((d) => `<option ${nf.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
         <label class="f">담당자${picker({ key: 'new', id: 'idn-who', name: 'who', list: staffList(), pri: nf.dept || '', value: nf.who || '', empty: '미정', load: true, label: '담당자' })}</label>
         <label class="f">기한<input type="date" id="idn-due" name="due" value="${esc(nf.due || '')}"></label>
         <label class="f wide">메모(업무 설명)<textarea id="idn-body" name="body" rows="2" placeholder="생각난 것을 짧게 적어 두면 나중에 AI로 다듬을 수 있습니다">${esc(nf.body || '')}</textarea></label>
-        <div class="row wide"><button class="btn primary">후보로 등록</button><button type="button" class="btn sm" data-act="idNewToggle">취소</button><span class="small muted">등록만 해 두면 아무에게도 가지 않습니다.</span></div></form></section>` : '';
+        <div class="row wide"><button class="btn primary">후보로 등록</button><button type="button" class="btn sm" data-act="idNewToggle">취소</button><span class="small muted">등록만 해 두면 아무에게도 가지 않습니다.</span></div></form></div>` : '';
     return `<section class="panel id-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시 후보</h3><p class="small muted" style="margin:2px 0 0">생각날 때 적어 두고, 카드로 다듬은 뒤 Asana·Slack으로 지시합니다. 담당자를 찾을 때 사람마다 업무 부하(여유·보통·과부하)가 함께 보입니다.</p></div>
-        <div class="row"><button type="button" class="btn sm id-dicebtn" data-act="idRecs">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
+        <div class="row"><button type="button" class="btn sm id-dicebtn ${S.ui.idRec ? 'on' : ''}" data-act="idRecs" aria-expanded="${!!S.ui.idRec}">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
+      ${recBox()}
+      ${form}
       <div class="form id-filters">
         <label class="f">부서<select id="idf-dept" data-act="idF" data-k="dept"><option value="">전체</option>${deptsAll().map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
         <label class="f">담당자${picker({ key: 'idf', id: 'idf-who', list: who, value: f.who, empty: '전체', act: 'idF', data: { k: 'who' }, load: true, label: '담당자 필터' })}</label>
@@ -2157,13 +2189,11 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
         <label class="f">정렬<select id="idf-sort" data-act="idF" data-k="sort">${[['recent', '최근 고친 순'], ['dept', '부서순'], ['who', '담당자순'], ['load', '부하 큰 사람 먼저']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="f">검색<input type="text" id="idf-q" data-act="idF" data-k="q" value="${esc(f.q)}" placeholder="제목·설명"></label>
       </div>
-      ${f.dept || f.who || f.q || f.st !== 'idea' ? '<p class="small" style="margin:8px 0 0"><button type="button" class="dir-link" data-act="idFReset">조건 지우기</button></p>' : ''}
-    </section>
-    ${form}
-    <p class="small" style="margin:12px 2px 6px"><b class="num">${list.length}</b>건 / 후보 전체 ${all.length}건</p>
+      <p class="small id-count"><b class="num">${list.length}</b>건 / 후보 전체 ${all.length}건${f.dept || f.who || f.q || f.st !== 'idea' ? ' · <button type="button" class="dir-link" data-act="idFReset">조건 지우기</button>' : ''}</p>
     <div class="id-list">${list.map((x) => `<button type="button" class="id-row ${S.ui.idOpen === x.id ? 'on' : ''}" data-act="idOpen" data-id="${esc(x.id)}">
         <span class="t"><b>${esc(x.title)}</b><span class="small muted">${esc(x.dept || '부서 미정')} · ${esc(x.assignee || '담당 미정')}${x.due ? ' · 기한 ' + esc(md(x.due)) : ''}</span></span>
-        <span class="m">${x.assignee ? loadPill(x.assignee) : ''}<span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보냄' : '후보'}</span><span class="small muted num">카드 ${cardsFilled(x)}/8 · 하위 ${(x.subs || []).length}</span></span></button>`).join('') || '<p class="muted">조건에 맞는 지시 후보가 없습니다. 「+ 지시 후보 등록」이나 「AI 추천 아이디어」로 시작해 보세요.</p>'}</div>`;
+        <span class="m">${x.assignee ? loadPill(x.assignee) : ''}<span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보냄' : '후보'}</span><span class="small muted num">카드 ${cardsFilled(x)}/8 · 하위 ${(x.subs || []).length}</span></span></button>`).join('') || '<p class="muted">조건에 맞는 지시 후보가 없습니다. 「+ 지시 후보 등록」이나 「AI 추천 아이디어」로 시작해 보세요.</p>'}</div>
+    </section>`;
   }
 
   function ideaPane() {
@@ -2217,15 +2247,7 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
   function ideaModal() {
     const M = IDEA.modal; if (!M) return '';
     let body = '';
-    if (M.kind === 'recs') {
-      const R = IDEA.recs;
-      body = `<div class="dir-modal-h"><b>🎲 AI가 추천하는 지시 아이디어</b><button type="button" class="dir-iconbtn" data-act="idModalClose" aria-label="닫기">×</button></div>
-        <p class="small muted id-where">「후보로 등록」을 누르면 이 창은 그대로 두고, 뒤쪽 <b>지시 개발 탭의 「지시 후보」 목록</b>에 추가됩니다(아직 아무에게도 가지 않음). 여러 개를 골라 등록한 뒤 창을 닫고 목록에서 하나씩 다듬어 지시하시면 됩니다.</p>
-        ${M.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 목표·진행 중 지시·부서별 부하를 보고 고르는 중…</p>' : ''}${M.err ? `<p class="small dir-err">${esc(M.err)}</p>` : ''}
-        ${R && R.items ? `<ol class="id-recs">${R.items.map((r, i) => `<li><b>${esc(r.title)}</b><span class="small muted">${esc(r.dept || '부서 미정')}${r.who ? ' · ' + esc(r.who) + loadPill(staffOf(r.who) ? r.who : '') : ''}</span><p class="small" style="margin:4px 0">${esc(r.why)}</p>${r.first ? `<p class="small muted" style="margin:0">첫 주: ${esc(r.first)}</p>` : ''}
-          <div class="row" style="margin-top:6px">${r.added && ideasMap()[r.added] ? `<span class="pill st-done">✓ 지시 후보에 등록됨</span><button type="button" class="btn sm" data-act="idRecGo" data-id="${esc(r.added)}">열어서 다듬기</button>` : `<button type="button" class="btn primary sm" data-act="idRecAdd" data-i="${i}">후보로 등록</button>`}${appLinks(recPrompt(r), ['claude'])}</div></li>`).join('')}</ol><p class="small muted">${esc(aiName(R.ai || 'claude'))} · ${esc(when(R.at))}</p>` : ''}
-        <div class="row dir-modal-foot"><button type="button" class="btn sm" data-act="idRecs" ${M.busy ? 'disabled' : ''}>다시 뽑기</button><span class="dir-pane-sp"></span>${appLinks('아이센스그룹(외식·여가 프랜차이즈 본사) 회장입니다. 지금 각 부서에 내리면 좋을 새 지시 아이디어를 같이 생각해 주세요.' + (R && R.items ? ' AI가 추천한 것: ' + R.items.map((r) => r.title).join(', ') : ''))}</div>`;
-    } else {
+    {
       const x = ideasMap()[M.id];
       body = `<div class="dir-modal-h"><b>🎲 「${esc(ID_LABEL[M.k])}」 새 제안 3개</b><button type="button" class="dir-iconbtn" data-act="idModalClose" aria-label="닫기">×</button></div>
         ${M.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 제안을 만드는 중…</p>' : ''}${M.err ? `<p class="small dir-err">${esc(M.err)}</p>` : ''}
@@ -2265,7 +2287,9 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
   APP.acts.idSubDel = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; ideaSave(x.id, { subs: (x.subs || []).filter((_, i) => i !== +el.dataset.i) }); };
   APP.acts.idDice = (el) => { setTimeout(() => ideaDice(el.dataset.id, el.dataset.k), 0); };
   APP.acts.idFill = (el) => { setTimeout(() => ideaFill(el.dataset.id), 0); };
-  APP.acts.idRecs = () => { if (IDEA.modal && IDEA.modal.kind === 'recs' && IDEA.modal.busy) return; setTimeout(ideaRecs, 0); };
+  APP.acts.idRecs = () => { if (S.ui.idRec) { S.ui.idRec = null; return; } const f = S.ui.idf || {}; const R = IDEA.recs || {}; S.ui.idRec = { dept: f.dept || R.dept || '', who: f.who || R.who || '' }; };
+  APP.changes.idRecF = (el) => { const rc = Object.assign({ dept: '', who: '' }, S.ui.idRec || {}); const v = el.value; if (el.dataset.k === 'dept') { rc.dept = v; if (rc.who && staffOf(rc.who) && staffOf(rc.who).d !== v) rc.who = ''; } else { rc.who = v; if (v && staffOf(v)) rc.dept = staffOf(v).d; } S.ui.idRec = rc; };
+  APP.acts.idRecRun = () => { const rc = S.ui.idRec || {}; setTimeout(() => ideaRecs(rc.dept || '', rc.who || ''), 0); };
   APP.acts.idModalClose = () => { IDEA.modal = null; };
   APP.acts.idCopyP = () => { const t = (IDEA.modal || {}).prompt || ''; try { navigator.clipboard.writeText(t).then(() => toast('글을 복사했습니다 — 앱에 붙여 넣으세요'), () => { const a = document.getElementById('id-chatp'); if (a) a.select(); toast('글을 선택했습니다 — Ctrl+C(맥은 ⌘+C)로 복사하세요'); }); } catch (e) { toast('복사하지 못했습니다'); } };
   APP.acts.idDiceUse = (el) => {
@@ -2279,13 +2303,13 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
   };
   APP.acts.idRecAdd = (el) => {
     const r = IDEA.recs && IDEA.recs.items[+el.dataset.i]; if (!r) return;
-    const st = staffOf(r.who); const id = 'i' + Date.now().toString(36);
-    ideaSave(id, { title: r.title, dept: deptsAll().includes(r.dept) ? r.dept : (st ? st.d : ''), assignee: st ? st.n : '', due: '', body: '', cards: { why: r.why || '' }, subs: r.first ? [{ t: r.first }] : [], status: 'idea', from: 'ai' }, true).then(() => rerender());
+    const st = staffOf(r.who) || staffOf(IDEA.recs.who); const id = 'i' + Date.now().toString(36);
+    ideaSave(id, { title: r.title, dept: st ? st.d : deptsAll().includes(r.dept) ? r.dept : (IDEA.recs.dept || ''), assignee: st ? st.n : '', due: '', body: '', cards: { why: r.why || '' }, subs: r.first ? [{ t: r.first }] : [], status: 'idea', from: 'ai' }, true).then(() => rerender());
     r.added = id; if (LIVE.db) LIVE.db.doc('idearecs/latest').set(IDEA.recs).catch(() => {});
     S.ui.idf = Object.assign({}, S.ui.idf || {}, { st: 'idea' });
     toast(`「${r.title}」을 지시 후보 목록에 등록했습니다`);
   };
-  APP.acts.idRecGo = (el) => { if (!ideasMap()[el.dataset.id]) return; IDEA.modal = null; S.ui.dirOpen = null; S.ui.idOpen = el.dataset.id; focusLater('#id-dlg'); };
+  APP.acts.idRecGo = (el) => { if (!ideasMap()[el.dataset.id]) return; S.ui.dirOpen = null; S.ui.idOpen = el.dataset.id; focusLater('#id-dlg'); };
   APP.acts.idAskAsana = (el) => { IDEA.confirm = { id: el.dataset.id, kind: 'asana' }; IDEA.delAsk = null; };
   APP.acts.idAskSlack = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; IDEA.confirm = { id: x.id, kind: 'slack', msg: slackDraft(x) }; IDEA.delAsk = null; focusLater('#id-slackmsg'); };
   APP.acts.idCancel = () => { IDEA.confirm = null; IDEA.delAsk = null; };

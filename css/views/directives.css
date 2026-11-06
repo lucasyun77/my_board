@@ -489,3 +489,14 @@ body.dir-vis-open { overflow: hidden; }
 .pr-guide { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 12px; border: 1px dashed var(--gold); border-radius: 12px; background: var(--paper); }
 .pr-guide-ta { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.55; resize: vertical; }
 .dir-ack .btn.on { border-color: var(--gold); background: var(--goldSoft); }
+
+/* 지시 후보: 추천·새 후보 상자 (한 패널 안) */
+.id-recbox, .id-newbox { margin-top: 12px; padding: 12px; border: 1px solid var(--gold); border-radius: 12px; background: var(--bg); }
+.id-newbox > b { display: block; margin-bottom: 6px; }
+.id-recf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-top: 8px; }
+.id-recgo { justify-content: flex-end; }
+.id-recbox .id-recs > li { background: var(--paper); }
+.id-dicebtn.on { background: var(--goldSoft); }
+.id-count { margin: 14px 2px 6px; }
+.id-top .id-list { margin-top: 0; }
+@media (max-width: 720px) { .id-recf { grid-template-columns: minmax(0, 1fr); } }
