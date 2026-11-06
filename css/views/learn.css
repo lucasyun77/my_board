@@ -68,6 +68,58 @@
 .ln-more { margin-top: 12px; }
 .ln-more > summary { cursor: pointer; font-weight: 700; }
 
+
+/* 탭 */
+.ln-tabs { display: flex; gap: 4px; background: var(--paper2); border-radius: 14px; padding: 4px; }
+.ln-tabs button { flex: 1 1 0; border: 0; background: none; padding: 10px 8px; border-radius: 10px; cursor: pointer; font-size: 15px; color: var(--sub); font-weight: 500; min-height: 42px; }
+.ln-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
+
+/* 받은 항목 */
+.ln-inbox { border-left: 3px solid var(--info); }
+
+/* 하루 5분 코스 */
+.ln-course { border-color: var(--gold); }
+.ln-dots { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ln-dots li { background: var(--paper2); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; min-width: 0; }
+.ln-dots li .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ln-dots li.done { background: rgba(46,139,87,.14); }
+.ln-dots li b { color: var(--ok); }
+.ln-big { padding: 12px 22px; font-size: 15.5px; }
+.ln-done { font-weight: 700; color: var(--ok); }
+.ln-next { margin: 4px 0 8px; }
+.ln-case { background: var(--paper2); border-left: 3px solid var(--info); border-radius: 0 12px 12px 0; padding: 10px 14px; margin-top: 10px; }
+.ln-case p { margin: 4px 0 0; line-height: 1.65; }
+.ln-confirm { gap: 6px; flex: none; }
+
+/* 숙련도 지도 — 단계 색 */
+.lv0 { --lvc: var(--paper2); }
+.lv1 { --lvc: var(--pinkSoft); }
+.lv2 { --lvc: var(--goldSoft); }
+.lv3 { --lvc: rgba(46,139,87,.22); }
+.ln-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13.5px; color: var(--sub); margin-bottom: 10px; }
+.ln-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ln-legend i { width: 16px; height: 16px; border-radius: 5px; background: var(--lvc); border: 1px solid var(--line); }
+.ln-map { display: flex; flex-direction: column; gap: 8px; }
+.ln-maprow { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; align-items: center; }
+.ln-cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.ln-cell { background: var(--lvc); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--ink); font-size: 15px; }
+.ln-cell:hover { border-color: var(--gold); }
+.ln-cell small { font-size: 12.5px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ln-cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+
+/* 복습 일정 */
+.ln-fc { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; margin-bottom: 12px; }
+.ln-fc div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ln-fc i { width: 70%; max-width: 40px; background: var(--info); border-radius: 6px 6px 2px 2px; opacity: .7; }
+.ln-fc i.now { background: var(--gold); opacity: 1; }
+.ln-fc small { font-size: 12.5px; color: var(--sub); white-space: nowrap; }
+.ln-due { list-style: none; margin: 0 0 10px; padding: 0; }
+.ln-due li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.ln-due-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ln-due b { flex: none; font-size: 14px; }
+.ln-due-now { color: var(--crit); }
+.ln-lvdot { width: 12px; height: 12px; border-radius: 50%; background: var(--lvc); border: 1px solid var(--sub); flex: none; }
+
 @media (max-width: 600px) {
   .ln-import { grid-template-columns: minmax(0, 1fr); }
   .ln-subjects { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -78,4 +130,8 @@
   .ln-mix > span { flex-basis: 100%; }
   .ln-review-main > .btn { width: 100%; }
   .ln-title { font-size: 20px; }
+  .ln-dots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ln-maprow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .ln-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ln-tabs button { padding: 8px 4px; }
 }

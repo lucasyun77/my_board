@@ -2,7 +2,8 @@
    공용 도구·상태는 window.APP에서 꺼내 씁니다. 새 버튼 동작은 APP.acts['이름'] = (el) => {...},
    새 폼은 APP.forms['이름'] = (fd, form) => {...}, 새 select 변경은 APP.changes['이름'] = (el) => {...} 로 등록합니다.
 
-   흐름: 과목 선택(첫 화면) → ① 개념 읽기 → ② 퀴즈(정답 무관 XP +1, 해설) → ③ 메모
+   보기: 오늘(하루 5분 코스·복습 도전·오답) / 과목 / 숙련도·일정(간격 반복 SRS)
+   흐름: 과목 선택 → ① 개념 읽기 → ② 퀴즈(정답 무관 XP +1, 해설) → ③ 메모
    복습: 오늘의 복습 도전(최근 7일 50% + 전체 이력 랜덤 50%, 10문제, 하루 여러 번) · 오답 다시 보기
    자료: Global-MMLU 한국어판(Apache-2.0) 문제 + OpenStax(CC BY 4.0) 개념 읽기 — 승인됨.
          이 환경에서는 두 사이트 모두 내려받기가 막혀 있어(프록시 403) 목업 샘플을 유지하고,
@@ -82,51 +83,109 @@
     }
   };
 
+  /* ---------- 메뉴 연결 약속(공용 상태) ---------- */
+  S.activity = S.activity || [];
+  S.inbox = S.inbox || [];
+  if (!S.learnInboxSeeded) {
+    S.learnInboxSeeded = true;
+    S.inbox.push({ id: uid('ib'), at: new Date().toISOString(), from: 'directives', to: 'learn', kind: '학습 추천', title: '지시 「벌툰 가맹점 월 고정비 절감안」과 이어지는 회계 · 손익분기 복습', payload: { subject: '회계' }, done: false });
+  }
+  const MENU_KO = { today: '오늘 할 일', numbers: '내가 보는 숫자', directives: '지시 관리', ideas: '신사업', value: '성과·레벨', learn: '경영학습', ai: 'AI 사용', ops: '경영 현황', ideabank: '아이디어뱅크', rules: '보상 기준' };
+  const logAct = (type, text, ref) => { S.activity.push({ id: uid('ac'), at: new Date().toISOString(), menu: 'learn', type, text, ref: ref || '' }); if (S.activity.length > 300) S.activity.splice(0, S.activity.length - 300); };
+
+  /* ---------- 날짜: 오늘 기준 '며칠 차이'(정수)로만 계산 — 시간대 차이로 하루가 밀리지 않게 ---------- */
+  const mid = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const offOf = (iso) => Math.round((mid(iso) - mid(Date.now())) / 864e5);
+  const rel = (o) => (o < 0 ? `${-o}일 지남` : o === 0 ? '오늘' : o === 1 ? '내일' : `${o}일 뒤`);
+
+  /* ---------- 간격 반복(SRS) — 풀이 이력에서 매번 계산(따로 저장하지 않음) ----------
+     맞히면 간격 1 → 3 → (직전 간격 × 쉬움 정도)일로 늘리고, 틀리면 1일로 되돌림. 같은 날 다시 맞힌 것은 간격을 늘리지 않음. */
+  function srs() {
+    const st = {};
+    S.attempts.slice().sort((a, b) => a.at.localeCompare(b.at)).forEach((a) => {
+      const o = offOf(a.at);
+      const s = st[a.question_id] || (st[a.question_id] = { reps: 0, interval: 0, ease: 2.5, lapses: 0, lastOff: null, lastOk: null, n: 0, ok: 0 });
+      s.n += 1; if (a.correct) s.ok += 1;
+      if (a.correct) {
+        if (s.lastOff === o && s.lastOk) return;
+        s.reps += 1; s.interval = s.reps === 1 ? 1 : s.reps === 2 ? 3 : Math.round(s.interval * s.ease); s.ease = Math.min(3, +(s.ease + 0.1).toFixed(2));
+      } else { s.reps = 0; s.interval = 1; s.ease = Math.max(1.3, +(s.ease - 0.2).toFixed(2)); s.lapses += 1; }
+      s.lastOff = o; s.lastOk = a.correct; s.dueOff = o + s.interval;
+    });
+    Object.values(st).forEach((s) => { s.level = !s.lastOk ? 1 : s.interval >= 7 ? 3 : s.interval >= 3 ? 2 : 1; });
+    return st;
+  }
+  const LV = ['미학습', '익히는 중', '자리 잡는 중', '익힘'];
+
+  /* ---------- 하루 5분 코스: 복습할 때가 된 문항(최대 3) + 새 문항으로 5문제 ---------- */
+  function buildCourse(exclude) {
+    exclude = exclude || [];
+    const st = srs(); const ok = (id) => qById(id) && !exclude.includes(id);
+    const due = Object.keys(st).filter((id) => ok(id) && st[id].dueOff <= 0).sort((a, b) => st[a].dueOff - st[b].dueOff);
+    const fresh = shuffle(S.questions.filter((q) => !st[q.id] && ok(q.id)).map((q) => q.id));
+    let list = due.slice(0, 3); list = list.concat(fresh.slice(0, 5 - list.length));
+    if (list.length < 5) list = list.concat(due.filter((id) => !list.includes(id)).slice(0, 5 - list.length));
+    if (list.length < 5) list = list.concat(shuffle(S.questions.map((q) => q.id).filter((id) => ok(id) && !list.includes(id))).slice(0, 5 - list.length));
+    return { day: S.today, list, due: list.filter((id) => due.includes(id)), round: 1 };
+  }
+  function course() {
+    if (!S.learnCourse || S.learnCourse.day !== S.today || S.learnCourse.list.some((id) => !qById(id))) S.learnCourse = buildCourse();
+    const c = S.learnCourse;
+    const doneIds = new Set(S.attempts.filter((a) => a.mode === '5분코스' && offOf(a.at) === 0).map((a) => a.question_id));
+    return Object.assign({}, c, { remaining: c.list.filter((id) => !doneIds.has(id)) });
+  }
+
   /* ---------- 도우미 ---------- */
   const NUM = '①②③④';
   const refOf = (x) => (x.source_ref && x.source_ref !== '-' ? x.source_ref : '목업-' + x.id);
   const srcLine = (x) => `출처: ${esc(x.source)} · 라이선스: ${esc(x.license)} · 원문 ID: <span class="num">${esc(refOf(x))}</span>`;
+  const aiBadge = (q) => (q.explanation_ai ? '<span class="b e">AI 생성 해설</span><span class="b u">목업 AI</span>' : '');
   const lastChosen = (qid) => { const a = S.attempts.filter((x) => x.question_id === qid && x.chosen != null).pop(); return a ? a.chosen : null; };
-  const subjStats = (s) => {
+  const subjStats = (s, st) => {
     const qs = S.questions.filter((q) => q.subject === s); const ids = new Set(qs.map((q) => q.id));
     const at = S.attempts.filter((a) => ids.has(a.question_id));
-    return { qs, done: new Set(at.map((a) => a.question_id)).size, rate: at.length ? Math.round(100 * at.filter((a) => a.correct).length / at.length) : null };
+    return { qs, done: qs.filter((q) => st[q.id]).length, rate: at.length ? Math.round(100 * at.filter((a) => a.correct).length / at.length) : null };
   };
   const steps = (on) => `<ol class="ln-steps" aria-label="학습 단계">${['개념 읽기', '퀴즈', '메모'].map((t, i) => `<li class="${i + 1 === on ? 'on' : i + 1 < on ? 'done' : ''}" ${i + 1 === on ? 'aria-current="step"' : ''}><span class="num">${i + 1}</span>${t}</li>`).join('')}</ol>`;
   const memoForm = (subject, cid, label) => `<form class="ln-memo" data-form="learnMemo">
       <input type="hidden" name="subject" value="${esc(subject || '')}"><input type="hidden" name="cid" value="${esc(cid || '')}">
       <label class="f">${label}<textarea name="text" required maxlength="300" placeholder="예: 우리 매장에 적용하면 — "></textarea></label>
       <div class="row"><button class="btn primary sm">메모 저장</button></div></form>`;
+  const MODE_LOG = { review: '복습도전', course: '5분코스', case: '사례' };
+  const startQuiz = (mode, ids, origin, extra) => { S.ui.quiz = Object.assign({ mode, list: ids.map((id) => ({ qid: id, origin: typeof origin === 'function' ? origin(id) : origin })), idx: 0, answers: {} }, extra || {}); clearSide(); setTimeout(top, 0); };
 
   /* ---------- 화면: 퀴즈 ---------- */
   function viewQuiz(qz) {
     const item = qz.list[qz.idx]; const q = qById(item.qid); const ans = qz.answers[qz.idx];
-    const originLabel = { recent: '최근 7일', random: '전체 이력 랜덤', new: '새 문제', study: q.subject }[item.origin] || q.subject;
-    const title = qz.mode === 'review' ? '오늘의 복습 도전' : qz.mode === 'wrong' ? '오답 다시 풀기' : qz.mode === 'mix' ? '섞어 풀기' : q.subject;
+    const originLabel = { recent: '최근 7일', random: '전체 이력 랜덤', new: '새 문제', fresh: '새 문항', due: '복습할 때', study: q.subject }[item.origin] || q.subject;
+    const title = { review: '오늘의 복습 도전', wrong: '오답 다시 풀기', mix: '섞어 풀기', course: '하루 5분 코스', unit: `${q.subject} · ${q.unit}`, case: '사례 문제' }[qz.mode] || q.subject;
     const last = qz.idx + 1 >= qz.list.length;
+    const s = ans != null ? srs()[q.id] : null;
     return `<section class="panel ln-quiz">
       ${qz.flow ? steps(2) : ''}
       <div class="row ln-qtop"><b>${esc(title)} · <span class="num">${qz.idx + 1}/${qz.list.length}</span></b><button type="button" class="btn sm" data-act="learnFinish">그만하기</button></div>
       <div class="progress" style="margin:10px 0" aria-hidden="true">${qz.list.map((it, k) => `<span class="${qz.answers[k] != null ? 'done' : ''} ${qz.mode === 'review' && it.origin === 'recent' ? 'recent' : ''}"></span>`).join('')}</div>
       ${qz.mode === 'review' ? '<p class="small muted" style="margin:0">테두리 있는 칸 = 최근 7일 문제</p>' : ''}
       <div class="small muted ln-qmeta">${esc(q.unit)} · <span class="chip">${esc(originLabel)}</span></div>
+      ${q.situation ? `<div class="ln-case"><b>상황</b><p>${esc(q.situation)}</p></div>` : ''}
       <div class="q-stem">${esc(q.stem)}</div>
-      <div class="choices">${q.choices.map((c, k) => `<button type="button" class="choice ${ans != null ? (k === q.answer ? 'right' : k === ans ? 'wrong' : '') : ''}" data-act="answer" data-k="${k}" ${ans != null ? 'disabled' : ''}>${NUM[k]} ${esc(c)}${ans != null && k === q.answer ? ' <b class="ln-mark">정답</b>' : ans === k && k !== q.answer ? ' <b class="ln-mark">내 답</b>' : ''}</button>`).join('')}</div>
+      <div class="choices">${q.choices.map((c, k) => `<button type="button" class="choice ${ans != null ? (k === q.answer ? 'right' : k === ans ? 'wrong' : '') : ''}" data-act="learnAnswer" data-k="${k}" ${ans != null ? 'disabled' : ''}>${NUM[k]} ${esc(c)}${ans != null && k === q.answer ? ' <b class="ln-mark">정답</b>' : ans === k && k !== q.answer ? ' <b class="ln-mark">내 답</b>' : ''}</button>`).join('')}</div>
       ${ans != null ? `<div class="explain" role="status"><b>${ans === q.answer ? '정답입니다' : `오답 — 정답은 ${NUM[q.answer]}. 다시 보기 목록에 담았습니다`}</b> · XP +1
           <p style="margin:6px 0">${esc(q.explanation || '해설 준비 중')}</p>
-          <div class="row small muted">${q.explanation_ai ? '<span class="b e">AI 생성 해설</span>' : ''}<span>${srcLine(q)}</span></div></div>
+          ${s ? `<p class="ln-next">다음 복습: <b>${rel(s.dueOff)}</b> <span class="small muted">(${ans === q.answer ? '맞혀서 간격을 늘렸습니다' : '틀려서 내일 다시 나옵니다'} · ${badge('측정')})</span></p>` : ''}
+          <div class="row small muted">${aiBadge(q)}<span>${srcLine(q)}</span></div></div>
         <div class="row" style="margin-top:12px">${last ? `<button type="button" class="btn primary" data-act="learnFinish">${qz.flow ? '메모 남기고 마치기' : '결과 보고 마치기'}</button>` : '<button type="button" class="btn primary" data-act="nextQ">다음 문제</button>'}</div>` : ''}
     </section>`;
   }
 
   /* ---------- 화면: 개념 읽기 ---------- */
   function viewRead(c) {
-    const qs = S.questions.filter((q) => q.subject === c.subject);
+    const qs = S.questions.filter((q) => q.subject === c.subject && !q.situation);
     const notes = S.learnNotes.filter((n) => n.cid === c.id).slice().reverse();
     const idx = S.learnConcepts.indexOf(c); const next = S.learnConcepts[(idx + 1) % S.learnConcepts.length];
     return `<section class="panel ln-read">
       ${steps(1)}
-      <div class="row ln-qtop"><span class="chip">${esc(c.subject)}</span><button type="button" class="btn sm" data-act="learnHome">← 과목 선택</button></div>
+      <div class="row ln-qtop"><span class="chip">${esc(c.subject)}</span><button type="button" class="btn sm" data-act="learnHome">← 돌아가기</button></div>
       <h3 class="ln-title">${esc(c.title)}</h3>
       <p class="ln-lead">${esc(c.lead)}</p>
       <ol class="ln-points">${c.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ol>
@@ -139,28 +198,59 @@
       ${memoForm(c.subject, c.id, '읽으면서 떠오른 점')}</section>`;
   }
 
-  const noteLi = (n) => { const c = n.cid && conceptById(n.cid); return `<li><div class="small muted"><span class="num">${md(n.at)}</span> · ${esc(n.subject || '공통')}${c ? ' · ' + esc(c.title) : ''}</div><div class="ln-note-row"><span>${esc(n.text)}</span><button type="button" class="btn sm" data-act="learnDelNote" data-id="${n.id}" aria-label="메모 삭제">삭제</button></div></li>`; };
+  const noteLi = (n) => { const c = n.cid && conceptById(n.cid); return `<li><div class="small muted"><span class="num">${md(n.at)}</span> · ${esc(n.subject || '공통')}${c ? ' · ' + esc(c.title) : ''}</div><div class="ln-note-row"><span>${esc(n.text)}</span>${S.ui.learnDelNote === n.id ? `<span class="row ln-confirm"><b class="small">지울까요?</b><button type="button" class="btn sm" data-act="learnDelNote" data-id="${n.id}">삭제</button><button type="button" class="btn sm" data-act="learnDelCancel">취소</button></span>` : `<button type="button" class="btn sm" data-act="learnDelAsk" data-id="${n.id}" aria-label="메모 삭제">삭제</button>`}</div></li>`; };
 
-  /* ---------- 화면: 첫 화면(과목 선택) ---------- */
+  /* ---------- 탭 ---------- */
+  const TABS = [['today', '오늘'], ['subjects', '과목'], ['map', '숙련도·일정']];
+
   function viewLearn() {
-    const learnedToday = S.attempts.filter((a) => a.at.slice(0, 10) === S.today).length;
-    const head = `<div class="view-head"><div><h2>경영학습</h2><p>날짜에 묶이지 않고 원하는 만큼 풉니다. 정답 여부와 관계없이 한 문제당 XP +1.</p></div>
-      <div class="row"><span class="pill num">XP ${S.xp} ${badge('측정')}</span><span class="pill num">오늘 ${learnedToday}문제 ${badge('측정')}</span></div></div>`;
+    const st = srs();
+    const learnedToday = S.attempts.filter((a) => offOf(a.at) === 0).length;
+    const dueN = Object.keys(st).filter((id) => qById(id) && st[id].dueOff <= 0).length;
+    const head = `<div class="view-head"><div><h2>경영학습</h2><p>하루 5분, 잊을 때쯤 다시 나오는 복습. 정답 여부와 관계없이 한 문제당 XP +1.</p></div>
+      <div class="row"><span class="pill num">XP ${S.xp} ${badge('측정')}</span><span class="pill num">오늘 ${learnedToday}문제 ${badge('측정')}</span><span class="pill num">복습할 때 ${dueN}문항 ${badge('측정')}</span></div></div>`;
     if (S.ui.quiz) return head + viewQuiz(S.ui.quiz);
     const rc = S.ui.learnRead && conceptById(S.ui.learnRead);
     if (rc) return head + viewRead(rc);
+    const tab = TABS.some((t) => t[0] === S.ui.learnTab) ? S.ui.learnTab : 'today';
+    const tabs = `<div class="ln-tabs" role="tablist" aria-label="경영학습 보기">${TABS.map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="learnTab" data-v="${id}">${label}</button>`).join('')}</div>`;
+    const body = { today: viewToday, subjects: viewSubjects, map: viewMap }[tab](st);
+    return head + inboxBox() + resultBox() + tabs + body;
+  }
 
+  function inboxBox() {
+    const items = S.inbox.filter((x) => x.to === 'learn' && !x.done);
+    if (!items.length) return '';
+    return `<section class="panel ln-inbox" aria-labelledby="h-lnin"><h3 id="h-lnin">받은 항목 <span class="small muted num">${items.length}</span></h3>
+      <ul class="ln-notes">${items.map((x) => `<li><div class="small muted">${esc(x.kind || '전달')} · 보낸 곳 ${esc(MENU_KO[x.from] || x.from || '-')} · <span class="num">${md(x.at)}</span></div>
+        <div class="ln-note-row"><span>${esc(x.title)}</span><span class="row">${x.payload && (x.payload.subject || x.payload.qid) ? `<button type="button" class="btn sm primary" data-act="learnInboxOpen" data-id="${x.id}">바로 풀기</button>` : ''}<button type="button" class="btn sm" data-act="learnInboxDone" data-id="${x.id}">처리 완료</button></span></div></li>`).join('')}</ul></section>`;
+  }
+
+  function resultBox() {
     const last = S.ui.lastResult; const memo = S.ui.learnMemo;
-    const recentN = new Set(S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).map((a) => a.question_id)).size;
-    const allN = new Set(S.attempts.map((a) => a.question_id)).size;
-    const runsToday = S.learnReviewRuns.filter((r) => r.at === S.today).length;
-    const resultBox = last ? `<section class="panel ln-result" role="status">
+    if (!last) return '';
+    return `<section class="panel ln-result" role="status">
         ${memo && memo.cid ? steps(3) : ''}
         <div class="row" style="justify-content:space-between"><b>방금 <span class="num">${last.n}</span>문제 · 정답 <span class="num">${last.c}</span>개 · XP +${last.n}</b>${last.mode === 'review' ? `<span class="small muted">구성: 최근 ${last.r} / 랜덤 ${last.a}${last.nw ? ` / 새 문제 ${last.nw}` : ''}</span>` : ''}</div>
-        ${memo ? `${memoForm(memo.subject, memo.cid, memo.cid ? '③ 오늘 배운 것 한 줄 메모' : '남길 메모가 있으면 적어 두세요')}<button type="button" class="btn sm ln-skip" data-act="learnSkipMemo">메모 없이 닫기</button>` : ''}
-      </section>` : '';
+        ${memo ? `${memoForm(memo.subject, memo.cid, memo.cid ? '③ 오늘 배운 것 한 줄 메모' : '남길 메모가 있으면 적어 두세요')}` : ''}<button type="button" class="btn sm ln-skip" data-act="learnSkipMemo">${memo ? '메모 없이 닫기' : '닫기'}</button>
+      </section>`;
+  }
 
-    return head + resultBox + `
+  function viewToday(st) {
+    const c = course(); const doneN = c.list.length - c.remaining.length;
+    const sent = S.inbox.some((x) => x.to === 'today' && x.from === 'learn' && offOf(x.at) === 0);
+    const recentN = new Set(S.attempts.filter((a) => offOf(a.at) >= -6).map((a) => a.question_id)).size;
+    const allN = new Set(S.attempts.map((a) => a.question_id)).size;
+    const runsToday = S.learnReviewRuns.filter((r) => r.at === S.today).length;
+    const courseCard = `<section class="panel ln-course">
+        <div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3>하루 5분 코스 ${c.round > 1 ? `<span class="small muted">${c.round}회차</span>` : ''}</h3>
+          <p class="small muted" style="margin:4px 0 0">복습할 때가 된 문항 <b class="num">${c.due.length}</b> + 새 문항 <b class="num">${c.list.length - c.due.length}</b> · 약 5분</p></div>
+          <span class="pill num">${doneN}/${c.list.length}</span></div>
+        <ol class="ln-dots" aria-label="코스 진행">${c.list.map((id) => { const q = qById(id); const done = !c.remaining.includes(id); return `<li class="${done ? 'done' : ''}"><span class="chip">${esc(q.subject)}</span><span class="small muted">${c.due.includes(id) ? '복습' : '새 문항'}</span>${done ? '<b class="small">완료</b>' : ''}</li>`; }).join('')}</ol>
+        <div class="row" style="margin-top:12px">${c.remaining.length ? `<button type="button" class="btn primary ln-big" data-act="learnCourse">${doneN ? '이어 풀기' : '5분 코스 시작'}</button>` : `<span class="ln-done">오늘 코스 완료</span><button type="button" class="btn" data-act="learnCourseMore">5문제 더</button>`}
+          <button type="button" class="btn sm" data-act="learnSendToday" ${sent ? 'disabled' : ''}>${sent ? '오늘 할 일에 보냄' : '오늘 할 일로 보내기'}</button></div>
+      </section>`;
+    return `${courseCard}
       <section class="panel ln-review">
         <div class="ln-review-main"><div><h3>오늘의 복습 도전</h3>
           <p class="small muted" style="margin:4px 0 0">10문제 = 최근 7일 학습 50% + 전체 학습 이력 랜덤 50%. 하루 여러 번 도전할 수 있습니다.</p>
@@ -168,20 +258,48 @@
           <button type="button" class="btn primary" data-act="startReview">도전 시작</button></div>
         <div class="row ln-mix"><span class="small muted">과목 상관없이 섞어 풀기</span>${[5, 10, 20].map((n) => `<button type="button" class="btn sm" data-act="learnMix" data-v="${n}">${n}문제</button>`).join('')}</div>
       </section>
-      <section><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3>과목 선택</h3><span class="small muted">① 개념 읽기 → ② 퀴즈 → ③ 메모</span></div>
-        <div class="ln-subjects">${S.SUBJECTS.map((s) => { const st = subjStats(s); const c = S.learnConcepts.find((x) => x.subject === s); return `<div class="ln-subj">
+      ${viewWrong(st)}
+      ${guide('folder', '서하 실장', '맞힌 문제는 간격을 늘려 잊을 때쯤, 틀린 문제는 내일 다시 올려 드리겠습니다.')}`;
+  }
+
+  function viewSubjects(st) {
+    return `<section><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3>과목 선택</h3><span class="small muted">① 개념 읽기 → ② 퀴즈 → ③ 메모</span></div>
+        <div class="ln-subjects">${S.SUBJECTS.map((s) => { const x = subjStats(s, st); const c = S.learnConcepts.find((y) => y.subject === s); return `<div class="ln-subj">
           <div class="n">${esc(s)}</div>
-          <div class="small muted num">문항 ${st.qs.length} · 푼 문항 ${st.done} · 정답률 ${st.rate == null ? '-' : st.rate + '%'}</div>
-          <div class="bar" aria-hidden="true"><i style="width:${st.qs.length ? 100 * st.done / st.qs.length : 0}%"></i></div>
-          <div class="row ln-btns">${c ? `<button type="button" class="btn sm" data-act="learnRead" data-v="${c.id}">개념 읽기</button>` : ''}<button type="button" class="btn sm primary" data-act="startSubject" data-v="${esc(s)}" ${st.qs.length ? '' : 'disabled'}>바로 풀기</button></div>
+          <div class="small muted num">문항 ${x.qs.length} · 푼 문항 ${x.done} · 정답률 ${x.rate == null ? '-' : x.rate + '%'}</div>
+          <div class="bar" aria-hidden="true"><i style="width:${x.qs.length ? 100 * x.done / x.qs.length : 0}%"></i></div>
+          <div class="row ln-btns">${c ? `<button type="button" class="btn sm" data-act="learnRead" data-v="${c.id}">개념 읽기</button>` : ''}<button type="button" class="btn sm primary" data-act="startSubject" data-v="${esc(s)}" ${x.qs.length ? '' : 'disabled'}>바로 풀기</button></div>
         </div>`; }).join('')}</div>
         <p class="small muted">지금 문항·개념은 Claude가 쓴 목업 샘플입니다(문항 ${S.questions.length}개). 공개 데이터 수입 후 교체합니다 — 아래 '자료·출처' 참고.</p></section>
-      ${viewWrong()}
       <section class="panel"><h3>내 학습 메모 <span class="small muted num">${S.learnNotes.length}</span></h3>
         ${S.learnNotes.length ? `<ul class="ln-notes">${S.learnNotes.slice().reverse().map(noteLi).join('')}</ul>` : '<p class="muted">아직 메모가 없습니다. 개념을 읽고 퀴즈를 마치면 메모 칸이 열립니다.</p>'}
       </section>
-      ${guide('folder', '서하 실장', '하루 한 세트면 충분합니다. 틀린 문제는 다시 보기에 모아 두겠습니다.')}
       ${viewSources()}`;
+  }
+
+  /* ---------- 숙련도 지도 + 복습 일정 ---------- */
+  function viewMap(st) {
+    const cell = (s, u) => {
+      const qs = S.questions.filter((q) => q.subject === s && q.unit === u);
+      const seen = qs.filter((q) => st[q.id]);
+      const lv = seen.length ? Math.floor(qs.reduce((t, q) => t + (st[q.id] ? st[q.id].level : 0), 0) / qs.length) : 0;
+      return `<button type="button" class="ln-cell lv${lv}" data-act="learnUnit" data-v="${esc(s)}|${esc(u)}" title="${esc(u)}: ${LV[lv]} — 눌러서 풀기"><span>${esc(u)}</span><small>${LV[lv]} <span class="num">${seen.length}/${qs.length}</span></small></button>`;
+    };
+    const forecast = Array.from({ length: 7 }, (_, k) => Object.keys(st).filter((id) => qById(id) && (k === 0 ? st[id].dueOff <= 0 : st[id].dueOff === k)).length);
+    const fmax = Math.max(1, ...forecast);
+    const rows = Object.keys(st).filter((id) => qById(id)).sort((a, b) => st[a].dueOff - st[b].dueOff);
+    const showAll = S.ui.learnAllDue; const vis = showAll ? rows : rows.slice(0, 8);
+    return `<section class="panel"><h3>숙련도 지도 ${badge('측정')}</h3>
+        <p class="small muted" style="margin:0 0 10px">과목 × 단원. 칸을 누르면 그 단원만 풉니다. 색은 간격 반복 상태로 정합니다(맞힐수록 진해짐).</p>
+        <div class="ln-legend">${LV.map((t, i) => `<span><i class="lv${i}"></i>${t}</span>`).join('')}</div>
+        <div class="ln-map">${S.SUBJECTS.map((s) => { const units = [...new Set(S.questions.filter((q) => q.subject === s).map((q) => q.unit))]; return `<div class="ln-maprow"><b>${esc(s)}</b><div class="ln-cells">${units.map((u) => cell(s, u)).join('')}</div></div>`; }).join('')}</div>
+      </section>
+      <section class="panel"><h3>복습 일정 · 앞으로 7일 ${badge('측정')}</h3>
+        <p class="small muted" style="margin:0 0 10px">맞히면 1일 → 3일 → 약 8일 → … 로 간격이 늘고, 틀리면 다음 날 다시 나옵니다.</p>
+        <div class="ln-fc">${forecast.map((n, k) => `<div><span class="num">${n}</span><i style="height:${Math.round(70 * n / fmax) + 4}px" class="${k === 0 ? 'now' : ''}"></i><small>${k === 0 ? '오늘까지' : md(dayStr(k))}</small></div>`).join('')}</div>
+        <ul class="ln-due">${vis.map((id) => { const q = qById(id); const s = st[id]; return `<li><span class="ln-lvdot lv${s.level}" title="${LV[s.level]}"></span><span class="ln-due-t"><span class="small muted">${esc(q.subject)} · ${esc(q.unit)}</span><br>${esc(q.stem)}</span><b class="num ${s.dueOff <= 0 ? 'ln-due-now' : ''}">${rel(s.dueOff)}</b></li>`; }).join('')}</ul>
+        ${rows.length > 8 ? `<button type="button" class="btn sm" data-act="learnAllDue">${showAll ? '접기' : `전체 ${rows.length}문항 보기`}</button>` : ''}
+      </section>`;
   }
 
   function viewWrong() {
@@ -190,7 +308,7 @@
       ${S.wrong.map((id) => { const q = qById(id); if (!q) return ''; const my = lastChosen(id); return `<details><summary><span class="chip">${esc(q.subject)}</span> ${esc(q.stem)}</summary>
         <ul class="ln-ch">${q.choices.map((c, k) => `<li class="${k === q.answer ? 'right' : k === my ? 'wrong' : ''}">${NUM[k]} ${esc(c)}${k === q.answer ? ' <b>정답</b>' : k === my ? ' <b>내 답</b>' : ''}</li>`).join('')}</ul>
         <p style="margin:6px 0">${esc(q.explanation)}</p>
-        <div class="row small muted">${q.explanation_ai ? '<span class="b e">AI 생성 해설</span>' : ''}<span>${srcLine(q)}</span></div>
+        <div class="row small muted">${aiBadge(q)}<span>${srcLine(q)}</span></div>
         <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="learnKnown" data-id="${q.id}">이제 알았음 · 목록에서 빼기</button></div></details>`; }).join('')}` : '<p class="muted">오답이 없습니다.</p>'}</section>`;
   }
 
@@ -220,22 +338,36 @@
       </tbody></table></div></details></section>`;
   }
 
+
   /* ---------- 동작 ---------- */
-  const clearSide = () => { S.ui.lastResult = null; S.ui.learnMemo = null; S.ui.learnRead = null; };
-  const top = () => window.scrollTo(0, 0);
+  function clearSide() { S.ui.lastResult = null; S.ui.learnMemo = null; S.ui.learnRead = null; }
+  function top() { window.scrollTo(0, 0); }
+  APP.acts.learnTab = (el) => { S.ui.learnTab = el.dataset.v; };
   APP.acts.learnHome = () => { S.ui.learnRead = null; };
   APP.acts.learnRead = (el) => { clearSide(); S.ui.quiz = null; S.ui.learnRead = el.dataset.v; setTimeout(top, 0); };
   APP.acts.learnFlowQuiz = (el) => {
     const c = conceptById(el.dataset.v); if (!c) return;
-    const qs = S.questions.filter((q) => q.subject === c.subject);
-    const rel = shuffle(qs.filter((q) => c.units.includes(q.unit))); const rest = shuffle(qs.filter((q) => !rel.includes(q)));
-    S.ui.quiz = { mode: 'study', flow: c.id, list: [...rel, ...rest].map((q) => ({ qid: q.id, origin: 'study' })), idx: 0, answers: {} };
-    clearSide(); setTimeout(top, 0);
+    const qs = S.questions.filter((q) => q.subject === c.subject && !q.situation);
+    const rel2 = shuffle(qs.filter((q) => c.units.includes(q.unit))); const rest = shuffle(qs.filter((q) => !rel2.includes(q)));
+    startQuiz('study', [...rel2, ...rest].map((q) => q.id), 'study', { flow: c.id });
   };
-  APP.acts.learnMix = (el) => {
-    const n = Math.max(1, +el.dataset.v || 10);
-    S.ui.quiz = { mode: 'mix', list: shuffle(S.questions).slice(0, n).map((q) => ({ qid: q.id, origin: 'study' })), idx: 0, answers: {} };
-    clearSide(); setTimeout(top, 0);
+  APP.acts.learnMix = (el) => { const n = Math.max(1, +el.dataset.v || 10); startQuiz('mix', shuffle(S.questions).slice(0, n).map((q) => q.id), 'study'); };
+  APP.acts.learnUnit = (el) => { const [s, u] = el.dataset.v.split('|'); startQuiz('unit', shuffle(S.questions.filter((q) => q.subject === s && q.unit === u)).map((q) => q.id), 'study'); };
+  APP.acts.learnCourse = () => { const c = course(); if (!c.remaining.length) return; startQuiz('course', c.remaining, (id) => (c.due.includes(id) ? 'due' : 'fresh')); };
+  APP.acts.learnCourseMore = () => { const old = S.learnCourse; const nc = buildCourse(old ? old.list : []); nc.round = (old ? old.round : 1) + 1; S.learnCourse = nc; startQuiz('course', nc.list, (id) => (nc.due.includes(id) ? 'due' : 'fresh')); };
+  APP.acts.learnSendToday = () => {
+    if (S.inbox.some((x) => x.to === 'today' && x.from === 'learn' && offOf(x.at) === 0)) return;
+    S.inbox.push({ id: uid('ib'), at: new Date().toISOString(), from: 'learn', to: 'today', kind: '할 일', title: '경영학습 하루 5분 코스', payload: { est_minutes: 5, tab: 'learn' }, done: false });
+    logAct('send', '하루 5분 코스를 오늘 할 일로 보냄', 'today'); toast('오늘 할 일로 보냈습니다');
+  };
+  APP.acts.learnAnswer = (el) => {
+    const qz = S.ui.quiz; if (!qz || qz.answers[qz.idx] != null) return;
+    const q = qById(qz.list[qz.idx].qid); const ch = +el.dataset.k; const ok = ch === q.answer;
+    qz.answers[qz.idx] = ch;
+    S.attempts.push({ id: uid('at'), question_id: q.id, chosen: ch, correct: ok, mode: MODE_LOG[qz.mode] || '학습', at: new Date().toISOString() });
+    S.xp += 1;
+    if (!ok && !S.wrong.includes(q.id)) S.wrong.push(q.id);
+    if (ok && qz.mode === 'wrong') S.wrong = S.wrong.filter((x) => x !== q.id);
   };
   APP.acts.learnFinish = () => {
     const qz = S.ui.quiz; if (!qz) return;
@@ -243,17 +375,32 @@
     const c = idxs.filter((i) => qz.answers[i] === qById(qz.list[i].qid).answer).length;
     S.ui.lastResult = idxs.length ? { mode: qz.mode, n: idxs.length, c, r: qz.list.filter((x) => x.origin === 'recent').length, a: qz.list.filter((x) => x.origin === 'random').length, nw: qz.list.filter((x) => x.origin === 'new').length } : null;
     if (idxs.length && qz.mode === 'review') S.learnReviewRuns.push({ at: S.today, n: idxs.length, c });
+    if (idxs.length) {
+      const name = { review: '복습 도전', course: '5분 코스', wrong: '오답 다시 풀기', mix: '섞어 풀기', unit: '단원 풀기', case: '사례 문제' }[qz.mode] || '과목 학습';
+      logAct('quiz', `${name} ${idxs.length}문제 · 정답 ${c}개`, qz.flow || '');
+      if (qz.mode === 'course' && !course().remaining.length) { logAct('course', '하루 5분 코스 완료'); toast('오늘 5분 코스 완료'); }
+    }
     const firstQ = qById(qz.list[0].qid); const fc = qz.flow && conceptById(qz.flow);
-    S.ui.learnMemo = idxs.length ? { subject: fc ? fc.subject : (qz.mode === 'study' ? firstQ.subject : ''), cid: fc ? fc.id : '' } : null;
+    S.ui.learnMemo = idxs.length ? { subject: fc ? fc.subject : (['study', 'unit'].includes(qz.mode) ? firstQ.subject : ''), cid: fc ? fc.id : '' } : null;
     S.ui.quiz = null; S.ui.learnRead = null; setTimeout(top, 0);
   };
   APP.acts.learnSkipMemo = () => { S.ui.learnMemo = null; S.ui.lastResult = null; };
   APP.acts.learnKnown = (el) => { S.wrong = S.wrong.filter((x) => x !== el.dataset.id); toast('다시 보기 목록에서 뺐습니다'); };
-  APP.acts.learnDelNote = (el) => { S.learnNotes = S.learnNotes.filter((n) => n.id !== el.dataset.id); toast('메모를 삭제했습니다'); };
+  APP.acts.learnDelAsk = (el) => { S.ui.learnDelNote = el.dataset.id; };
+  APP.acts.learnDelCancel = () => { S.ui.learnDelNote = null; };
+  APP.acts.learnDelNote = (el) => { S.learnNotes = S.learnNotes.filter((n) => n.id !== el.dataset.id); S.ui.learnDelNote = null; toast('메모를 삭제했습니다'); };
+  APP.acts.learnAllDue = () => { S.ui.learnAllDue = !S.ui.learnAllDue; };
+  APP.acts.learnInboxDone = (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (x) { x.done = true; logAct('inbox', `받은 항목 처리: ${x.title}`, x.id); } };
+  APP.acts.learnInboxOpen = (el) => {
+    const x = S.inbox.find((i) => i.id === el.dataset.id); if (!x) return;
+    const p = x.payload || {}; const ids = p.qid ? [p.qid] : shuffle(S.questions.filter((q) => q.subject === p.subject)).map((q) => q.id);
+    x.done = true; logAct('inbox', `받은 항목 열어 풀기: ${x.title}`, x.id);
+    if (ids.length) startQuiz('study', ids, 'study');
+  };
   APP.forms.learnMemo = (fd) => {
     const text = (fd.get('text') || '').toString().trim(); if (!text) return;
     S.learnNotes.push({ id: uid('ln'), at: S.today, subject: (fd.get('subject') || '').toString(), cid: (fd.get('cid') || '').toString(), text });
-    S.ui.learnMemo = null; S.ui.lastResult = null; toast('메모를 저장했습니다');
+    S.ui.learnMemo = null; S.ui.lastResult = null; logAct('memo', `학습 메모: ${text.slice(0, 40)}`); toast('메모를 저장했습니다');
   };
 
   APP.views.learn = viewLearn;
