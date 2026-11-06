@@ -21,15 +21,15 @@
 
 /* 대기함 */
 .ops-wait { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--paper2); border-left: 4px solid var(--line); }
-.ops-wait.warn { border-left-color: var(--gold); }
-.ops-wait.crit { border-left-color: var(--crit); }
+.ops-wait.lv-warn { border-left-color: var(--gold); }
+.ops-wait.lv-crit { border-left-color: var(--crit); }
 .ops-wait.done { grid-template-columns: minmax(0, 1fr) auto; opacity: .8; }
 .ops-wait.done .ops-title { text-decoration: line-through; }
 .ops-wait-days { text-align: center; line-height: 1.1; }
 .ops-wait-days b { display: block; font-size: 24px; font-weight: 900; }
 .ops-wait-days small { font-size: 12.5px; color: var(--sub); }
-.ops-wait.crit .ops-wait-days b { color: var(--crit); }
-.ops-wait.warn .ops-wait-days b { color: var(--warn); }
+.ops-wait.lv-crit .ops-wait-days b { color: var(--crit); }
+.ops-wait.lv-warn .ops-wait-days b { color: var(--warn); }
 .ops-done { margin-top: 12px; }
 .ops-done > summary { cursor: pointer; font-size: 14.5px; color: var(--sub); font-weight: 700; }
 
@@ -75,15 +75,127 @@
 .ops-cal.next { background: var(--goldSoft); }
 .ops-cal span:last-child { font-size: 15px; }
 
+
+/* 결재 처리 기준 */
+.ops-sla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.ops-sla > div { background: var(--paper2); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ops-sla span { font-size: 13px; color: var(--sub); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ops-sla b { font-size: 22px; font-weight: 900; }
+.ops-sla small { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 2px; }
+.ops-sla .bad b { color: var(--crit); }
+.ops-wait-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ops-wait-acts.two { grid-column: 2 / -1; justify-content: flex-start; }
+.ops-sendall { margin-top: 10px; }
+
+/* 결정 기록 */
+.ops-dec { background: var(--paper); border-radius: 12px; padding: 6px 10px; }
+.ops-dec > summary { cursor: pointer; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.ops-dec-list { margin: 8px 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.ops-dec-list > li { border-left: 3px solid var(--gold); padding: 4px 0 4px 10px; font-size: 15px; display: flex; flex-direction: column; gap: 3px; }
+.ops-dec-acts { margin-top: 4px; }
+.ops-dec .ops-form { margin: 8px 0 4px; }
+.ops-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-size: 14.5px !important; color: var(--ink) !important; }
+.ops-check input { width: auto; }
+.ops-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; color: var(--crit); font-weight: 700; }
+.ops-danger { border-color: var(--crit) !important; color: var(--crit); }
+
+/* 주간 회의 한 장 자료 */
+.ops-meeting { display: flex; flex-direction: column; gap: 12px; }
+.ops-meeting > h3 { margin-bottom: 0; }
+.ops-mt-acts { gap: 10px; }
+.ops-mt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ops-mt-sec { background: var(--paper2); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.ops-mt-sec h4 { margin: 0 0 6px; font-size: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ops-mt-sec h4 > .num:first-child { width: 24px; height: 24px; border-radius: 50%; background: var(--gold); color: #3D1E0F; display: inline-grid; place-items: center; font-size: 13px; font-weight: 900; }
+.ops-mt-list { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+ol.ops-mt-list { list-style: none; }
+.ops-mt-list li { line-height: 1.5; overflow-wrap: anywhere; }
+.ops-meeting textarea, .ops-oo textarea { font: inherit; font-size: 15px; resize: vertical; }
+
+/* 부서 1:1 */
+.ops-ai { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(91,111,184,.15); color: var(--info); border: 1px dashed var(--info); }
+.ops-oo-form { grid-template-columns: minmax(0, 320px) auto; }
+.ops-oo-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ops-oo-quick .btn { min-height: 40px; }
+.ops-oo { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ops-oo-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 16px; }
+.ops-oo-h > .row { margin-left: auto; }
+.ops-oo-list { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; counter-reset: oo; }
+.ops-oo-list li { background: var(--paper2); border-radius: 12px; padding: 10px 12px; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 10px; }
+.ops-oo-list label { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 1.5; cursor: pointer; flex: 1 1 260px; min-width: 0; }
+.ops-oo-list input[type=checkbox] { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--gold); }
+.ops-oo-list li.done label span { color: var(--sub); text-decoration: line-through; }
+.ops-why { font-size: 12.5px; font-weight: 700; color: var(--sub); background: var(--paper); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+
+/* 하위 탭·받은 항목 */
+.ops-tabs { align-self: flex-start; max-width: 100%; overflow-x: auto; }
+.ops-tabs button { font-size: 15px; padding: 8px 16px; min-height: 40px; white-space: nowrap; }
+.ops-inbox { border-color: var(--gold); background: var(--goldSoft); }
+.ops-inbox .ops-wait { background: var(--paper); }
+.ops-grid-issue { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+
+/* 신호등 추이 */
+.ops-tr { font-size: 13px; font-weight: 700; color: var(--sub); white-space: nowrap; }
+.ops-tr.up { color: var(--ok); }
+.ops-tr.down { color: var(--crit); }
+.ops-trsum { margin-left: auto; }
+
+/* 위험 관리표 */
+.ops-matrix { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.ops-mx-row { display: grid; grid-template-columns: 44px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+.ops-mx-lab { font-size: 13px; color: var(--sub); align-self: center; text-align: right; }
+.ops-mx-x:first-child .ops-mx-lab { font-weight: 700; }
+.ops-mx-x { font-size: 13px; color: var(--sub); text-align: center; }
+.ops-mx-xt { padding-left: 50px; text-align: center; font-size: 13px; color: var(--sub); }
+.ops-cell { min-height: 74px; border-radius: 12px; border: 2px solid transparent; padding: 6px 8px; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 2px; color: var(--ink); background: var(--paper2); min-width: 0; }
+.ops-cell b { font-size: 20px; font-weight: 900; }
+.ops-cell-t { font-size: 12.5px; line-height: 1.35; color: var(--sub); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.ops-cell.g { background: rgba(46,139,87,.10); }
+.ops-cell.y { background: var(--goldSoft); }
+.ops-cell.r { background: var(--pinkSoft); }
+.ops-cell.r.has b { color: var(--crit); }
+.ops-cell:not(.has) { opacity: .6; }
+.ops-cell:hover { border-color: var(--gold); }
+.ops-cell.on { border-color: var(--ink); opacity: 1; }
+.ops-cellpick { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.ops-cellpick > .ops-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ops-cellpick .ops-issue .row { justify-content: space-between; }
+.ops-risk { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin-right: 4px; }
+.ops-risk.r { background: var(--crit); color: #fff; }
+.ops-risk.y { background: var(--goldSoft); color: var(--goldInk); }
+.ops-risk.g { background: rgba(46,139,87,.15); color: var(--ok); }
+.ops-issue.focus { outline: 3px solid var(--gold); outline-offset: 1px; }
+
+/* 입력해서 찾는 칸 */
+.ops-pk { position: relative; display: block; min-width: 0; }
+.ops-pk-in { width: 100%; box-sizing: border-box; padding-right: 30px !important; }
+.ops-pk-x { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--sub); cursor: pointer; font-size: 17px; line-height: 1; }
+.ops-pk-x:hover { background: var(--line); color: var(--ink); }
+.ops-pk-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50; max-height: 260px; overflow: auto; margin: 0; padding: 4px; list-style: none; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(20,10,4,.18); }
+.ops-pk-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 15px; color: var(--ink); }
+.ops-pk-list li span { font-size: 13px; color: var(--sub); white-space: nowrap; }
+.ops-pk-list li.on, .ops-pk-list li[data-v]:hover { background: var(--goldSoft); }
+.ops-pk-list li.none { cursor: default; color: var(--sub); }
+
 @media (max-width: 900px) {
+  .ops-mt-grid { grid-template-columns: minmax(0, 1fr); }
+  .ops-grid-issue { grid-template-columns: minmax(0, 1fr); }
   .ops-brands { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
   .ops-wait { grid-template-columns: 44px minmax(0, 1fr); }
-  .ops-wait > .btn { grid-column: 1 / -1; justify-self: stretch; min-height: 40px; }
+  .ops-wait > .btn, .ops-wait-acts { grid-column: 1 / -1; justify-self: stretch; }
+  .ops-wait-acts .btn { flex: 1; min-height: 40px; }
+  .ops-sla b { font-size: 19px; }
   .ops-wait.done { grid-template-columns: minmax(0, 1fr); }
   .ops-dept-head .ops-meta { margin-left: 0; width: 100%; }
   .ops-count { margin-left: 0; }
   .ops-seg { margin-left: 0; }
   .tl-row.ops-cal { grid-template-columns: 56px minmax(0, 1fr); }
+  .ops-cell-t { display: none; }
+  .ops-cell { min-height: 54px; align-items: center; justify-content: center; }
+  .ops-mx-row { grid-template-columns: 34px repeat(3, minmax(0, 1fr)); }
+  .ops-trsum { margin-left: 0; width: 100%; }
+  .ops-oo-form { grid-template-columns: minmax(0, 1fr); }
+  .ops-oo-h > .row { margin-left: 0; }
 }
