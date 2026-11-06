@@ -2,7 +2,7 @@
    공용 도구·상태는 window.APP에서 꺼내 씁니다. 새 버튼 동작은 APP.acts['이름'] = (el) => {...},
    새 폼은 APP.forms['이름'] = (fd, form) => {...}, 새 select 변경은 APP.changes['이름'] = (el) => {...} 로 등록합니다.
 
-   보기: 오늘(하루 5분 코스·복습 도전·오답) / 과목 / 숙련도·일정(간격 반복 SRS)
+   보기: 오늘(하루 5분 코스·복습 도전·오답) / 과목 / 숙련도·일정(간격 반복 SRS) / 사례(가상 상황) / 개념 지도
    흐름: 과목 선택 → ① 개념 읽기 → ② 퀴즈(정답 무관 XP +1, 해설) → ③ 메모
    복습: 오늘의 복습 도전(최근 7일 50% + 전체 이력 랜덤 50%, 10문제, 하루 여러 번) · 오답 다시 보기
    자료: Global-MMLU 한국어판(Apache-2.0) 문제 + OpenStax(CC BY 4.0) 개념 읽기 — 승인됨.
@@ -200,8 +200,74 @@
 
   const noteLi = (n) => { const c = n.cid && conceptById(n.cid); return `<li><div class="small muted"><span class="num">${md(n.at)}</span> · ${esc(n.subject || '공통')}${c ? ' · ' + esc(c.title) : ''}</div><div class="ln-note-row"><span>${esc(n.text)}</span>${S.ui.learnDelNote === n.id ? `<span class="row ln-confirm"><b class="small">지울까요?</b><button type="button" class="btn sm" data-act="learnDelNote" data-id="${n.id}">삭제</button><button type="button" class="btn sm" data-act="learnDelCancel">취소</button></span>` : `<button type="button" class="btn sm" data-act="learnDelAsk" data-id="${n.id}" aria-label="메모 삭제">삭제</button>`}</div></li>`; };
 
+  /* ---------- P2: 사례 문제 (Claude가 직접 지은 가상 상황 · 사내 실제 수치 아님) ---------- */
+  const CASE_SRC = { source: '사례 문제(Claude 작성 · 가상 상황)', license: '사내 학습용 자체 제작', explanation_ai: true };
+  const CASE_POS = [2, 0, 3, 1, 2, 0, 3, 1, 0]; // 정답 위치가 한쪽으로 몰리지 않게 섞어 둔다(고정값)
+  const K = (n, subject, title, situation, stem, choices, answer, explanation, cid) => {
+    const t = CASE_POS[(n - 1) % CASE_POS.length]; const right = choices[answer]; const others = choices.filter((_, i) => i !== answer);
+    const ch = others.slice(); ch.splice(t, 0, right);
+    return { id: 'cs' + n, subject, unit: '사례', title, situation, stem, choices: ch, answer: t, explanation, cid, ...CASE_SRC, source_ref: 'case-' + n };
+  };
+  const CASES = [
+    K(1, '경영전략', '저가 경쟁점이 들어왔다', '가상의 분식 브랜드 A의 한 매장 근처에 저가 분식점이 세 곳 새로 생겼습니다. A 매장은 재료 품질과 깔끔한 매장 분위기로 단골이 많은 편입니다.', '점주에게 가장 알맞은 첫 대응은?', ['경쟁점보다 가격을 더 낮춘다', '품질·분위기라는 강점을 더 분명히 드러낸다', '메뉴 구성을 경쟁점과 똑같이 맞춘다', '당분간 홍보를 모두 멈춘다'], 1, '원가 구조가 다른 저가점과 가격으로 싸우면 이익만 줄어듭니다. 이미 가진 차별점(품질·분위기)을 강화해 단골이 떠날 이유를 없애는 것이 먼저입니다.', 'c1'),
+    K(2, '조직·인사', '첫날부터 "알아서 해 봐"', '가상의 카페 B 점장은 바빠서 첫 출근한 아르바이트생에게 "보고 알아서 해 보라"고 맡겼습니다. 일주일째 주문 실수가 잦습니다.', '상황에 맞는 리더십 관점에서 점장이 바꿀 점은?', ['더 많은 일을 맡겨 스스로 익히게 한다', '처음에는 순서를 구체적으로 알려 주고 시범을 보인다', '실수할 때마다 급여에서 차감한다', '숙련자가 될 때까지 계산대에서 뺀다'], 1, '경험이 적은 구성원에게는 위임보다 구체적인 지시와 시범이 맞습니다. 익숙해지면 코칭 → 지원 → 위임으로 단계를 옮깁니다.', 'c2'),
+    K(3, '마케팅', '신메뉴 가격 정하기', '가상의 디저트 브랜드 C가 새 메뉴를 냅니다. 새로운 맛을 먼저 찾아다니는 단골층이 뚜렷하고, 비슷한 메뉴를 파는 경쟁점은 아직 없습니다.', '처음 가격을 정하는 방법으로 가장 알맞은 것은?', ['처음부터 가장 낮은 가격으로 시작한다', '처음엔 높게 시작해 반응을 보며 단계적으로 조정한다', '경쟁 메뉴가 생길 때까지 출시를 미룬다', '원가에 상관없이 기존 메뉴와 같은 가격으로 맞춘다'], 1, '먼저 사려는 고객이 있고 경쟁이 없을 때는 초기 고가로 시작해 그 지불의사를 반영한 뒤, 경쟁이 생기면 가격을 조정하는 방식이 맞습니다.', 'c3'),
+    K(4, '회계', '하루 몇 그릇이면 본전인가', '가상의 국밥 매장 D의 월 고정비(임차료·인건비 등)는 1,200만원이고, 한 그릇을 팔 때 남는 공헌이익은 4,000원입니다. 한 달은 30일 영업으로 봅니다. (숫자는 연습용 가정)', '하루에 몇 그릇을 팔아야 손익분기점인가?', ['50그릇', '100그릇', '300그릇', '1,000그릇'], 1, '월 손익분기 판매량 = 1,200만 ÷ 4,000 = 3,000그릇. 30일로 나누면 하루 100그릇입니다.', 'c4'),
+    K(5, '재무', '리모델링을 할까', '가상의 매장 E가 리모델링에 2,000만원을 쓰려 합니다. 늘어날 현금흐름을 요구수익률로 할인해 오늘 가치로 합하면 2,300만원입니다. (숫자는 연습용 가정)', '이 투자에 대한 판단으로 옳은 것은?', ['NPV가 -300만원이라 하지 않는다', 'NPV가 +300만원이라 해 볼 만하다', '회수 기간을 모르면 아무 판단도 할 수 없다', '회계이익이 날 때까지 기다린다'], 1, 'NPV = 2,300만 − 2,000만 = +300만원. 요구수익률보다 더 버는 투자라 가치가 늘어납니다. 다만 현금흐름 추정이 맞는지는 따로 점검합니다.', 'c5'),
+    K(6, '경제', '옆 가게 커피값이 올랐다', '가상의 베이커리 F 옆 카페가 커피 가격을 크게 올렸습니다. F도 커피를 팔고, 두 가게 손님층은 많이 겹칩니다.', 'F가 예상하고 준비할 일로 가장 알맞은 것은?', ['커피 수요가 줄 것이니 원두 주문을 줄인다', '대체재가 비싸졌으니 F의 커피 수요가 늘 수 있어 재고·인력을 미리 챙긴다', '가격 변화는 F와 관계없다', '같이 가격을 올려야만 한다'], 1, '대체재 가격이 오르면 우리 상품의 수요 자체가 늘어납니다(수요곡선 이동). 늘어날 손님에 맞춰 준비하는 것이 먼저입니다.', 'c6'),
+    K(7, '운영관리', '점심 줄이 줄지 않는다', '가상의 덮밥 매장 G는 점심마다 줄이 깁니다. 키오스크 주문은 금방 끝나는데, 조리대 한 곳에서 주문이 계속 밀립니다.', '줄을 줄이려면 어디부터 손봐야 하는가?', ['키오스크를 한 대 더 들인다', '병목인 조리 공정(인원·순서·미리 손질)을 먼저 보강한다', '메뉴 사진을 바꾼다', '좌석을 늘린다'], 1, '전체 속도는 가장 느린 공정이 정합니다. 이미 빠른 주문 단계를 늘려도 조리대 앞 대기만 길어집니다.', 'c7'),
+    K(8, '경영정보·AI', 'AI 보고서에 없던 행사가 나왔다', '가상의 가맹점주 H가 AI로 만든 월간 매출 분석을 받았습니다. 그런데 보고서에 지난달 하지도 않은 할인 행사 효과가 적혀 있습니다.', '가장 알맞은 대응은?', ['AI가 썼으니 그대로 본사에 올린다', '원자료(POS 매출·행사 기록)와 대조해 틀린 부분을 고친 뒤 쓴다', '보고서 전체를 버리고 AI를 다시는 쓰지 않는다', '행사를 실제로 했다고 기록을 바꾼다'], 1, '생성형 AI는 그럴듯한 오답을 낼 수 있습니다. 근거 자료와 대조해 확인하는 절차를 두면 AI의 속도와 정확성을 함께 얻습니다.', 'c8'),
+    K(9, '기업윤리', '원재료를 몰래 바꾸자는 의견', '가상의 프랜차이즈 본사 I에서 더 싼 원재료로 바꾸면 이익이 늘지만 맛이 조금 달라질 수 있다는 검토가 나왔습니다. "가맹점에는 알리지 말자"는 의견이 있습니다.', '가장 책임 있는 결정 방식은?', ['알리지 않고 바로 바꾼다', '변경 이유와 영향을 가맹점에 알리고 시험 운영·협의를 거친다', '이익이 늘면 무엇이든 괜찮다', '불만이 나오면 그때 생각한다'], 1, '가맹점은 핵심 이해관계자입니다. 투명하게 알리고 함께 검증해야 장기적인 신뢰와 브랜드 품질을 지킬 수 있습니다.', 'c9')
+  ];
+  CASES.forEach((cq) => { const i = S.questions.findIndex((q) => q.id === cq.id); if (i >= 0) S.questions[i] = cq; else S.questions.push(cq); });
+
+  /* ---------- P2: 개념 연결 지도 (관계 설명은 직접 작성) ---------- */
+  const LINKS = [
+    ['c1', 'c3', '포지셔닝은 경쟁전략을 고객의 말로 옮긴 것이다'],
+    ['c1', 'c5', '어느 사업에 돈을 더 넣을지는 NPV로 검증한다'],
+    ['c4', 'c5', '손익·원가 숫자가 투자 판단의 재료가 된다'],
+    ['c4', 'c7', '변동비를 줄일 곳은 대개 공정 안에 있다'],
+    ['c6', 'c3', '손님의 가격 민감도가 가격 전략을 정한다'],
+    ['c6', 'c5', '금리가 오르면 할인율도 오르고 투자 기준이 높아진다'],
+    ['c2', 'c7', '현장 의욕이 품질과 속도를 만든다'],
+    ['c2', 'c9', '공정한 보상과 투명한 지배구조가 신뢰를 만든다'],
+    ['c8', 'c7', '데이터로 병목을 찾고 개선 효과를 잰다'],
+    ['c8', 'c2', 'AI 도입은 사람의 일하는 방식부터 바꾼다'],
+    ['c9', 'c1', '책임 있는 경영은 오래 가는 경쟁우위가 된다'],
+    ['c3', 'c4', '고객생애가치는 공헌이익 위에서 계산된다']
+  ];
+  const SHORT = { '경영전략': '전략', '조직·인사': '조직', '경영정보·AI': '정보·AI', '기업윤리': '윤리', '운영관리': '운영' };
+  function viewConceptMap() {
+    const sel = conceptById(S.ui.learnMapSel) || S.learnConcepts[0];
+    const N = S.learnConcepts.length; const cx = 210; const cy = 175; const R = 135;
+    const pos = {}; S.learnConcepts.forEach((c, i) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / N; pos[c.id] = [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
+    const on = (l) => l[0] === sel.id || l[1] === sel.id;
+    const mine = LINKS.filter(on).map((l) => ({ other: conceptById(l[0] === sel.id ? l[1] : l[0]), text: l[2] }));
+    const lines = LINKS.map((l) => `<line x1="${pos[l[0]][0].toFixed(1)}" y1="${pos[l[0]][1].toFixed(1)}" x2="${pos[l[1]][0].toFixed(1)}" y2="${pos[l[1]][1].toFixed(1)}" class="${on(l) ? 'on' : ''}"/>`).join('');
+    const nodes = S.learnConcepts.map((c) => { const [x, y] = pos[c.id]; const isSel = c.id === sel.id; const lit = isSel || mine.some((m) => m.other.id === c.id); return `<g class="ln-node ${isSel ? 'sel' : lit ? 'lit' : ''}" data-act="learnMapSel" data-v="${c.id}" role="button" tabindex="0" aria-label="${esc(c.subject)} 개념 선택"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isSel ? 34 : 29}"/><text x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" text-anchor="middle">${esc(SHORT[c.subject] || c.subject)}</text></g>`; }).join('');
+    return `<section class="panel"><h3>개념 연결 지도</h3>
+        <p class="small muted" style="margin:0 0 6px">원을 누르면 그 개념과 이어진 개념이 밝아집니다. 연결 설명은 Claude가 직접 쓴 목업입니다 ${'<span class="b u">목업 AI</span>'}</p>
+        <div class="ln-cmap"><svg viewBox="0 0 420 350" role="img" aria-label="경영 개념 9개와 그 관계">${lines}${nodes}</svg>
+        <div class="ln-cmap-side"><span class="chip">${esc(sel.subject)}</span><h3 class="ln-title" style="margin-top:8px">${esc(sel.title)}</h3><p class="ln-lead">${esc(sel.lead)}</p>
+          <ul class="ln-links">${mine.map((m) => `<li><button type="button" class="ln-linkbtn" data-act="learnMapSel" data-v="${m.other.id}"><b>${esc(m.other.subject)}</b><span>${esc(m.text)}</span></button></li>`).join('')}</ul>
+          <div class="row"><button type="button" class="btn sm primary" data-act="learnRead" data-v="${sel.id}">개념 읽기</button><button type="button" class="btn sm" data-act="learnFlowQuiz" data-v="${sel.id}">퀴즈</button>${CASES.some((k) => k.cid === sel.id) ? `<button type="button" class="btn sm" data-act="learnCase" data-v="${CASES.find((k) => k.cid === sel.id).id}">사례 문제</button>` : ''}</div></div></div>
+      </section>`;
+  }
+
+  function viewCases(st) {
+    const solved = CASES.filter((k) => st[k.id]).length;
+    return `<section class="panel"><div class="row" style="justify-content:space-between"><div><h3>사례 문제 <span class="b u">가상 상황</span></h3>
+        <p class="small muted" style="margin:4px 0 0">프랜차이즈·매장 경영에서 흔히 생길 만한 상황을 Claude가 직접 지었습니다. 숫자는 모두 연습용 가정이며 사내 실제 자료가 아닙니다.</p></div>
+        <button type="button" class="btn primary" data-act="learnCaseAll">사례 ${CASES.length}문제 풀기</button></div>
+        <p class="small" style="margin:10px 0 0">푼 사례 <b class="num">${solved}/${CASES.length}</b> ${badge('측정')}</p></section>
+      <div class="ln-cases">${CASES.map((k) => { const s = st[k.id]; return `<article class="ln-casecard">
+          <div class="row" style="justify-content:space-between"><span class="chip">${esc(k.subject)}</span>${s ? `<span class="small ${s.lastOk ? 'ln-ok' : 'ln-ng'}">${s.lastOk ? '맞힘' : '다시 보기'} · 다음 ${rel(s.dueOff)}</span>` : '<span class="small muted">안 푼 사례</span>'}</div>
+          <h4>${esc(k.title)}</h4><p>${esc(k.situation)}</p>
+          <div class="row"><button type="button" class="btn sm primary" data-act="learnCase" data-v="${k.id}">풀기</button><button type="button" class="btn sm" data-act="learnRead" data-v="${k.cid}">관련 개념</button></div></article>`; }).join('')}</div>`;
+  }
+
   /* ---------- 탭 ---------- */
-  const TABS = [['today', '오늘'], ['subjects', '과목'], ['map', '숙련도·일정']];
+  const TABS = [['today', '오늘'], ['subjects', '과목'], ['map', '숙련도·일정'], ['cases', '사례'], ['cmap', '개념 지도']];
 
   function viewLearn() {
     const st = srs();
@@ -214,7 +280,7 @@
     if (rc) return head + viewRead(rc);
     const tab = TABS.some((t) => t[0] === S.ui.learnTab) ? S.ui.learnTab : 'today';
     const tabs = `<div class="ln-tabs" role="tablist" aria-label="경영학습 보기">${TABS.map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="learnTab" data-v="${id}">${label}</button>`).join('')}</div>`;
-    const body = { today: viewToday, subjects: viewSubjects, map: viewMap }[tab](st);
+    const body = { today: viewToday, subjects: viewSubjects, map: viewMap, cases: viewCases, cmap: viewConceptMap }[tab](st);
     return head + inboxBox() + resultBox() + tabs + body;
   }
 
@@ -397,6 +463,10 @@
     x.done = true; logAct('inbox', `받은 항목 열어 풀기: ${x.title}`, x.id);
     if (ids.length) startQuiz('study', ids, 'study');
   };
+  APP.acts.learnCase = (el) => startQuiz('case', [el.dataset.v], 'study');
+  APP.acts.learnCaseAll = () => { const st = srs(); startQuiz('case', [...CASES.filter((k) => !st[k.id]), ...shuffle(CASES.filter((k) => st[k.id]))].map((k) => k.id), 'study'); };
+  APP.acts.learnMapSel = (el) => { S.ui.learnMapSel = el.dataset.v; };
+  document.addEventListener('keydown', (e) => { const g = e.target.closest && e.target.closest('.ln-node'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); g.dispatchEvent(new MouseEvent('click', { bubbles: true })); } });
   APP.forms.learnMemo = (fd) => {
     const text = (fd.get('text') || '').toString().trim(); if (!text) return;
     S.learnNotes.push({ id: uid('ln'), at: S.today, subject: (fd.get('subject') || '').toString(), cid: (fd.get('cid') || '').toString(), text });

@@ -70,7 +70,7 @@
 
 
 /* 탭 */
-.ln-tabs { display: flex; gap: 4px; background: var(--paper2); border-radius: 14px; padding: 4px; }
+.ln-tabs { display: flex; flex-wrap: wrap; gap: 4px; background: var(--paper2); border-radius: 14px; padding: 4px; }
 .ln-tabs button { flex: 1 1 0; border: 0; background: none; padding: 10px 8px; border-radius: 10px; cursor: pointer; font-size: 15px; color: var(--sub); font-weight: 500; min-height: 42px; }
 .ln-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
 
@@ -120,6 +120,32 @@
 .ln-due-now { color: var(--crit); }
 .ln-lvdot { width: 12px; height: 12px; border-radius: 50%; background: var(--lvc); border: 1px solid var(--sub); flex: none; }
 
+/* 사례 문제 */
+.ln-cases { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.ln-casecard { background: var(--paper); border: var(--hair); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ln-casecard h4 { margin: 0; font-size: 16.5px; font-family: var(--serif); }
+.ln-casecard p { margin: 0; line-height: 1.65; flex: 1; }
+.ln-ok { color: var(--ok); font-weight: 700; }
+.ln-ng { color: var(--crit); font-weight: 700; }
+
+/* 개념 연결 지도 */
+.ln-cmap { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ln-cmap svg { width: 100%; height: auto; display: block; }
+.ln-cmap line { stroke: var(--line); stroke-width: 2; }
+.ln-cmap line.on { stroke: var(--gold); stroke-width: 3.5; }
+.ln-node { cursor: pointer; }
+.ln-node circle { fill: var(--paper2); stroke: var(--line); stroke-width: 2; }
+.ln-node.lit circle { fill: var(--goldSoft); stroke: var(--gold); }
+.ln-node.sel circle { fill: var(--gold); stroke: var(--goldInk); }
+.ln-node text { font-size: 15px; font-weight: 700; fill: var(--ink); pointer-events: none; }
+.ln-node.sel text { fill: #3D1E0F; }
+.ln-node:focus { outline: none; } .ln-node:focus circle { stroke: var(--info); stroke-width: 3; }
+.ln-links { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ln-linkbtn { width: 100%; text-align: left; border: var(--hair); background: var(--paper2); border-radius: 12px; padding: 8px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--ink); font-size: 15px; }
+.ln-linkbtn:hover { border-color: var(--gold); }
+.ln-linkbtn b { font-size: 13.5px; color: var(--goldInk); }
+
+@media (max-width: 900px) { .ln-cmap { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
   .ln-import { grid-template-columns: minmax(0, 1fr); }
   .ln-subjects { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -133,5 +159,7 @@
   .ln-dots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ln-maprow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .ln-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ln-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ln-tabs button { padding: 8px 4px; }
+  .ln-cases { grid-template-columns: minmax(0, 1fr); }
 }
