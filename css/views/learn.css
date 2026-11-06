@@ -145,6 +145,24 @@
 .ln-linkbtn:hover { border-color: var(--gold); }
 .ln-linkbtn b { font-size: 13.5px; color: var(--goldInk); }
 
+/* 오늘의 경영 한 문장 */
+.ln-line { background: var(--heroDeep); border-color: transparent; color: var(--heroInk); }
+.ln-line h3 { font-family: var(--serif); }
+.ln-line .muted { color: var(--heroSub); }
+.ln-line-t { font-family: var(--serif); font-size: 21px; line-height: 1.5; margin: 8px 0 6px; font-weight: 700; }
+.ln-line .btn { background: transparent; color: var(--heroInk); border-color: var(--heroRule); }
+.ln-line .btn:hover { border-color: var(--gold); }
+
+/* 주간 리포트 */
+.ln-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ln-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.ln-week div { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ln-week i { width: 70%; max-width: 44px; background: var(--ok); border-radius: 6px 6px 2px 2px; opacity: .75; }
+.ln-week i.now { background: var(--gold); opacity: 1; }
+.ln-week small { font-size: 12.5px; color: var(--sub); white-space: nowrap; }
+.ln-subjbars { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.ln-subjbars .barrow { grid-template-columns: 110px minmax(0, 1fr) 96px; font-size: 15px; }
+
 @media (max-width: 900px) { .ln-cmap { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
   .ln-import { grid-template-columns: minmax(0, 1fr); }
@@ -162,4 +180,7 @@
   .ln-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ln-tabs button { padding: 8px 4px; }
   .ln-cases { grid-template-columns: minmax(0, 1fr); }
+  .ln-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ln-subjbars .barrow { grid-template-columns: 84px minmax(0, 1fr) 84px; }
+  .ln-line-t { font-size: 19px; }
 }

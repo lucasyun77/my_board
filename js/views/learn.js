@@ -2,7 +2,7 @@
    공용 도구·상태는 window.APP에서 꺼내 씁니다. 새 버튼 동작은 APP.acts['이름'] = (el) => {...},
    새 폼은 APP.forms['이름'] = (fd, form) => {...}, 새 select 변경은 APP.changes['이름'] = (el) => {...} 로 등록합니다.
 
-   보기: 오늘(하루 5분 코스·복습 도전·오답) / 과목 / 숙련도·일정(간격 반복 SRS) / 사례(가상 상황) / 개념 지도
+   보기: 오늘(하루 5분 코스·복습 도전·오답) / 과목 / 숙련도·일정(간격 반복 SRS) / 사례(가상 상황) / 개념 지도 / 주간 리포트 · 오늘 탭 맨 위 '오늘의 경영 한 문장'
    흐름: 과목 선택 → ① 개념 읽기 → ② 퀴즈(정답 무관 XP +1, 해설) → ③ 메모
    복습: 오늘의 복습 도전(최근 7일 50% + 전체 이력 랜덤 50%, 10문제, 하루 여러 번) · 오답 다시 보기
    자료: Global-MMLU 한국어판(Apache-2.0) 문제 + OpenStax(CC BY 4.0) 개념 읽기 — 승인됨.
@@ -140,6 +140,7 @@
   const refOf = (x) => (x.source_ref && x.source_ref !== '-' ? x.source_ref : '목업-' + x.id);
   const srcLine = (x) => `출처: ${esc(x.source)} · 라이선스: ${esc(x.license)} · 원문 ID: <span class="num">${esc(refOf(x))}</span>`;
   const aiBadge = (q) => (q.explanation_ai ? '<span class="b e">AI 생성 해설</span><span class="b u">목업 AI</span>' : '');
+  const qLabel = (q) => (q.situation ? `[사례] ${q.title} — ${q.stem}` : q.stem);
   const lastChosen = (qid) => { const a = S.attempts.filter((x) => x.question_id === qid && x.chosen != null).pop(); return a ? a.chosen : null; };
   const subjStats = (s, st) => {
     const qs = S.questions.filter((q) => q.subject === s); const ids = new Set(qs.map((q) => q.id));
@@ -266,8 +267,62 @@
           <div class="row"><button type="button" class="btn sm primary" data-act="learnCase" data-v="${k.id}">풀기</button><button type="button" class="btn sm" data-act="learnRead" data-v="${k.cid}">관련 개념</button></div></article>`; }).join('')}</div>`;
   }
 
+  /* ---------- P3: 오늘의 경영 한 문장 (모두 직접 작성 · 남의 글 인용 아님) ---------- */
+  const LINES = [
+    ['숫자는 결과이고, 습관이 원인이다.', '이번 주 우리 회사가 바꾼 습관은 무엇인가?'],
+    ['가장 느린 공정이 회사 전체의 속도다.', '지금 우리 일의 병목은 어디인가?'],
+    ['좋은 지시에는 완료 조건이 한 줄로 적혀 있다.', '오늘 내린 지시의 완료 조건은 분명한가?'],
+    ['싸게 팔지, 다르게 팔지를 먼저 정해야 나머지가 정해진다.', '우리 브랜드는 어느 쪽인가?'],
+    ['측정하지 않은 개선은 느낌일 뿐이다.', '이번 개선을 무엇으로 잴 것인가?'],
+    ['가맹점이 돈을 벌어야 본사도 오래 간다.', '가맹점 이익을 높일 작은 한 가지는?'],
+    ['회의가 끝나면 누가, 언제까지, 무엇을 할지가 남아야 한다.', '오늘 회의에서 남은 것은 무엇인가?'],
+    ['고정비는 늘리기는 쉽고 줄이기는 어렵다.', '지금 늘리려는 고정비는 꼭 필요한가?'],
+    ['AI에게 맡긴 일도 마지막 확인은 사람이 한다.', '확인 없이 쓰고 있는 AI 결과물은 없는가?'],
+    ['칭찬은 구체적일수록 다시 일어난다.', '오늘 누구의 어떤 행동을 칭찬할 것인가?'],
+    ['새 사업은 작게 시험하고 크게 배운다.', '가장 싸게 검증할 방법은 무엇인가?'],
+    ['이익은 장부에 남고 현금은 통장에 남는다. 둘 다 봐야 한다.', '이번 달 현금 흐름은 이익과 같은 방향인가?'],
+    ['브랜드는 약속을 지킨 횟수만큼 쌓인다.', '고객과의 약속 중 자주 어기는 것은?'],
+    ['손님이 다시 오지 않는 이유는 대개 말로 듣지 못한다.', '떠난 손님의 이유를 어떻게 들을 것인가?']
+  ];
+  function lineCard() {
+    const base = Math.floor(mid(Date.now()) / 864e5);
+    const i = ((base + (S.ui.learnLineShift || 0)) % LINES.length + LINES.length) % LINES.length;
+    const [t, qn] = LINES[i];
+    return `<section class="panel ln-line" aria-labelledby="h-lnline"><div class="row" style="justify-content:space-between"><h3 id="h-lnline">오늘의 경영 한 문장</h3><span class="small muted">직접 작성 · ${i + 1}/${LINES.length}</span></div>
+      <p class="ln-line-t">${esc(t)}</p><p class="small muted" style="margin:0">생각해 볼 질문 · ${esc(qn)}</p>
+      <div class="row" style="margin-top:10px"><button type="button" class="btn sm" data-act="learnLineNext">다른 문장</button><button type="button" class="btn sm" data-act="learnLineMemo" data-v="${i}">메모로 담기</button></div></section>`;
+  }
+
+  /* ---------- P3: 주간 학습 리포트 ---------- */
+  function viewReport() {
+    const day = (o) => S.attempts.filter((a) => offOf(a.at) === o);
+    const week = (from) => { const at = S.attempts.filter((a) => { const o = offOf(a.at); return o >= from && o <= from + 6; }); return { n: at.length, ok: at.filter((a) => a.correct).length, days: new Set(at.map((a) => offOf(a.at))).size, at }; };
+    const tw = week(-6); const lw = week(-13);
+    const pct = (w) => (w.n ? Math.round(100 * w.ok / w.n) : null);
+    const diff = (a, b, unit) => { if (a == null || b == null) return '<span class="small muted">비교 없음</span>'; const d = a - b; return `<span class="small ${d > 0 ? 'ln-ok' : d < 0 ? 'ln-ng' : 'muted'}">지난주보다 ${d > 0 ? '+' : ''}${d}${unit}</span>`; };
+    const courseDays = new Set(S.activity.filter((x) => x.menu === 'learn' && x.type === 'course' && offOf(x.at) >= -6).map((x) => offOf(x.at))).size;
+    const days = Array.from({ length: 7 }, (_, k) => { const o = k - 6; const at = day(o); return { o, n: at.length, ok: at.filter((a) => a.correct).length }; });
+    const dmax = Math.max(1, ...days.map((d) => d.n));
+    const subj = S.SUBJECTS.map((s) => { const at = tw.at.filter((a) => { const q = qById(a.question_id); return q && q.subject === s; }); return { s, n: at.length, rate: at.length ? Math.round(100 * at.filter((a) => a.correct).length / at.length) : null }; });
+    const weak = subj.filter((x) => x.n).sort((a, b) => a.rate - b.rate)[0];
+    const tile = (label, val, sub) => `<div class="kpi"><span class="label">${label} ${badge('측정')}</span><span class="value num">${val}</span>${sub}</div>`;
+    return `<section class="panel"><h3>주간 학습 리포트 <span class="small muted">최근 7일 · ${md(dayStr(-6))}~${md(dayStr(0))}</span></h3>
+        <div class="ln-kpis">
+          ${tile('XP', tw.n, diff(tw.n, lw.n, ''))}
+          ${tile('정답률', pct(tw) == null ? '-' : pct(tw) + '<small>%</small>', diff(pct(tw), pct(lw), '%p'))}
+          ${tile('공부한 날', tw.days + '<small>/7일</small>', diff(tw.days, lw.days, '일'))}
+          ${tile('5분 코스 완료', courseDays + '<small>일</small>', '<span class="small muted">코스를 끝까지 푼 날</span>')}
+        </div></section>
+      <section class="panel"><h3>날짜별 XP · 정답률 ${badge('측정')}</h3>
+        <div class="ln-week">${days.map((d) => `<div><span class="num">${d.n}</span><i style="height:${Math.round(90 * d.n / dmax) + 4}px" class="${d.o === 0 ? 'now' : ''}"></i><small>${d.o === 0 ? '오늘' : md(dayStr(d.o))}</small><small class="num ${d.n ? '' : 'muted'}">${d.n ? Math.round(100 * d.ok / d.n) + '%' : '-'}</small></div>`).join('')}</div>
+        <p class="small muted" style="margin:8px 0 0">막대 = 그날 푼 문제 수(= XP), 아래 숫자 = 그날 정답률</p></section>
+      <section class="panel"><div class="row" style="justify-content:space-between"><h3>과목별 이번 주 ${badge('측정')}</h3>${weak ? `<button type="button" class="btn sm primary" data-act="startSubject" data-v="${esc(weak.s)}">가장 약한 과목 풀기: ${esc(weak.s)}</button>` : ''}</div>
+        <div class="ln-subjbars">${subj.map((x) => `<div class="barrow"><span>${esc(x.s)}</span><div class="bar"><i style="width:${x.rate == null ? 0 : x.rate}%"></i></div><span class="num small">${x.rate == null ? '안 풂' : `${x.rate}% · ${x.n}문`}</span></div>`).join('')}</div>
+      </section>`;
+  }
+
   /* ---------- 탭 ---------- */
-  const TABS = [['today', '오늘'], ['subjects', '과목'], ['map', '숙련도·일정'], ['cases', '사례'], ['cmap', '개념 지도']];
+  const TABS = [['today', '오늘'], ['subjects', '과목'], ['map', '숙련도·일정'], ['cases', '사례'], ['cmap', '개념 지도'], ['report', '주간 리포트']];
 
   function viewLearn() {
     const st = srs();
@@ -280,7 +335,7 @@
     if (rc) return head + viewRead(rc);
     const tab = TABS.some((t) => t[0] === S.ui.learnTab) ? S.ui.learnTab : 'today';
     const tabs = `<div class="ln-tabs" role="tablist" aria-label="경영학습 보기">${TABS.map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="learnTab" data-v="${id}">${label}</button>`).join('')}</div>`;
-    const body = { today: viewToday, subjects: viewSubjects, map: viewMap, cases: viewCases, cmap: viewConceptMap }[tab](st);
+    const body = { today: viewToday, subjects: viewSubjects, map: viewMap, cases: viewCases, cmap: viewConceptMap, report: viewReport }[tab](st);
     return head + inboxBox() + resultBox() + tabs + body;
   }
 
@@ -316,7 +371,7 @@
         <div class="row" style="margin-top:12px">${c.remaining.length ? `<button type="button" class="btn primary ln-big" data-act="learnCourse">${doneN ? '이어 풀기' : '5분 코스 시작'}</button>` : `<span class="ln-done">오늘 코스 완료</span><button type="button" class="btn" data-act="learnCourseMore">5문제 더</button>`}
           <button type="button" class="btn sm" data-act="learnSendToday" ${sent ? 'disabled' : ''}>${sent ? '오늘 할 일에 보냄' : '오늘 할 일로 보내기'}</button></div>
       </section>`;
-    return `${courseCard}
+    return `${lineCard()}${courseCard}
       <section class="panel ln-review">
         <div class="ln-review-main"><div><h3>오늘의 복습 도전</h3>
           <p class="small muted" style="margin:4px 0 0">10문제 = 최근 7일 학습 50% + 전체 학습 이력 랜덤 50%. 하루 여러 번 도전할 수 있습니다.</p>
@@ -363,7 +418,7 @@
       <section class="panel"><h3>복습 일정 · 앞으로 7일 ${badge('측정')}</h3>
         <p class="small muted" style="margin:0 0 10px">맞히면 1일 → 3일 → 약 8일 → … 로 간격이 늘고, 틀리면 다음 날 다시 나옵니다.</p>
         <div class="ln-fc">${forecast.map((n, k) => `<div><span class="num">${n}</span><i style="height:${Math.round(70 * n / fmax) + 4}px" class="${k === 0 ? 'now' : ''}"></i><small>${k === 0 ? '오늘까지' : md(dayStr(k))}</small></div>`).join('')}</div>
-        <ul class="ln-due">${vis.map((id) => { const q = qById(id); const s = st[id]; return `<li><span class="ln-lvdot lv${s.level}" title="${LV[s.level]}"></span><span class="ln-due-t"><span class="small muted">${esc(q.subject)} · ${esc(q.unit)}</span><br>${esc(q.stem)}</span><b class="num ${s.dueOff <= 0 ? 'ln-due-now' : ''}">${rel(s.dueOff)}</b></li>`; }).join('')}</ul>
+        <ul class="ln-due">${vis.map((id) => { const q = qById(id); const s = st[id]; return `<li><span class="ln-lvdot lv${s.level}" title="${LV[s.level]}"></span><span class="ln-due-t"><span class="small muted">${esc(q.subject)} · ${esc(q.unit)}</span><br>${esc(qLabel(q))}</span><b class="num ${s.dueOff <= 0 ? 'ln-due-now' : ''}">${rel(s.dueOff)}</b></li>`; }).join('')}</ul>
         ${rows.length > 8 ? `<button type="button" class="btn sm" data-act="learnAllDue">${showAll ? '접기' : `전체 ${rows.length}문항 보기`}</button>` : ''}
       </section>`;
   }
@@ -371,11 +426,11 @@
   function viewWrong() {
     return `<section class="panel ln-wrong"><div class="row" style="justify-content:space-between"><h3>오답 다시 보기 <span class="small muted num">${S.wrong.length}</span></h3>${S.wrong.length ? '<button type="button" class="btn sm primary" data-act="startWrong">오답만 다시 풀기</button>' : ''}</div>
       ${S.wrong.length ? `<p class="small muted" style="margin:4px 0 8px">문제를 누르면 정답과 해설이 펼쳐집니다. 다시 풀어 맞히면 목록에서 빠집니다.</p>
-      ${S.wrong.map((id) => { const q = qById(id); if (!q) return ''; const my = lastChosen(id); return `<details><summary><span class="chip">${esc(q.subject)}</span> ${esc(q.stem)}</summary>
+      ${(S.ui.learnAllWrong ? S.wrong : S.wrong.slice(0, 5)).map((id) => { const q = qById(id); if (!q) return ''; const my = lastChosen(id); return `<details><summary><span class="chip">${esc(q.subject)}</span> ${esc(qLabel(q))}</summary>${q.situation ? `<p class="small muted" style="margin:6px 0 0">${esc(q.situation)}</p>` : ''}
         <ul class="ln-ch">${q.choices.map((c, k) => `<li class="${k === q.answer ? 'right' : k === my ? 'wrong' : ''}">${NUM[k]} ${esc(c)}${k === q.answer ? ' <b>정답</b>' : k === my ? ' <b>내 답</b>' : ''}</li>`).join('')}</ul>
         <p style="margin:6px 0">${esc(q.explanation)}</p>
         <div class="row small muted">${aiBadge(q)}<span>${srcLine(q)}</span></div>
-        <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="learnKnown" data-id="${q.id}">이제 알았음 · 목록에서 빼기</button></div></details>`; }).join('')}` : '<p class="muted">오답이 없습니다.</p>'}</section>`;
+        <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="learnKnown" data-id="${q.id}">이제 알았음 · 목록에서 빼기</button></div></details>`; }).join('')}${S.wrong.length > 5 ? `<button type="button" class="btn sm" style="margin-top:8px" data-act="learnAllWrong">${S.ui.learnAllWrong ? '접기' : `전체 ${S.wrong.length}문항 보기`}</button>` : ''}` : '<p class="muted">오답이 없습니다.</p>'}</section>`;
   }
 
   function viewSources() {
@@ -455,6 +510,7 @@
   APP.acts.learnDelAsk = (el) => { S.ui.learnDelNote = el.dataset.id; };
   APP.acts.learnDelCancel = () => { S.ui.learnDelNote = null; };
   APP.acts.learnDelNote = (el) => { S.learnNotes = S.learnNotes.filter((n) => n.id !== el.dataset.id); S.ui.learnDelNote = null; toast('메모를 삭제했습니다'); };
+  APP.acts.learnAllWrong = () => { S.ui.learnAllWrong = !S.ui.learnAllWrong; };
   APP.acts.learnAllDue = () => { S.ui.learnAllDue = !S.ui.learnAllDue; };
   APP.acts.learnInboxDone = (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (x) { x.done = true; logAct('inbox', `받은 항목 처리: ${x.title}`, x.id); } };
   APP.acts.learnInboxOpen = (el) => {
@@ -465,6 +521,8 @@
   };
   APP.acts.learnCase = (el) => startQuiz('case', [el.dataset.v], 'study');
   APP.acts.learnCaseAll = () => { const st = srs(); startQuiz('case', [...CASES.filter((k) => !st[k.id]), ...shuffle(CASES.filter((k) => st[k.id]))].map((k) => k.id), 'study'); };
+  APP.acts.learnLineNext = () => { S.ui.learnLineShift = (S.ui.learnLineShift || 0) + 1; };
+  APP.acts.learnLineMemo = (el) => { const L = LINES[+el.dataset.v]; if (!L) return; S.learnNotes.push({ id: uid('ln'), at: S.today, subject: '한 문장', cid: '', text: L[0] }); logAct('memo', `한 문장 담기: ${L[0]}`); toast('학습 메모에 담았습니다'); };
   APP.acts.learnMapSel = (el) => { S.ui.learnMapSel = el.dataset.v; };
   document.addEventListener('keydown', (e) => { const g = e.target.closest && e.target.closest('.ln-node'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); g.dispatchEvent(new MouseEvent('click', { bubbles: true })); } });
   APP.forms.learnMemo = (fd) => {
