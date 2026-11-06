@@ -66,3 +66,51 @@
   .val-filters > .val-sel { flex: 1 1 140px; }
   .val-ask .row, .val-ask .row .btn { flex: 1 1 auto; }
 }
+
+/* ===== P1: 받은 항목·칭호·연속 기록·업적 배지 ===== */
+.val-title { font-family: var(--serif); font-size: 18px; font-weight: 700; color: var(--goldInk); margin: 2px 0; }
+.val-streak { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin-top: 16px; padding-top: 14px; border-top: var(--hair); }
+.val-dots { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 5px; flex: 1 1 260px; max-width: 460px; }
+.val-dots li { aspect-ratio: 1; min-width: 10px; border-radius: 6px; background: var(--paper2); border: 1.5px solid var(--line); }
+.val-dots li.on { background: var(--ok); border-color: var(--ok); }
+.val-dots li.today { outline: 2px solid var(--gold); outline-offset: 1px; }
+
+.val-inbox { border-left: 4px solid var(--gold); }
+.val-inrow { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; padding: 12px 0; border-top: var(--hair); }
+.val-inrow:first-of-type { border-top: 0; }
+.val-inrow > .val-ask { flex: 1 1 100%; }
+.val-evalform { flex: 1 1 100%; background: var(--paper2); border-radius: 14px; padding: 14px; }
+.val-evalform input[type=number] { width: 100%; }
+.val-check { justify-content: flex-end; }
+.val-check span { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); min-height: 40px; }
+.val-check input { width: 20px; height: 20px; accent-color: var(--gold); }
+.val-preview { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; background: var(--paper); border-radius: 12px; padding: 10px 12px; border: 1.5px dashed var(--line); }
+
+.val-tabs { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.val-tabs button { font-size: 15px; padding: 8px 16px; }
+.val-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
+.val-cnt { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--goldSoft); color: var(--goldInk); font-size: 12.5px; font-weight: 700; text-align: center; }
+
+.val-badges { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.val-bd { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 14px; border: 1.5px dashed var(--line); background: var(--paper); min-width: 0; }
+.val-bd.got { border-style: solid; border-color: var(--gold); background: var(--goldSoft); }
+.val-medal { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 16px; color: var(--sub); background: var(--paper2); border: 2px solid var(--line); }
+.val-bd.got .val-medal { color: #3D1E0F; background: var(--gold); border-color: var(--goldInk); box-shadow: inset 0 -3px 0 rgba(61,30,15,.18); }
+.val-bdtxt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.val-bdtxt b { font-size: 15px; }
+.val-bd:not(.got) .val-bdtxt b { color: var(--sub); }
+.val-bdbar { height: 6px; margin-top: 4px; }
+.val-gotat { color: var(--goldInk); font-weight: 700; }
+.val-titles { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.val-titles li { display: flex; gap: 8px; align-items: baseline; padding: 8px 12px; border-radius: 12px; background: var(--paper2); color: var(--sub); font-size: 15px; }
+.val-titles li.on { color: var(--ink); }
+.val-titles li.cur { background: var(--goldSoft); outline: 2px solid var(--gold); }
+.val-titles li b { font-family: var(--serif); }
+.val-acts { margin: 6px 0 0; padding-left: 18px; font-size: 15px; display: grid; gap: 4px; }
+@media (max-width: 600px) {
+  .val-tabs { width: 100%; }
+  .val-tabs button { flex: 1 1 0; }
+  .val-badges { grid-template-columns: minmax(0, 1fr); }
+  .val-inrow > .row { width: 100%; }
+  .val-inrow > .row .btn { flex: 1 1 auto; }
+}

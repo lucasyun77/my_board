@@ -12,7 +12,7 @@
   const periodFrom = (name) => { const p = PERIODS.find((x) => x[0] === name); return !p || p[1] == null ? '0000' : dayStr(p[1]); };
   const isDone = (a) => a.status === '확정';
   const vOf = (a, N) => Math.round((a.B * a.L * a.F * a.S * a.A * N) / 1000) * 1000;
-  const ui = () => (S.ui.value = Object.assign({ period: '누적', status: 'all', type: '', sort: 'open', ask: null, askLv: false }, S.ui.value || {}));
+  const ui = () => (S.ui.value = Object.assign({ period: '누적', status: 'all', type: '', sort: 'open', ask: null, askLv: false, tab: 'list', evalOpen: null }, S.ui.value || {}));
 
   /* ---------- 추가 샘플(한 번만) : 기간별 합계·필터·레벨업 이력이 살아 보이도록 ---------- */
   if (!S.valueSeeded) {
@@ -46,6 +46,67 @@
     S.valueSeeded = true;
   }
 
+  /* ---------- 메뉴 연결 약속: 활동 기록·받은 항목 ---------- */
+  S.activity = S.activity || [];
+  S.inbox = S.inbox || [];
+  function logAct(type, text, ref) {
+    S.activity.push({ id: uid('ac'), at: new Date().toISOString(), menu: 'value', type, text, ref: ref || null });
+    if (S.activity.length > 300) S.activity.splice(0, S.activity.length - 300);
+  }
+  if (!S.valueInboxSeeded) {
+    const seedAt = (d, h) => dayStr(d) + `T0${h}:00:00.000Z`;
+    [{ id: 'vib1', at: seedAt(0, 1), from: 'today', to: 'value', kind: '할 일 완료', title: '[예시] 가맹점 주간 매출 요약 자동 메일', payload: { est_minutes: 90, actual_minutes: 70, by_agent: true, output_type: 'ai' }, done: false },
+      { id: 'vib2', at: seedAt(-1, 8), from: 'directives', to: 'value', kind: '지시 완료', title: '[예시] 분기 비용 집행 현황 1장 요약', payload: { est_minutes: 60, actual_minutes: null, output_type: 'doc', ref: 'd7' }, done: false }]
+      .forEach((x) => { if (!S.inbox.some((y) => y.id === x.id)) S.inbox.push(x); });
+    S.valueInboxSeeded = true;
+  }
+  const FROM_NAME = { today: '오늘 할 일', directives: '지시 관리', ideas: '신사업', learn: '경영학습', ops: '경영 현황', ai: 'AI 사용', ideabank: '아이디어뱅크', numbers: '내가 보는 숫자' };
+  const myInbox = () => S.inbox.filter((x) => x.to === 'value' && !x.done);
+
+  /* ---------- 커리어 게임: 칭호·연속 기록·업적 배지 ---------- */
+  const TITLES = [[1, '첫걸음 경영인'], [2, '실행하는 리더'], [4, '현장 지휘관'], [6, '성과 설계자'], [9, '전략 사령관'], [13, '그룹 아키텍트'], [20, '전설의 경영자']];
+  const titleOf = (lv) => TITLES.filter((t) => lv >= t[0]).pop()[1];
+  const nextTitle = (lv) => TITLES.find((t) => t[0] > lv);
+  const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  function streakInfo() {
+    const set = new Set(S.achievements.filter(isDone).map((a) => a.confirmed_at));
+    let d = set.has(S.today) ? S.today : addDays(S.today, -1);
+    let cur = 0; while (set.has(d)) { cur += 1; d = addDays(d, -1); }
+    const dates = [...set].sort(); let best = 0; let run = 0; let prev = null;
+    dates.forEach((x) => { run = prev && addDays(prev, 1) === x ? run + 1 : 1; best = Math.max(best, run); prev = x; });
+    const last14 = Array.from({ length: 14 }, (_, i) => addDays(S.today, i - 13)).map((x) => [x, set.has(x)]);
+    return { cur, best, today: set.has(S.today), last14 };
+  }
+  const maxRun = (dates) => { let best = 0; let run = 0; let prev = null; [...new Set(dates)].sort().forEach((x) => { run = prev && addDays(prev, 1) === x ? run + 1 : 1; best = Math.max(best, run); prev = x; }); return best; };
+  const weekMax = (list) => Math.max(0, ...list.map((a) => list.filter((b) => b.confirmed_at <= a.confirmed_at && b.confirmed_at >= addDays(a.confirmed_at, -6)).reduce((s, b) => s + b.value_won, 0)));
+  // 각 배지: [id, 이름, 설명, 기호, 조건(st) → [현재, 목표]]
+  const BADGES = [
+    ['first', '첫 확정', '평가 건을 처음 확정', '1', (st) => [Math.min(1, st.done.length), 1]],
+    ['agent', '첫 에이전트 작업', '에이전트로 수행한 일을 확정', 'A', (st) => [st.done.some((a) => a.by_agent) ? 1 : 0, 1]],
+    ['nego', '협상 성공', '협상에서 수용 판정을 받음', 'N', (st) => [st.negos.some((n) => n.verdict === '수용') ? 1 : 0, 1]],
+    ['week10', '주간 10,000천원 돌파', '7일 안에 확정 합계 10,000천원 이상', 'W', (st) => [Math.min(10000, Math.floor(weekMax(st.done) / 1000)), 10000]],
+    ['big', '한 방 5,000천원', '한 건으로 5,000천원 이상 확정', '5', (st) => [Math.min(5000, Math.floor(Math.max(0, ...st.done.map((a) => a.value_won)) / 1000)), 5000]],
+    ['wide', '전사 확산', '영향 100명 이상(L 8.0+) 건 확정', 'L', (st) => [st.done.some((a) => a.L >= 8) ? 1 : 0, 1]],
+    ['code3', '코드 장인', '코드 산출물(F 1.8+) 3건 확정', 'C', (st) => [Math.min(3, st.done.filter((a) => a.F >= 1.8).length), 3]],
+    ['speed', '속도 보너스', '예상보다 빨리 끝내 S 1.25 이상', 'S', (st) => [st.done.some((a) => a.S >= 1.25) ? 1 : 0, 1]],
+    ['streak3', '3일 연속 확정', '사흘 연이어 하루 1건 이상 확정', '3', (st) => [Math.min(3, maxRun(st.done.map((a) => a.confirmed_at))), 3]],
+    ['ten', '확정 10건', '평가 건 10건 확정', '10', (st) => [Math.min(10, st.done.length), 10]],
+    ['lv5', 'Lv.5 도달', '레벨 5에 오름', 'Ⅴ', (st) => [Math.min(5, st.level), 5]],
+    ['lv10', 'Lv.10 도달', '레벨 10에 오름', 'Ⅹ', (st) => [Math.min(10, st.level), 10]]
+  ];
+  function badgeState() {
+    const negosAll = S.achievements.flatMap((a) => a.negotiations);
+    const dates = [...new Set([...S.achievements.filter(isDone).map((a) => a.confirmed_at), ...S.levelUps.map((l) => l.at), ...negosAll.map((n) => n.created_at)])].filter(Boolean).sort();
+    const at = (d) => ({ done: S.achievements.filter((a) => isDone(a) && a.confirmed_at <= d), negos: negosAll.filter((n) => (n.created_at || '') <= d), level: 1 + S.levelUps.filter((l) => l.at <= d).length });
+    const states = dates.map((d) => [d, at(d)]);
+    const now = { done: S.achievements.filter(isDone), negos: negosAll, level: S.wallet.level };
+    return BADGES.map(([id, name, desc, sym, fn]) => {
+      const [cur, goal] = fn(now);
+      const hit = states.find(([, st]) => { const [c, g] = fn(st); return c >= g; });
+      return { id, name, desc, sym, cur, goal, got: cur >= goal, at: cur >= goal ? (hit ? hit[0] : S.today) : null };
+    });
+  }
+
   /* ---------- 협상 심사(목업 규칙). 실서비스에서는 Claude 평가 API로 바뀝니다 ---------- */
   function judge(msg, requested) {
     const crit = [['수치', /\d/.test(msg)], ['증빙', /실측|측정|로그|증빙|데이터|자료|기록/.test(msg)], ['적용 범위', /명|인원|가맹|매장|재사용|확산|부서|본사/.test(msg)]];
@@ -74,11 +135,16 @@
       <div class="val-lvgrid">
         <div class="val-lvmain">${ART.mascot(can ? 'key' : 'stand', 104)}
           <div><div class="small muted">현재 레벨 ${badge('추정')}</div><div class="val-big num">Lv.${w.level}</div>
-            <div class="small muted">레벨업 ${S.levelUps.length}회 · 1회 ${kwon(LEVEL_COST)}천원</div></div></div>
+            <div class="val-title">${esc(titleOf(w.level))}</div>
+            <div class="small muted">${(() => { const n = nextTitle(w.level); return n ? `Lv.${n[0]}에 「${esc(n[1])}」` : '최고 칭호입니다'; })()}</div></div></div>
         <div class="val-stat"><div class="small muted">사용 가능 잔액 ${badge('추정')}</div><div class="val-mid num">${kwon(w.balance_won)}<small>천원</small></div></div>
         <div class="val-stat"><div class="small muted">누적 확정 ${badge('추정')}</div><div class="val-mid num">${kwon(w.total_won)}<small>천원</small></div></div>
         <div class="val-stat"><div class="small muted">확정 대기 ${pend.length}건 ${badge('추정')}</div><div class="val-mid num">${kwon(pendSum)}<small>천원</small></div></div>
       </div>
+      ${(() => { const st = streakInfo(); return `<div class="val-streak" aria-label="연속 확정 기록">
+        <div><div class="small muted">연속 확정 ${badge('측정')}</div><div class="val-mid num">${st.cur}<small>일</small></div><div class="small muted">최고 ${st.best}일${st.today ? '' : st.cur ? ' · 오늘 확정하면 이어집니다' : ' · 오늘 확정하면 새로 시작'}</div></div>
+        <ol class="val-dots" aria-label="최근 14일 확정 여부">${st.last14.map(([d, on]) => `<li class="${on ? 'on' : ''}${d === S.today ? ' today' : ''}" title="${md(d)} ${on ? '확정 있음' : '없음'}"><span class="val-sr">${md(d)} ${on ? '확정' : '없음'}</span></li>`).join('')}</ol>
+      </div>`; })()}
       <div class="val-next">
         <div class="small">${can ? `<b>지금 ${can}회 레벨업할 수 있습니다.</b> 다음 레벨까지는 잔액 ${kwon(LEVEL_COST)}천원이 필요합니다.` : `다음 레벨까지 <b class="num">${kwon(LEVEL_COST - w.balance_won)}천원</b> 남았습니다.`}</div>
         <div class="bar est" role="progressbar" aria-label="다음 레벨 진행률" aria-valuenow="${Math.round(can ? 100 : pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${can ? 100 : pct}%"></i></div>
@@ -155,7 +221,8 @@
     if (u.type) list = list.filter((a) => a.output_type === u.type);
     const key = (a) => (isDone(a) ? a.confirmed_at : a.date) || '';
     const sorts = { new: (a, b) => key(b).localeCompare(key(a)), old: (a, b) => key(a).localeCompare(key(b)), high: (a, b) => b.value_won - a.value_won, low: (a, b) => a.value_won - b.value_won, open: (a, b) => (isDone(a) - isDone(b)) || key(b).localeCompare(key(a)) };
-    list = list.slice().sort(sorts[u.sort] || sorts.new);
+    const idx = (a) => S.achievements.indexOf(a);
+    list = list.slice().sort((a, b) => (sorts[u.sort] || sorts.new)(a, b) || idx(b) - idx(a));
     const sum = list.reduce((s, a) => s + a.value_won, 0);
     const seg = [['all', '전체'], ['open', '확정 대기'], ['done', '확정']];
     return `<section class="panel" aria-labelledby="h-vlist">
@@ -172,11 +239,68 @@
     </section>`;
   }
 
+  function inboxPanel() {
+    const list = myInbox(); const u = ui();
+    if (!list.length) return '';
+    return `<section class="panel val-inbox" aria-labelledby="h-vin"><h3 id="h-vin">받은 항목 <span class="pill st-wait">${list.length}</span><span class="small muted val-hint">다른 메뉴에서 넘어온 완료분입니다. 평가를 시작하면 아래 평가 건으로 들어갑니다.</span></h3>
+      ${list.map((x) => `<div class="val-inrow">
+        <div class="val-ititle"><b>${esc(x.title)}</b><div class="small muted">${esc(FROM_NAME[x.from] || x.from)} · ${esc(x.kind || '')} · ${md(x.at.slice(0, 10))}${x.payload && x.payload.est_minutes ? ` · 예상 ${x.payload.est_minutes}분 / 실제 ${x.payload.actual_minutes ?? '-'}분` : ''}</div></div>
+        ${u.evalOpen === x.id ? '' : u.skip === x.id
+          ? `<div class="val-ask"><span>평가하지 않고 받은 항목에서 뺍니다.</span><span class="row"><button type="button" class="btn sm" data-act="vInSkip" data-id="${x.id}">빼기</button><button type="button" class="btn sm" data-act="vInAskSkip" data-id="">취소</button></span></div>`
+          : `<div class="row"><button type="button" class="btn primary sm" data-act="vInOpen" data-id="${x.id}">바로 평가 시작</button><button type="button" class="btn sm" data-act="vInAskSkip" data-id="${x.id}">평가 안 함</button></div>`}
+        ${u.evalOpen === x.id ? evalForm(x) : ''}
+      </div>`).join('')}</section>`;
+  }
+  function evalForm(x) {
+    const p = x.payload || {};
+    const sel = (n, opts, v) => `<select name="${n}">${opts.map(([k, l]) => `<option value="${k}" ${String(v) === String(k) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    return `<form class="form val-evalform" data-form="vEvalNew" data-id="${x.id}">
+      <label class="f">산출물 형태${sel('output_type', Object.entries(F_TYPES).map(([k, v]) => [k, `${v[0]} (F ${v[1].toFixed(1)})`]), p.output_type || 'doc')}</label>
+      <label class="f">영향 인원(명)<input type="number" name="headcount" min="1" value="${p.headcount || 1}" inputmode="numeric"></label>
+      <label class="f">수행 방식${sel('by_agent', [['1', '에이전트 수행 (A 1.2)'], ['0', '직접 수행 (A 1.0)']], p.by_agent ? '1' : '0')}</label>
+      <label class="f">1인 월 절감시간(시간)<input type="number" name="saved_hours" min="0" step="0.5" value="${p.saved_hours ?? 1}"></label>
+      <label class="f">유효개월(1~12)<input type="number" name="months" min="1" max="12" value="${p.months || 12}"></label>
+      <label class="f">월 매출·이익 기여(원)<input type="number" name="monthly_revenue" min="0" step="10000" value="${p.monthly_revenue || 0}"></label>
+      <label class="f">월 비용절감(원)<input type="number" name="monthly_cost" min="0" step="10000" value="${p.monthly_cost || 0}"></label>
+      <label class="f">예상 E(분)<input type="number" name="est" min="1" value="${p.est_minutes || 60}"></label>
+      <label class="f">실제 T(분, 모르면 비움)<input type="number" name="act" min="1" value="${p.actual_minutes ?? ''}"></label>
+      <label class="f val-check"><span><input type="checkbox" name="one_off" value="1"> 1회성(1개월만 반영)</span></label>
+      <div class="wide val-preview" data-preview>${previewHtml(evalInput(new FormData(document.createElement('form')), x, true))}</div>
+      <div class="wide row"><button class="btn primary">평가 등록</button><button type="button" class="btn" data-act="vInOpen" data-id="">닫기</button></div>
+    </form>`;
+  }
+  function evalInput(fd, x, fromPayload) {
+    const p = x.payload || {}; const g = (n, d) => (fromPayload ? d : (fd.get(n) ?? '').toString().trim());
+    const num = (v, d) => (v === '' || v == null || isNaN(+v) ? d : +v);
+    return { id: uid('a'), title: x.title, date: S.today, output_url: p.output_url || '', output_type: F_TYPES[g('output_type', p.output_type)] ? g('output_type', p.output_type) : 'doc', headcount: Math.max(1, num(g('headcount', p.headcount), 1)), by_agent: fromPayload ? !!p.by_agent : g('by_agent') === '1', saved_hours: Math.max(0, num(g('saved_hours', p.saved_hours), 1)), months: Math.min(12, Math.max(1, num(g('months', p.months), 12))), monthly_revenue: Math.max(0, num(g('monthly_revenue', p.monthly_revenue), 0)), monthly_cost: Math.max(0, num(g('monthly_cost', p.monthly_cost), 0)), one_off: fromPayload ? false : g('one_off') === '1', est_minutes: Math.max(1, num(g('est', p.est_minutes), 60)), actual_minutes: num(g('act', p.actual_minutes), null), N: 1, status: '평가중', negotiations: [], from_inbox: x.id, source_menu: x.from };
+  }
+  const previewHtml = (inp) => { const a = evaluate(Object.assign({}, inp)); return `<span class="small muted">예상 수익가치 ${badge('추정')}</span> <b class="val-mid num">${kwon(a.value_won)}<small>천원</small></b> <span class="small muted">B ${won(a.B)}원 × L ${a.L.toFixed(1)} × F ${a.F.toFixed(1)} × S ${a.S.toFixed(2)} × A ${a.A.toFixed(1)} × N 1.00</span>`; };
+
+  function gamePanel() {
+    const bs = badgeState(); const got = bs.filter((b) => b.got);
+    const acts = S.activity.filter((a) => a.menu === 'value').slice(-8).reverse();
+    return `<section class="panel" aria-labelledby="h-vbadge"><h3 id="h-vbadge">업적 배지 <span class="muted small">${got.length}/${bs.length} 획득</span> ${badge('측정')}</h3>
+      <ul class="val-badges">${bs.map((b) => `<li class="val-bd ${b.got ? 'got' : ''}">
+        <span class="val-medal" aria-hidden="true">${b.sym}</span>
+        <span class="val-bdtxt"><b>${esc(b.name)}</b><span class="small muted">${esc(b.desc)}</span>
+          ${b.got ? `<span class="small val-gotat">획득 ${md(b.at)}</span>` : `<span class="bar val-bdbar" role="progressbar" aria-label="${esc(b.name)} 진행" aria-valuenow="${b.cur}" aria-valuemin="0" aria-valuemax="${b.goal}"><i style="width:${Math.round(100 * b.cur / b.goal)}%"></i></span><span class="small muted num">${b.cur.toLocaleString('ko-KR')} / ${b.goal.toLocaleString('ko-KR')}</span>`}</span>
+      </li>`).join('')}</ul></section>
+      <section class="panel" aria-labelledby="h-vtitles"><h3 id="h-vtitles">레벨별 칭호</h3>
+        <ol class="val-titles">${TITLES.map(([lv, t]) => `<li class="${S.wallet.level >= lv ? 'on' : ''}${titleOf(S.wallet.level) === t ? ' cur' : ''}"><span class="num">Lv.${lv}+</span><b>${esc(t)}</b></li>`).join('')}</ol></section>
+      <section class="panel" aria-labelledby="h-vact"><h3 id="h-vact">최근 기록</h3>
+        ${acts.length ? `<ul class="val-acts">${acts.map((a) => `<li><span class="small muted num">${md(a.at.slice(0, 10))} ${a.at.slice(11, 16)}</span> ${esc(a.text)}</li>`).join('')}</ul>` : '<p class="small muted">이 메뉴에서 협상·확정·레벨업을 하면 여기에 남습니다.</p>'}</section>`;
+  }
+
+  const SUBTABS = [['list', '평가·확정'], ['game', '업적·기록']];
   function viewValue() {
-    ui();
+    const u = ui();
+    if (!SUBTABS.some((t) => t[0] === u.tab)) u.tab = 'list';
+    const pend = S.achievements.filter((a) => !isDone(a)).length;
     return `<div class="view-head"><div><h2>성과 수익가치 · 레벨</h2><p>V = B × L × F × S × A × N (천원 단위 반올림) · 평가 → 협상 → 확정 → 잔액 적립 → ${kwon(LEVEL_COST)}천원마다 레벨업</p></div>
         <button type="button" class="btn sm" data-act="tab" data-v="rules">보상 기준 보기 →</button></div>
-      ${levelPanel()}${periodPanel()}${listPanel()}`;
+      ${inboxPanel()}${levelPanel()}
+      <div class="seg val-tabs" role="tablist" aria-label="성과·레벨 보기">${SUBTABS.map(([k, l]) => `<button type="button" role="tab" data-act="vTab" data-v="${k}" aria-selected="${u.tab === k}" aria-pressed="${u.tab === k}">${l}${k === 'list' && pend ? ` <span class="val-cnt">${pend}</span>` : ''}${k === 'game' ? ` <span class="val-cnt">${badgeState().filter((b) => b.got).length}</span>` : ''}</button>`).join('')}</div>
+      ${u.tab === 'game' ? gamePanel() : periodPanel() + listPanel()}`;
   }
 
   /* ---------- 동작 ---------- */
@@ -191,6 +315,7 @@
     a.status = '확정'; a.confirmed_at = S.today;
     S.wallet.balance_won += a.value_won; S.wallet.total_won += a.value_won;
     ui().ask = null;
+    logAct('confirm', `확정 · ${a.title} ${kwon(a.value_won)}천원 적립`, a.id);
     toast(`${kwon(a.value_won)}천원을 잔액에 적립했습니다`);
   };
   APP.acts.vLevelUp = (el) => {
@@ -202,6 +327,7 @@
       S.levelUps.push({ id: uid('lu'), spent_won: LEVEL_COST, level_after: w.level, at: S.today, balance_after: w.balance_won });
     }
     ui().askLv = false;
+    logAct('levelup', `레벨업 · Lv.${from} → Lv.${w.level} (${titleOf(w.level)})`, null);
     toast(w.level - from > 1 ? `Lv.${from} → Lv.${w.level} 달성` : `Lv.${w.level} 달성`);
   };
   APP.forms.vNego = (fd, form) => {
@@ -215,8 +341,34 @@
     const nAfter = Math.min(N_MAX, +(a.N + Math.min(j.inc, room)).toFixed(2));
     a.negotiations.push({ round: a.negotiations.length + 1, chairman_msg: msg, claude_reply: j.reply + ' (목업 규칙 심사)', verdict: j.verdict, requested: req, n_after: nAfter, created_at: S.today });
     a.N = nAfter; a.status = '협상중'; evaluate(a);
+    logAct('nego', `협상 ${a.negotiations.length}차 ${j.verdict} · ${a.title} N ${a.N.toFixed(2)}`, a.id);
     toast(`${j.verdict}: ${kwon(before)} → ${kwon(a.value_won)}천원`);
   };
+
+  APP.acts.vTab = (el) => { ui().tab = el.dataset.v; };
+  APP.acts.vInOpen = (el) => { const u = ui(); u.evalOpen = el.dataset.id || null; u.skip = null; };
+  APP.acts.vInAskSkip = (el) => { ui().skip = el.dataset.id || null; };
+  APP.acts.vInSkip = (el) => {
+    const x = S.inbox.find((y) => y.id === el.dataset.id); if (!x) return;
+    x.done = true; x.done_at = new Date().toISOString(); x.result = 'skipped'; ui().skip = null;
+    logAct('inbox_skip', `받은 항목 평가 안 함 · ${x.title}`, x.id);
+    toast('받은 항목에서 뺐습니다');
+  };
+  APP.forms.vEvalNew = (fd, form) => {
+    const x = S.inbox.find((y) => y.id === form.dataset.id); if (!x || x.done) return;
+    const a = evaluate(evalInput(fd, x, false));
+    S.achievements.push(a);
+    x.done = true; x.done_at = new Date().toISOString(); x.result = a.id;
+    const u = ui(); u.evalOpen = null; u.tab = 'list'; u.status = 'all'; u.period = '누적'; u.sort = 'open';
+    logAct('evaluate', `평가 시작 · ${a.title} ${kwon(a.value_won)}천원(${FROM_NAME[x.from] || x.from}에서 받음)`, a.id);
+    toast(`평가 등록: ${kwon(a.value_won)}천원 — 협상하거나 확정하세요`);
+  };
+  /* 평가 입력 중 예상 금액을 바로 보여 줌(이 메뉴 폼에만 반응) */
+  document.addEventListener('input', (e) => {
+    const form = e.target.closest && e.target.closest('form[data-form="vEvalNew"]'); if (!form) return;
+    const x = S.inbox.find((y) => y.id === form.dataset.id); const box = form.querySelector('[data-preview]');
+    if (x && box) box.innerHTML = previewHtml(evalInput(new FormData(form), x, false));
+  });
 
   APP.views.value = viewValue;
 })();
