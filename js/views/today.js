@@ -15,7 +15,7 @@
    - done·done_at, evaluated(성과 평가로 넘김), slack{kind,ch,from,at,text}, asana{project,why}, ref(결재 원본 id) */
 (function () {
   'use strict';
-  const { S, HOUR_VALUE, F_TYPES, esc, kwon, days, md, badge, uid, toast, evaluate, dayStr } = window.APP;
+  const { S, HOUR_VALUE, F_TYPES, esc, kwon, days, md, badge, uid, toast, evaluate, dayStr, isOpen } = window.APP;
 
   const PRIOS = ['긴급', '높음', '보통'];
   const PRIO_RANK = { '긴급': 0, '높음': 1, '보통': 2 };
@@ -149,8 +149,9 @@
     const req = list.filter((m) => m.status === '요청').length;
     return `<section class="td-meet-wrap" aria-labelledby="h-meet">
       <div class="td-head"><h3 id="h-meet">오늘의 회의·일정 <span class="pill">${list.length}건</span>${req ? ` <span class="pill p-high">확정 대기 ${req}</span>` : ''}</h3>
-        <span class="small muted">Google Calendar + 슬랙 미팅 요청 · 목업 샘플</span></div>
-      <div class="td-meet-strip">
+        <span class="row"><span class="small muted">Google Calendar + 슬랙 미팅 요청 · 목업 샘플</span>
+        <span class="seg" role="group" aria-label="일정 보기">${[['card', '카드'], ['tt', '하루 시간표']].map(([k, l]) => `<button type="button" data-act="tdMeetView" data-v="${k}" aria-pressed="${(S.ui.tdMeetView || 'card') === k}">${l}</button>`).join('')}</span></span></div>
+      ${S.ui.tdMeetView === 'tt' ? timetable() : ''}<div class="td-meet-strip"${S.ui.tdMeetView === 'tt' ? ' hidden' : ''}>
         <button type="button" class="td-arrow" data-td-scroll="-1" aria-label="이전 일정">◀</button>
         <ol class="td-meets" id="tdMeets">${list.map((m, i) => {
           const live = m.time <= now && now < m.end;
@@ -191,6 +192,8 @@
       if (canMeasure(t)) acts += running
         ? `<button type="button" class="btn sm td-stop" data-act="tdStop" data-id="${t.id}">■ 종료</button>`
         : `<button type="button" class="btn sm" data-act="tdStart" data-id="${t.id}">▶ ${t.acc_ms ? '이어서' : '시작'}</button>`;
+      if (canMeasure(t)) acts += `<button type="button" class="btn sm" data-act="tdFocus" data-id="${t.id}">집중</button>`;
+      if (t.date <= S.today) acts += `<button type="button" class="btn sm${t.slot ? ' td-on' : ''}" data-act="tdOpen" data-k="slot" data-id="${t.id}">${t.slot ? t.slot.slice(0, 2) + '시' : '시간대'}</button>`;
       if (canMeasure(t)) acts += `<button type="button" class="btn sm" data-act="tdOpen" data-k="manual" data-id="${t.id}">시간 수기</button>`;
       if (t.date <= S.today) acts += `<button type="button" class="btn sm" data-act="tdTomorrow" data-id="${t.id}">내일로</button>`;
       else acts += `<button type="button" class="btn sm" data-act="tdBack" data-id="${t.id}">오늘로</button>`;
@@ -199,13 +202,16 @@
     const manual = open === 'manual' ? `<form class="form td-sub" data-form="tdManual" data-id="${t.id}">
         <label class="f">실제 소요(분)<input type="number" name="min" min="1" value="${t.actual_minutes || t.est_minutes}" required></label>
         <div class="row"><button class="btn primary sm">저장(수기)</button><button type="button" class="btn sm" data-act="tdClose">취소</button></div></form>` : '';
+    const slotUI = open === 'slot' ? slotPicker(t) : '';
+    const top = S.ui.tdTop3.includes(t.id);
     const src = t.src === 'slack' && t.slack ? `<blockquote class="td-quote"><span class="small muted">${esc(t.slack.ch)} · ${esc(t.slack.from)} · ${esc(t.slack.at)}</span><br>${esc(t.slack.text)}</blockquote>`
       : t.src === 'asana' && t.asana ? `<div class="small td-why">Claude 판단: ${esc(t.asana.why)} <span class="muted">· ${esc(t.asana.project)}</span></div>`
       : t.src === 'approval' ? `<div class="small muted">${esc(t.from || '')} · ${t.since ? `${days(t.since, S.today)}일째 대기` : ''}</div>` : '';
-    return `<li class="td-item${running ? ' is-run' : ''}${late ? ' is-late' : ''}" id="td-${t.id}">
+    return `<li class="td-item${running ? ' is-run' : ''}${late ? ' is-late' : ''}${S.ui.tdSel === t.id ? ' sel' : ''}" id="td-${t.id}" data-td-item="${t.id}">
       <label class="td-chk"><input type="checkbox" data-act="tdCheck" data-id="${t.id}"><span class="sr">${esc(t.title)} 완료</span></label>
       <div class="td-body">
-        <div class="td-title">${srcChip(t.src)} ${esc(t.title)}${late ? ` <span class="td-late num">D+${late}</span>` : ''}</div>
+        <div class="td-title-row"><div class="td-title">${srcChip(t.src)} ${esc(t.title)}${late ? ` <span class="td-late num">D+${late}</span>` : ''}</div>
+          ${t.date <= S.today ? `<button type="button" class="td-star${top ? ' on' : ''}" data-act="tdTop" data-id="${t.id}" aria-label="3대 우선순위 ${top ? '풀기' : '고정'}" aria-pressed="${top}">${top ? '★' : '☆'}</button>` : ''}</div>
         ${src}
         <div class="td-meta">
           <select class="td-prio" aria-label="우선순위" data-act="tdPrio" data-id="${t.id}">${PRIOS.map((p) => `<option ${p === t.prio ? 'selected' : ''}>${p}</option>`).join('')}</select>
@@ -214,7 +220,7 @@
           ${canMeasure(t) ? `<span>T ${running ? `<span class="td-live" data-td-live="${t.id}">측정 중 ${liveMin(t)}분</span>` : t.actual_minutes != null ? `<b class="num">${hm(t.actual_minutes)}</b> ${badge(t.time_source)}` : '<span class="muted">-</span>'}</span>` : ''}
         </div>
         ${acts ? `<div class="row td-acts">${acts}</div>` : ''}
-        ${manual}
+        ${manual}${slotUI}
       </div></li>`;
   }
 
@@ -243,7 +249,7 @@
       ${cat === 'asana' || cat === 'all' ? `<div class="td-sync small"><span>아사나: 우선순위는 Claude가 판단 · 완료하면 아사나에도 완료 · 아사나에서 완료되면 여기도 자동 완료(마지막 수신 <b class="num">${ex.asanaSyncAt}</b>)</span><button type="button" class="btn sm" data-act="tdAsanaPull">아사나 수신</button></div>` : ''}
 
       ${cat === 'mine' || cat === 'all' ? `<form class="td-add" data-form="tdAdd">
-        <label class="f td-add-title">직접 할 일 추가<input type="text" name="title" required maxlength="80" placeholder="예: 가맹 투자 미팅 준비" autocomplete="off"></label>
+        <label class="f td-add-title">직접 할 일 추가<input type="text" id="tdNewTitle" name="title" required maxlength="80" placeholder="예: 가맹 투자 미팅 준비 (단축키 N)" autocomplete="off"></label>
         <label class="f">우선순위<select name="prio">${PRIOS.map((p) => `<option ${p === '보통' ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
         <label class="f">예상(분, 선택)<input type="number" name="est" min="5" step="5" placeholder="Claude 산정"></label>
         <button class="btn primary">추가</button></form>` : ''}
@@ -272,7 +278,7 @@
           <label class="td-chk sm"><input type="checkbox" checked data-act="tdCheck" data-id="${t.id}" ${t.evaluated ? 'disabled' : ''}><span class="sr">${esc(t.title)} 완료 취소</span></label>
           <div class="td-done-main"><div>${srcChip(t.src)} <span class="td-done-t">${esc(t.title)}</span></div>
             <div class="small muted">${t.actual_minutes != null ? `T ${hm(t.actual_minutes)} ${badge(t.time_source)} · ` : ''}가치 ${kwon(t.est_value)}천원${t.src === 'asana' ? ` · ${t.asana_from ? '아사나에서 완료됨' : '아사나 반영됨'}` : t.src === 'slack' ? ' · 답변함' : t.src === 'approval' ? ' · 처리함' : ''}</div></div>
-          <div class="td-done-side">${t.evaluated ? '<span class="pill st-done">평가로 넘김</span>' : canMeasure(t) ? `<button type="button" class="btn sm primary" data-act="tdOpen" data-k="complete" data-id="${t.id}">성과 평가</button>` : ''}</div></div>
+          <div class="td-done-side">${t.evaluated ? '<span class="pill st-done">평가로 넘김</span>' : t.sent_value ? '<span class="pill st-wait">평가 요청 보냄</span>' : canMeasure(t) ? `<button type="button" class="btn sm primary" data-act="tdOpen" data-k="complete" data-id="${t.id}">성과 평가</button>` : ''}</div></div>
           ${form ? completeForm(t) : ''}</li>`;
     };
     return `<section class="panel td-donep" aria-labelledby="h-done" id="tdDone">
@@ -296,22 +302,214 @@
       <label class="f">1회성<select name="one_off"><option value="0">아니오</option><option value="1">예(1개월분)</option></select></label>
       <div class="row wide"><button class="btn primary sm">Claude 최종 평가 요청</button><button type="button" class="btn sm" data-act="tdClose">나중에</button></div></form>`;
 
+  /* ====================================================================
+     하루 작전판(P1~P3): Top 3 · 하루 시간표 · 받은 항목 · 아침 계획 · 저녁 마감 · 집중 모드 · 단축키 · 주간 회고
+     ==================================================================== */
+  const MENU_NAME = { numbers: '내가 보는 숫자', ops: '경영 현황', directives: '지시 관리', value: '성과·레벨', ideas: '신사업', learn: '경영학습', ai: 'AI 사용', ideabank: '아이디어뱅크', today: '오늘 할 일' };
+  const HOURS = Array.from({ length: 13 }, (_, i) => String(8 + i).padStart(2, '0') + ':00'); // 08:00~20:00
+  const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+  const aiBadge = '<span class="td-ai" title="실제 AI가 아니라 화면 규칙으로 만든 결과">목업 AI</span>';
+  const kbd = (k) => `<kbd class="td-kbd">${k}</kbd>`;
+
+  /* 메뉴 연결 약속: 활동 기록·받은 항목 */
+  S.activity = S.activity || [];
+  S.inbox = S.inbox || [];
+  function log(type, text, ref) {
+    S.activity.push({ id: uid('ac'), at: new Date().toISOString(), menu: 'today', type, text, ref: ref || null });
+    if (S.activity.length > 300) S.activity.splice(0, S.activity.length - 300);
+  }
+  if (!S.ui.tdSeedInbox) {
+    const w = S.waiting.slice().sort((a, b) => a.since.localeCompare(b.since))[0];
+    const d = S.directives.find((x) => isOpen(x) && x.due_at > S.today);
+    [
+      { from: 'numbers', kind: '숫자 경보', title: '샘플 숫자 카드가 경보 기준을 넘었습니다(원천 미확정)', payload: { note: '목업 — 실제 수치 아님' } },
+      w && { from: 'ops', kind: '결재 지연', title: `${w.title} — ${days(w.since, S.today)}일째 대기`, payload: { waiting_id: w.id } },
+      d && { from: 'directives', kind: '지시', title: `${d.title} — 기한 ${md(d.due_at)}, 진행 확인 필요`, payload: { directive_id: d.id } }
+    ].filter(Boolean).forEach((x, i) => S.inbox.push(Object.assign({ id: uid('in'), at: new Date(Date.now() - (3 - i) * 3600000).toISOString(), to: 'today', done: false }, x)));
+    S.ui.tdSeedInbox = true;
+  }
+  const inboxOpen = () => S.inbox.filter((x) => x.to === 'today' && !x.done);
+
+  /* 회의가 걸친 시간대 */
+  const busyAt = (hh) => S.todayExtra.meetings.filter((m) => m.time < hh.slice(0, 2) + ':60' && m.end > hh);
+  const todayOpen = () => S.dailyTasks.filter((t) => !t.done && t.date <= S.today);
+  S.ui.tdTop3 = (S.ui.tdTop3 || []).filter((id) => task(id));
+
+  /* ---------- P1: 오늘의 3대 우선순위 ---------- */
+  function top3Block() {
+    const ids = S.ui.tdTop3;
+    const slot = (i) => {
+      const t = ids[i] && task(ids[i]);
+      if (!t) return `<li class="td-top-slot empty"><span class="td-top-n">${i + 1}</span><span class="muted">할 일의 ☆를 눌러 고정하거나 '아침 계획'으로 채우세요</span></li>`;
+      return `<li class="td-top-slot${t.done ? ' done' : ''}"><span class="td-top-n">${i + 1}</span>
+        <label class="td-chk sm"><input type="checkbox" data-act="tdCheck" data-id="${t.id}" ${t.done ? 'checked' : ''} ${t.evaluated ? 'disabled' : ''}><span class="sr">${esc(t.title)} 완료</span></label>
+        <span class="td-top-t">${srcChip(t.src)} ${esc(t.title)}<span class="small muted"> · ${hm(t.est_minutes)}${t.slot ? ` · ${t.slot}` : ''}</span></span>
+        <span class="row td-top-acts">${!t.done && canMeasure(t) ? `<button type="button" class="btn sm" data-act="tdFocus" data-id="${t.id}">집중</button>` : ''}<button type="button" class="btn sm td-ghost" data-act="tdTop" data-id="${t.id}" aria-label="고정 풀기">빼기</button></span></li>`;
+    };
+    const doneN = ids.filter((id) => task(id) && task(id).done).length;
+    return `<section class="panel td-top3" aria-labelledby="h-top3">
+      <div class="td-head"><h3 id="h-top3">오늘의 3대 우선순위 <span class="pill">${doneN}/3</span></h3>${ids.length < 3 ? '<button type="button" class="btn sm" data-act="tdWizOpen">아침 계획으로 채우기</button>' : ''}</div>
+      <ol class="td-top">${[0, 1, 2].map(slot).join('')}</ol>
+    </section>`;
+  }
+
+  /* ---------- P1: 받은 항목 ---------- */
+  function inboxBlock() {
+    const list = inboxOpen();
+    return `<section class="panel td-inbox" aria-labelledby="h-in">
+      <div class="td-head"><h3 id="h-in">받은 항목 <span class="pill${list.length ? ' p-high' : ''}">${list.length}건</span></h3><span class="small muted">다른 메뉴가 보낸 것</span></div>
+      ${list.length ? `<ul class="td-in">${list.map((x) => `<li>
+        <div class="td-in-main"><span class="td-kind">${esc(x.kind)}</span> ${esc(x.title)}<div class="small muted">${esc(MENU_NAME[x.from] || x.from)} · ${new Date(x.at).toTimeString().slice(0, 5)}</div></div>
+        <div class="row td-in-acts"><button type="button" class="btn sm primary" data-act="tdInTask" data-id="${x.id}">할 일로</button><button type="button" class="btn sm" data-act="tdInDone" data-id="${x.id}">확인함</button>${MENU_NAME[x.from] ? `<button type="button" class="btn sm td-ghost" data-act="tab" data-v="${x.from}">열기</button>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="muted" style="margin:0">새로 받은 항목이 없습니다.</p>'}
+    </section>`;
+  }
+
+  /* ---------- P1: 하루 시간표 ---------- */
+  function timetable() {
+    const now = nowHM(); const curH = now.slice(0, 2) + ':00';
+    const tasks = S.dailyTasks.filter((t) => t.slot && t.date <= S.today && (!t.done || t.done_at === S.today));
+    const unslotted = todayOpen().filter((t) => !t.slot).length;
+    return `<ol class="td-tt">${HOURS.map((h) => {
+      const ms = S.todayExtra.meetings.filter((m) => m.time.slice(0, 2) === h.slice(0, 2)).sort((a, b) => a.time.localeCompare(b.time));
+      const ts = tasks.filter((t) => t.slot === h);
+      const cls = h === curH ? ' now' : h < curH ? ' past' : '';
+      return `<li class="td-tt-row${cls}"><span class="td-tt-h num">${h.slice(0, 2)}시</span><div class="td-tt-cell">
+        ${ms.map((m) => `<button type="button" class="td-tt-meet${m.status === '요청' ? ' req' : ''}" data-td-meet="${m.id}"><b class="num">${m.time}</b> ${esc(m.title)}</button>`).join('')}
+        ${ts.map((t) => `<span class="td-tt-task${t.done ? ' done' : ''}">${srcChip(t.src)} ${esc(t.title)} <span class="small muted">${hm(t.est_minutes)}</span></span>`).join('')}
+        ${!ms.length && !ts.length ? (busyAt(h).length ? '<span class="small muted">회의 이어짐</span>' : '<span class="small muted td-free">비어 있음</span>') : ''}</div></li>`;
+    }).join('')}</ol>
+    <p class="small muted" style="margin:8px 0 0">시간대를 안 정한 오늘 할 일 ${unslotted}건 — 할 일의 '시간대' 버튼으로 넣습니다.</p>`;
+  }
+  function slotPicker(t) {
+    return `<div class="td-sub td-slots" role="group" aria-label="시간대 고르기">
+      ${HOURS.map((h) => { const b = busyAt(h); return `<button type="button" class="btn sm${t.slot === h ? ' primary' : ''}${b.length ? ' td-busy' : ''}" data-act="tdSlot" data-id="${t.id}" data-v="${h}" title="${b.length ? '회의: ' + esc(b.map((m) => m.title).join(', ')) : '비어 있음'}">${h.slice(0, 2)}시${b.length ? ' ·회의' : ''}</button>`; }).join('')}
+      ${t.slot ? `<button type="button" class="btn sm td-ghost" data-act="tdSlot" data-id="${t.id}" data-v="">시간대 빼기</button>` : ''}
+      <button type="button" class="btn sm td-ghost" data-act="tdClose">닫기</button></div>`;
+  }
+
+  /* ---------- P2: 아침 계획 마법사 ---------- */
+  function draftPlan() {
+    const curH = Math.max(8, new Date().getHours());
+    const free = HOURS.filter((h) => +h.slice(0, 2) >= curH && !busyAt(h).length && !S.dailyTasks.some((t) => t.slot === h && !t.done));
+    const cap = free.length * 60;
+    const tasks = todayOpen().sort(sorter('claude'));
+    const ins = inboxOpen().map((x) => ({ id: 'in:' + x.id, inbox: x, title: x.title, src: 'inbox', prio: x.kind === '결재 지연' ? '긴급' : '높음', est_minutes: 15 }));
+    const cands = [...tasks, ...ins].sort((a, b) => PRIO_RANK[a.prio] - PRIO_RANK[b.prio]);
+    let used = 0; const rows = [];
+    cands.forEach((c) => {
+      const keep = used + c.est_minutes <= cap * 0.8 || c.prio === '긴급';
+      if (keep) used += c.est_minutes;
+      const why = c.src === 'inbox' ? '받은 항목' : c.date < S.today ? '어제 못 끝낸 일' : c.src === 'approval' ? '대기 결재' : c.src === 'asana' ? '오늘 기한' : c.src === 'slack' ? '답할 톡' : '오늘 할 일';
+      rows.push({ id: c.id, title: c.title, src: c.src, prio: c.prio, est: c.est_minutes, why, pick: keep, slot: '' });
+    });
+    /* 시간대 배정: 30분 이상 걸리는 일부터 빈 시간에 */
+    const pool = free.slice();
+    rows.filter((r) => r.pick && r.est >= 30 && (r.src === 'mine' || r.src === 'asana')).forEach((r) => { if (pool.length) r.slot = pool.shift(); });
+    const top3 = rows.filter((r) => r.pick && r.src !== 'inbox').slice(0, 3).map((r) => r.id);
+    return { rows, top3, cap, freeN: free.length, meetN: S.todayExtra.meetings.length };
+  }
+  function wizBlock() {
+    const w = S.ui.tdWiz; const used = w.rows.filter((r) => r.pick).reduce((s, r) => s + r.est, 0);
+    const cnt = (k) => w.rows.filter((r) => r.why === k).length;
+    return `<div class="td-ov" role="dialog" aria-modal="true" aria-labelledby="h-wiz"><div class="td-ov-card">
+      <div class="td-head"><h3 id="h-wiz">아침 계획 ${aiBadge}</h3><button type="button" class="td-x" data-act="tdOvClose" aria-label="닫기">✕</button></div>
+      <p class="td-wiz-sum">어제 못 끝낸 일 <b>${cnt('어제 못 끝낸 일')}</b> · 오늘 기한 <b>${cnt('오늘 기한')}</b> · 대기 결재 <b>${cnt('대기 결재')}</b> · 답할 톡 <b>${cnt('답할 톡')}</b> · 받은 항목 <b>${cnt('받은 항목')}</b><br>
+        회의 ${w.meetN}건을 빼면 남은 빈 시간 <b class="num">${hm(w.cap)}</b> ${badge('추정')} · 계획에 넣은 일 <b class="num">${hm(used)}</b>${used > w.cap ? ' <b class="td-warn">빈 시간보다 많습니다</b>' : ''}</p>
+      <p class="small muted" style="margin:0 0 8px">체크를 풀면 내일로 미룹니다. ☆로 3대 우선순위를 고릅니다(3개까지).</p>
+      <ul class="td-wiz">${w.rows.map((r) => `<li class="${r.pick ? '' : 'off'}">
+        <label class="td-chk sm"><input type="checkbox" data-act="tdWizPick" data-id="${r.id}" ${r.pick ? 'checked' : ''}><span class="sr">${esc(r.title)} 오늘 하기</span></label>
+        <div class="td-wiz-main">${r.src === 'inbox' ? '<span class="td-kind">받은 항목</span>' : srcChip(r.src)} ${esc(r.title)}<div class="small muted">${r.why} · ${r.prio} · ${hm(r.est)}${r.slot ? ` · <b>${r.slot.slice(0, 2)}시 배정</b>` : ''}${r.pick ? '' : ' · 내일로'}</div></div>
+        ${r.src !== 'inbox' && r.pick ? `<button type="button" class="td-star${w.top3.includes(r.id) ? ' on' : ''}" data-act="tdWizStar" data-id="${r.id}" aria-label="3대 우선순위">${w.top3.includes(r.id) ? '★' : '☆'}</button>` : '<span></span>'}</li>`).join('')}</ul>
+      <div class="row" style="margin-top:14px"><button type="button" class="btn primary" data-act="tdWizOk">이대로 오늘 계획 확정</button><button type="button" class="btn" data-act="tdWizRe">다시 짜기</button><button type="button" class="btn td-ghost" data-act="tdOvClose">취소</button></div>
+    </div></div>`;
+  }
+
+  /* ---------- P2: 저녁 마감 리뷰 ---------- */
+  function eveBlock() {
+    const done = S.dailyTasks.filter((t) => t.done && t.done_at === S.today);
+    const left = todayOpen();
+    const sendable = done.filter((t) => canMeasure(t) && !t.evaluated && !t.sent_value);
+    const spent = done.reduce((s, t) => s + (t.actual_minutes || 0), 0);
+    return `<div class="td-ov" role="dialog" aria-modal="true" aria-labelledby="h-eve"><div class="td-ov-card">
+      <div class="td-head"><h3 id="h-eve">저녁 마감 — 3분 정리</h3><button type="button" class="td-x" data-act="tdOvClose" aria-label="닫기">✕</button></div>
+      <form data-form="tdEve" class="td-eve">
+        <div class="td-eve-sec"><b>끝낸 일 ${done.length}건</b> ${badge('측정')} · 쓴 시간 ${hm(spent)} ${badge('측정')}
+          ${done.length ? `<ul class="td-eve-list">${done.map((t) => `<li><span class="td-eve-t">${srcChip(t.src)} ${esc(t.title)}</span>${sendable.includes(t) ? `<label class="td-eve-send"><input type="checkbox" name="send" value="${t.id}" checked> 성과 평가로 보내기</label>` : t.evaluated || t.sent_value ? ' <span class="small muted">평가 보냄</span>' : ''}</li>`).join('')}</ul>` : '<p class="muted" style="margin:4px 0 0">오늘 끝낸 일이 없습니다.</p>'}</div>
+        <div class="td-eve-sec"><b>못 끝낸 일 ${left.length}건</b> — 어떻게 할까요?
+          ${left.length ? `<ul class="td-eve-list">${left.map((t) => `<li><span class="td-eve-t">${srcChip(t.src)} ${esc(t.title)}</span>
+            <span class="seg td-eve-seg"><label><input type="radio" name="mv_${t.id}" value="tomorrow" checked><span>내일로</span></label><label><input type="radio" name="mv_${t.id}" value="later"><span>다음 주로</span></label><label><input type="radio" name="mv_${t.id}" value="keep"><span>그대로</span></label></span></li>`).join('')}</ul>` : '<p class="muted" style="margin:4px 0 0">모두 끝냈습니다.</p>'}</div>
+        <label class="f">오늘 한 줄 메모<input type="text" name="note" maxlength="120" placeholder="예: 투자 미팅 준비가 예상보다 오래 걸림"></label>
+        <div class="row" style="margin-top:14px"><button class="btn primary">하루 마감</button><button type="button" class="btn td-ghost" data-act="tdOvClose">취소</button></div>
+      </form></div></div>`;
+  }
+
+  /* ---------- P3: 집중 모드 ---------- */
+  const clock = (t) => { const s = Math.floor(((t.acc_ms || 0) + (t.run_at ? Date.now() - t.run_at : 0)) / 1000); const h = Math.floor(s / 3600); const m = Math.floor(s / 60) % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+  function focusBlock() {
+    const t = task(S.ui.tdFocus); if (!t) { S.ui.tdFocus = null; return ''; }
+    const pct = Math.min(100, Math.round((100 * ((t.acc_ms || 0) + (t.run_at ? Date.now() - t.run_at : 0))) / (t.est_minutes * 60000)));
+    return `<div class="td-ov td-focus" role="dialog" aria-modal="true" aria-labelledby="h-focus"><div class="td-focus-card">
+      <div class="small td-focus-top">집중 모드 · ${srcChip(t.src)} · 예상 ${hm(t.est_minutes)} ${badge(t.est_source)}</div>
+      <h3 id="h-focus">${esc(t.title)}</h3>
+      <div class="td-clock num" data-td-clock="${t.id}">${clock(t)}</div>
+      <div class="bar" aria-hidden="true"><i data-td-clockbar="${t.id}" style="width:${pct}%"></i></div>
+      <p class="small muted" style="margin:8px 0 0">${t.run_at ? '측정 중' : '멈춤'} · ${kbd('Esc')} 나가기</p>
+      <div class="row td-focus-acts">${t.run_at ? `<button type="button" class="btn" data-act="tdStop" data-id="${t.id}">■ 멈춤</button>` : `<button type="button" class="btn" data-act="tdStart" data-id="${t.id}">▶ ${t.acc_ms ? '이어서' : '시작'}</button>`}
+        <button type="button" class="btn primary" data-act="tdFocusDone" data-id="${t.id}">✓ 끝냄</button><button type="button" class="btn td-ghost" data-act="tdOvClose">나가기</button></div>
+    </div></div>`;
+  }
+
+  /* ---------- P3: 단축키 도움말 ---------- */
+  function helpBlock() {
+    const rows = [['N', '새 할 일 입력칸으로'], ['J / K', '다음 / 이전 할 일 고르기'], ['X', '고른 할 일 완료'], ['F', '고른 할 일 집중 모드'], ['T', '고른 할 일 ☆ 3대 우선순위'], ['?', '이 도움말'], ['Esc', '창 닫기']];
+    return `<div class="td-ov" role="dialog" aria-modal="true" aria-labelledby="h-help"><div class="td-ov-card td-help">
+      <div class="td-head"><h3 id="h-help">단축키</h3><button type="button" class="td-x" data-act="tdOvClose" aria-label="닫기">✕</button></div>
+      <dl class="td-keys">${rows.map(([k, v]) => `<dt>${k.split(' / ').map(kbd).join(' / ')}</dt><dd>${v}</dd>`).join('')}</dl>
+      <p class="small muted" style="margin:10px 0 0">입력칸에 글을 쓰는 중에는 동작하지 않습니다.</p></div></div>`;
+  }
+
+  /* ---------- P3: 주간 회고 ---------- */
+  function weekBlock() {
+    const ds = Array.from({ length: 7 }, (_, i) => dayStr(i - 6));
+    const rows = ds.map((d) => { const l = S.dailyTasks.filter((t) => t.done && (t.done_at || t.date) === d); return { d, n: l.length, min: l.reduce((s, t) => s + (t.actual_minutes || 0), 0) }; });
+    const maxN = Math.max(1, ...rows.map((r) => r.n));
+    const tot = rows.reduce((s, r) => s + r.n, 0); const totMin = rows.reduce((s, r) => s + r.min, 0);
+    const best = rows.slice().sort((a, b) => b.n - a.n)[0];
+    return `<details class="panel td-week" ${S.ui.tdWeekOpen ? 'open' : ''}><summary data-act="tdWeek"><h3>주간 회고</h3><span class="small muted">최근 7일 완료 <b class="num">${tot}건</b> · <b class="num">${hm(totMin)}</b> ${badge('측정')}</span></summary>
+      <ol class="td-wk">${rows.map((r) => `<li class="${r.d === S.today ? 'today' : ''}"><span class="td-wk-d">${WEEK[new Date(r.d + 'T00:00').getDay()]}<small>${md(r.d)}</small></span>
+        <span class="bar"><i style="width:${Math.round((100 * r.n) / maxN)}%"></i></span><span class="num td-wk-v">${r.n}건 · ${hm(r.min)}</span></li>`).join('')}</ol>
+      <p class="small muted" style="margin:8px 0 0">${best.n ? `가장 많이 끝낸 날: ${WEEK[new Date(best.d + 'T00:00').getDay()]}요일(${best.n}건). ` : ''}소요시간은 시작/종료로 측정했거나 수기로 넣은 것만 셉니다.</p>
+    </details>`;
+  }
+
+  function overlay() {
+    if (S.ui.tdFocus) return focusBlock();
+    if (S.ui.tdWiz) return wizBlock();
+    if (S.ui.tdEve) return eveBlock();
+    if (S.ui.tdHelp) return helpBlock();
+    return '';
+  }
+
   function viewToday() {
     syncApprovals();
     /* 그린 뒤 진행 중·다음 일정이 보이도록 일정 띠를 옮김 */
     setTimeout(() => { const box = document.getElementById('tdMeets'); const el = box && box.querySelector('.td-meet.live, .td-meet.next'); if (el) box.scrollLeft = Math.max(0, el.parentElement.offsetLeft - box.offsetLeft - el.offsetWidth - 8); }, 0);
-    return `<div class="view-head"><div><h2>오늘 할 일</h2><p>${new Date(S.today + 'T00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })}</p></div></div>
+    return `<div class="view-head"><div><h2>오늘 할 일</h2><p>${new Date(S.today + 'T00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })} · 아침 5분 계획, 저녁 10분 마감</p></div>
+        <div class="row td-day-btns"><button type="button" class="btn primary" data-act="tdWizOpen">아침 계획</button><button type="button" class="btn" data-act="tdEveOpen">저녁 마감</button><button type="button" class="btn td-ghost" data-act="tdHelp" aria-label="단축키 도움말">단축키 ${kbd('?')}</button></div></div>
       ${meetBlock()}
+      <div class="td-p1">${top3Block()}${inboxBlock()}</div>
       <div class="td-layout">
         ${todoBlock()}
-        <div class="td-right">${doneBlock()}</div>
-      </div>`;
+        <div class="td-right">${weekBlock()}${doneBlock()}</div>
+      </div>
+      <button type="button" id="tdKick" data-act="tdKey" hidden></button>
+      ${overlay()}`;
   }
   APP.views.today = viewToday;
 
   /* ---------- 동작 ---------- */
   const close = () => { S.ui.tdOpen = null; };
-  const scrollTo = (id) => setTimeout(() => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30);
   function finish(t, from) {
     stopRun(t); t.done = true; t.done_at = S.today; t.done_ts = Date.now();
     if (t.src === 'approval') { const w = S.waiting.find((x) => x.id === t.ref); if (w) { S.waiting = S.waiting.filter((x) => x !== w); S.waitingDone.push(Object.assign({}, w, { done_at: S.today })); } }
@@ -324,19 +522,11 @@
   Object.assign(APP.acts, {
     tdCat: (el) => { S.ui[el.dataset.k] = el.dataset.v; },
     tdSort: (el) => { S.ui.tdSort = el.dataset.v; },
-    tdCheck: (el) => {
-      const t = task(el.dataset.id); if (t.evaluated) return;
-      if (!t.done) {
-        finish(t);
-        const msg = { slack: '답변 완료로 표시했습니다', approval: '결재 처리했습니다(Asana 반영 예정)', asana: '완료 — 아사나에도 완료 처리합니다(목업)', mine: '완료했습니다' }[t.src];
-        if (canMeasure(t)) { S.ui.tdOpen = { id: t.id, kind: 'complete' }; scrollTo('td-' + t.id); toast(msg + ' · 오른쪽에서 성과 평가를 채워 주세요'); } else toast(msg);
-      } else { unfinish(t); close(); toast('할 일로 되돌렸습니다'); }
-    },
     tdStart: (el) => { const t = task(el.dataset.id); t.run_at = Date.now(); t.started_at = t.started_at || t.run_at; close(); },
     tdStop: (el) => { const t = task(el.dataset.id); stopRun(t); toast(`측정 ${t.actual_minutes}분 기록`); },
     tdOpen: (el) => { const cur = S.ui.tdOpen; S.ui.tdOpen = cur && cur.id === el.dataset.id && cur.kind === el.dataset.k ? null : { id: el.dataset.id, kind: el.dataset.k }; },
     tdClose: close,
-    tdTomorrow: (el) => { const t = task(el.dataset.id); stopRun(t); t.date = dayStr(1); close(); toast(`"${t.title}" 내일로 미뤘습니다${t.src === 'asana' ? '(아사나 기한도 변경 예정)' : ''}`); },
+    tdTomorrow: (el) => { const t = task(el.dataset.id); stopRun(t); t.date = dayStr(1); t.slot = null; S.ui.tdTop3 = S.ui.tdTop3.filter((x) => x !== t.id); close(); log('defer', `내일로: ${t.title}`, t.id); toast(`"${t.title}" 내일로 미뤘습니다${t.src === 'asana' ? '(아사나 기한도 변경 예정)' : ''}`); },
     tdBack: (el) => { task(el.dataset.id).date = S.today; toast('오늘 할 일로 당겼습니다'); },
     tdDel: (el) => {
       const t = task(el.dataset.id);
@@ -363,16 +553,139 @@
       const title = (fd.get('title') || '').toString().trim(); if (!title) return;
       const est = +fd.get('est') || 0; const t = newTask({ title, prio: (fd.get('prio') || '보통').toString() });
       if (est > 0) { t.est_value = Math.round(t.est_value / t.est_minutes * Math.max(5, est) / 1000) * 1000; t.est_minutes = Math.max(5, est); t.est_source = '수기'; }
-      S.dailyTasks.push(t); toast(`Claude 산정: ${hm(t.est_minutes)} · ${kwon(t.est_value)}천원 (${t.est_why})`);
+      S.dailyTasks.push(t); log('add', `할 일 추가: ${t.title}`, t.id); toast(`Claude 산정: ${hm(t.est_minutes)} · ${kwon(t.est_value)}천원 (${t.est_why})`);
     },
     tdManual: (fd, form) => { const t = task(form.dataset.id); t.run_at = null; t.actual_minutes = Math.max(1, +fd.get('min') || 1); t.acc_ms = t.actual_minutes * 60000; t.time_source = '수기'; t.started_at = t.started_at || Date.now(); close(); },
     tdComplete: (fd, form) => {
       const t = task(form.dataset.id); const g = (n) => (fd.get(n) || '').toString().trim();
       const a = evaluate({ id: uid('a'), title: t.title, date: S.today, output_url: g('output_url'), output_type: g('output_type'), headcount: Math.max(1, +g('headcount') || 1), by_agent: g('by_agent') === '1', saved_hours: +g('saved_hours') || 0, months: +g('months') || 1, monthly_revenue: +g('monthly_revenue') || 0, monthly_cost: +g('monthly_cost') || 0, one_off: g('one_off') === '1', est_minutes: t.est_minutes, actual_minutes: t.actual_minutes, N: 1, status: '평가중', negotiations: [] });
-      S.achievements.push(a); t.evaluated = true; close();
+      S.achievements.push(a); t.evaluated = true; close(); log('value', `성과 평가로: ${t.title}`, a.id);
       toast(`성과 평가로 넘겼습니다: ${kwon(a.value_won)}천원 (성과·레벨에서 확인)`);
     }
   });
+
+
+  /* ---------- 하루 작전판 동작 ---------- */
+  const ovClose = () => { S.ui.tdWiz = null; S.ui.tdEve = null; S.ui.tdHelp = false; S.ui.tdFocus = null; };
+  function toggleTop(id) {
+    const ids = S.ui.tdTop3;
+    if (ids.includes(id)) { S.ui.tdTop3 = ids.filter((x) => x !== id); return; }
+    if (ids.length >= 3) { toast('3대 우선순위는 3개까지입니다. 하나를 빼고 넣어 주세요'); return; }
+    ids.push(id); log('top3', `3대 우선순위: ${task(id).title}`, id);
+  }
+  function checkTask(t) {
+    if (!t || t.evaluated) return;
+    if (!t.done) {
+      finish(t); log('done', `완료: ${t.title}`, t.id);
+      const msg = { slack: '답변 완료로 표시했습니다', approval: '결재 처리했습니다(Asana 반영 예정)', asana: '완료 — 아사나에도 완료 처리합니다(목업)', mine: '완료했습니다' }[t.src];
+      if (canMeasure(t)) { S.ui.tdOpen = { id: t.id, kind: 'complete' }; toast(msg + ' · 성과 평가는 오른쪽에서 채우거나 저녁 마감 때 보냅니다'); } else toast(msg);
+    } else { unfinish(t); close(); toast('할 일로 되돌렸습니다'); }
+  }
+  Object.assign(APP.acts, {
+    tdCheck: (el) => checkTask(task(el.dataset.id)),
+    tdTop: (el) => toggleTop(el.dataset.id),
+    tdSlot: (el) => { const t = task(el.dataset.id); t.slot = el.dataset.v || null; close(); toast(t.slot ? `${t.slot.slice(0, 2)}시에 넣었습니다${busyAt(t.slot).length ? ' — 회의와 겹칩니다' : ''}` : '시간대를 뺐습니다'); },
+    tdMeetView: (el) => { S.ui.tdMeetView = el.dataset.v; },
+    tdInTask: (el) => {
+      const x = S.inbox.find((i) => i.id === el.dataset.id); if (!x) return;
+      const t = newTask({ title: x.title, prio: x.kind === '결재 지연' ? '긴급' : '높음', from_inbox: x.id });
+      S.dailyTasks.push(t); x.done = true; log('inbox', `받은 항목 → 할 일: ${x.title}`, x.id); toast('할 일로 올렸습니다');
+    },
+    tdInDone: (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (x) { x.done = true; log('inbox', `받은 항목 확인: ${x.title}`, x.id); toast('확인함으로 정리했습니다'); } },
+    tdOvClose: ovClose,
+    tdHelp: () => { ovClose(); S.ui.tdHelp = true; },
+    tdWeek: () => { S.ui.tdWeekOpen = !S.ui.tdWeekOpen; },
+    tdWizOpen: () => { ovClose(); S.ui.tdWiz = draftPlan(); },
+    tdWizRe: () => { S.ui.tdWiz = draftPlan(); toast('처음 초안으로 다시 짰습니다'); },
+    tdWizPick: (el) => { const w = S.ui.tdWiz; const r = w.rows.find((x) => x.id === el.dataset.id); r.pick = !r.pick; if (!r.pick) { w.top3 = w.top3.filter((x) => x !== r.id); r.slot = ''; } },
+    tdWizStar: (el) => { const w = S.ui.tdWiz; const id = el.dataset.id; if (w.top3.includes(id)) w.top3 = w.top3.filter((x) => x !== id); else if (w.top3.length < 3) w.top3.push(id); else toast('3개까지 고를 수 있습니다'); },
+    tdWizOk: () => {
+      const w = S.ui.tdWiz; let moved = 0, added = 0;
+      const idMap = {};
+      w.rows.forEach((r) => {
+        if (r.src === 'inbox') {
+          if (!r.pick) return;
+          const x = S.inbox.find((i) => 'in:' + i.id === r.id); if (!x || x.done) return;
+          const t = newTask({ title: x.title, prio: r.prio, from_inbox: x.id }); S.dailyTasks.push(t); x.done = true; idMap[r.id] = t.id; added++;
+          return;
+        }
+        const t = task(r.id); if (!t) return;
+        if (!r.pick) { stopRun(t); t.date = dayStr(1); moved++; return; }
+        if (r.slot) t.slot = r.slot;
+      });
+      S.ui.tdTop3 = w.top3.map((id) => idMap[id] || id).filter((id) => task(id));
+      log('plan', `아침 계획 확정: Top3 ${S.ui.tdTop3.length}개, 내일로 ${moved}건, 받은 항목 ${added}건`, null);
+      S.ui.tdWiz = null; S.ui.tdMeetView = 'tt';
+      toast(`오늘 계획을 확정했습니다 — 내일로 ${moved}건, 받은 항목 ${added}건을 할 일로`);
+    },
+    tdEveOpen: () => { ovClose(); S.ui.tdEve = true; },
+    tdFocus: (el) => { ovClose(); const t = task(el.dataset.id); if (!t.run_at) { t.run_at = Date.now(); t.started_at = t.started_at || t.run_at; } S.ui.tdFocus = t.id; log('focus', `집중 시작: ${t.title}`, t.id); },
+    tdFocusDone: (el) => { const t = task(el.dataset.id); S.ui.tdFocus = null; if (!t.done) checkTask(t); },
+    tdKey: (el) => {
+      const k = el.dataset.v; const t = S.ui.tdSel && task(S.ui.tdSel);
+      if (k === 'esc') ovClose();
+      else if (k === 'help') { const on = !S.ui.tdHelp; ovClose(); S.ui.tdHelp = on; }
+      else if (k === 'n') { ovClose(); if (!['all', 'mine'].includes(S.ui.tdCat || 'all')) S.ui.tdCat = 'all'; setTimeout(() => { const i = document.getElementById('tdNewTitle'); if (i) { i.scrollIntoView({ block: 'center' }); i.focus(); } }, 20); }
+      else if (k === 'x' && t) checkTask(t);
+      else if (k === 'f' && t && canMeasure(t) && !t.done) APP.acts.tdFocus({ dataset: { id: t.id } });
+      else if (k === 't' && t && !t.done) toggleTop(t.id);
+    }
+  });
+  Object.assign(APP.forms, {
+    tdEve: (fd) => {
+      let moved = 0, kept = 0, sent = 0;
+      todayOpen().forEach((t) => {
+        const v = fd.get('mv_' + t.id) || 'tomorrow';
+        if (v === 'keep') { kept++; return; }
+        stopRun(t); t.date = dayStr(v === 'later' ? 7 : 1); t.slot = null; moved++;
+      });
+      fd.getAll('send').forEach((id) => {
+        const t = task(id); if (!t || t.sent_value) return;
+        /* 성과·레벨 '받은 항목' 약속 모양(kind:'achievement'). 오늘 할 일이 모르는 값은 비워 둠(null) */
+        S.inbox.push({ id: uid('in'), at: new Date().toISOString(), from: 'today', to: 'value', kind: 'achievement', title: t.title,
+          payload: { est_minutes: t.est_minutes, actual_minutes: t.actual_minutes ?? null, by_agent: null, output_type: null, headcount: null, saved_hours: null, months: null,
+            task_id: t.id, date: S.today, time_source: t.time_source || null, est_value: t.est_value, src: t.src }, done: false });
+        t.sent_value = true; sent++;
+      });
+      const note = (fd.get('note') || '').toString().trim();
+      S.todayExtra.review = { date: S.today, moved, kept, sent, note };
+      S.ui.tdTop3 = S.ui.tdTop3.filter((id) => task(id) && (task(id).done || task(id).date <= S.today));
+      log('review', `저녁 마감: 미룸 ${moved}건, 그대로 ${kept}건, 성과 평가 보냄 ${sent}건${note ? ' — ' + note : ''}`, null);
+      S.ui.tdEve = null; toast(`하루를 마감했습니다 — 미룸 ${moved}건 · 성과 평가로 ${sent}건 보냄`);
+    }
+  });
+
+  /* ---------- 단축키(입력칸에서는 동작 안 함) ---------- */
+  function kick(v) { const b = document.getElementById('tdKick'); if (!b) return; b.dataset.v = v; b.click(); }
+  function moveSel(dir) {
+    const items = [...document.querySelectorAll('.td-todo [data-td-item]')]; if (!items.length) return;
+    let i = items.findIndex((x) => x.dataset.tdItem === S.ui.tdSel);
+    i = i < 0 ? (dir > 0 ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, i + dir));
+    items.forEach((x) => x.classList.remove('sel'));
+    items[i].classList.add('sel'); S.ui.tdSel = items[i].dataset.tdItem;
+    items[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (location.hash !== '#today') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const tg = e.target; if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) { if (e.key === 'Escape') tg.blur(); return; }
+    const k = e.key;
+    if (k === 'Escape') { if (S.ui.tdWiz || S.ui.tdEve || S.ui.tdHelp || S.ui.tdFocus) kick('esc'); return; }
+    if (S.ui.tdWiz || S.ui.tdEve) return;
+    if (k === '?') { e.preventDefault(); kick('help'); }
+    else if (S.ui.tdFocus || S.ui.tdHelp) return;
+    else if (k === 'n' || k === 'N') { e.preventDefault(); kick('n'); }
+    else if (k === 'j' || k === 'J') { e.preventDefault(); moveSel(1); }
+    else if (k === 'k' || k === 'K') { e.preventDefault(); moveSel(-1); }
+    else if (k === 'x' || k === 'X') kick('x');
+    else if (k === 'f' || k === 'F') kick('f');
+    else if (k === 't' || k === 'T') kick('t');
+  });
+  /* 집중 모드 시계(1초) */
+  setInterval(() => {
+    document.querySelectorAll('[data-td-clock]').forEach((el) => { const t = task(el.dataset.tdClock); if (t) el.textContent = clock(t); });
+    document.querySelectorAll('[data-td-clockbar]').forEach((el) => { const t = task(el.dataset.tdClockbar); if (t) el.style.width = Math.min(100, Math.round((100 * ((t.acc_ms || 0) + (t.run_at ? Date.now() - t.run_at : 0))) / (t.est_minutes * 60000))) + '%'; });
+  }, 1000);
 
   /* ---------- 다시 그리지 않는 동작: 일정 카드 좌우 이동·팝업 ---------- */
   document.addEventListener('click', (e) => {
