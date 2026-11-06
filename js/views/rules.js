@@ -11,6 +11,7 @@
   const EXAMPLE_WON = 8640000;
   const BASE = { hour: HOUR_VALUE, cap: 12, slope: 0.5, smax: 1.5, agent: 1.2, nmax: 1.3, L: L_TABLE.map((r) => r[1]), F: Object.fromEntries(Object.entries(F_TYPES).map(([k, v]) => [k, v[1]])) };
   const VERDICTS = ['수용', '부분수용', '거절'];
+  const AI_BADGE = '<span class="rl-ai" title="화면 안에서 규칙으로 만든 결과입니다">목업 AI</span>';
 
   // 협상 로그 예시(실제 평가 건과 별개, 화면 이해용 샘플). 메뉴 파일 안에서만 S에 붙인다.
   S.rulesExtra = S.rulesExtra || {
@@ -159,21 +160,95 @@
     </div>`;
   }
 
-  function negoPanel() {
-    const f = S.ui.rulesNegoF || '전체';
+  /* ---------- 과거 확정분 분포 · 보정 시뮬레이션 ---------- */
+  const BUCKETS = [[0, 100, '100 미만'], [100, 500, '100~500'], [500, 1000, '500~1,000'], [1000, 5000, '1,000~5,000'], [5000, Infinity, '5,000 이상']];
+  const bucketOf = (won) => BUCKETS.findIndex((b) => won / 1000 >= b[0] && won / 1000 < b[1]);
+  const PRESETS = [
+    ['F(코드) 1.8 → 1.6', (d) => { d.F.code = 1.6; }],
+    ['시간가치 30,000 → 35,000원', (d) => { d.hour = 35000; }],
+    ['S 상한 1.5 → 1.3', (d) => { d.smax = 1.3; }],
+    ['L(300명 이상) 10 → 8', (d) => { d.L[5] = 8; }]
+  ];
+  const simInput = (a) => ({ saved_hours: +a.saved_hours || 0, monthly_revenue: +a.monthly_revenue || 0, monthly_cost: +a.monthly_cost || 0, months: +a.months || 1, one_off: !!a.one_off, headcount: +a.headcount || 1, output_type: F_TYPES[a.output_type] ? a.output_type : 'doc', est_minutes: +a.est_minutes || 0, actual_minutes: a.actual_minutes == null ? null : +a.actual_minutes, by_agent: !!a.by_agent, N: +a.N || 1 });
+  function distPanel() {
+    const done = S.achievements.filter((a) => a.status === '확정');
+    const d = S.ui.rulesDraft; const changed = draftDiff(d);
+    const rows = done.map((a) => { const nv = changed.length ? draftCalc(simInput(a), d).value_won : a.value_won; return { a, cur: a.value_won, nv }; }).sort((x, y) => y.cur - x.cur);
+    const cntCur = BUCKETS.map((_, k) => rows.filter((r) => bucketOf(r.cur) === k).length);
+    const cntNew = BUCKETS.map((_, k) => rows.filter((r) => bucketOf(r.nv) === k).length);
+    const max = Math.max(1, ...cntCur, ...cntNew);
+    const sumCur = rows.reduce((t, r) => t + r.cur, 0); const sumNew = rows.reduce((t, r) => t + r.nv, 0);
+    const pct = sumCur ? Math.round(100 * (sumNew - sumCur) / sumCur) : 0;
+    const byF = Object.entries(F_TYPES).map(([k, v]) => { const l = done.filter((a) => a.output_type === k); return { k, name: v[0], n: l.length, sum: l.reduce((t, a) => t + a.value_won, 0) }; });
+    const fMax = Math.max(1, ...byF.map((x) => x.sum));
+    return `<section class="panel" id="rl-dist" aria-labelledby="h-rl-dist">
+      <h3 id="h-rl-dist">과거 확정분 분포 · 보정 시뮬레이션 <span class="rl-note">참고용 — 확정분은 다시 계산하지 않습니다(소급 없음)</span></h3>
+      ${done.length ? `<div class="rl-dist-sum">
+          <div><span class="rl-lab">확정 건수 ${badge('측정')}</span><b class="num">${done.length}건</b></div>
+          <div><span class="rl-lab">확정 합계 ${badge('추정')}</span><b class="num">${kwon(sumCur)}천원</b></div>
+          <div><span class="rl-lab">변경안 적용 시 ${badge('추정')}</span><b class="num">${changed.length ? kwon(sumNew) + '천원' : '—'}</b>${changed.length ? `<span class="pill ${pct > 0 ? 'st-wait' : pct < 0 ? 'p-high' : ''}">${pct > 0 ? '+' : ''}${pct}%</span>` : ''}</div>
+        </div>
+        <div class="rl-chart" role="img" aria-label="V 구간별 건수: ${BUCKETS.map((b, k) => `${b[2]}천원 ${cntCur[k]}건${changed.length ? `→${cntNew[k]}건` : ''}`).join(', ')}">
+          ${BUCKETS.map((b, k) => `<div class="rl-col"><div class="rl-bars"><span class="cur" style="height:${(100 * cntCur[k] / max).toFixed(0)}%"><i class="num">${cntCur[k]}</i></span>${changed.length ? `<span class="new" style="height:${(100 * cntNew[k] / max).toFixed(0)}%"><i class="num">${cntNew[k]}</i></span>` : ''}</div><span class="rl-collab">${b[2]}</span></div>`).join('')}
+        </div>
+        <div class="rl-legend"><span><i class="cur"></i>현재 확정(건)</span>${changed.length ? '<span><i class="new"></i>변경안 적용 시(건)</span>' : ''}<span class="rl-note">가로: V 구간(천원)</span></div>
+        <div class="rl-presets"><span class="rl-lab">예시 보정안 눌러 보기</span>${PRESETS.map(([l], k) => `<button type="button" class="btn sm" data-act="rulesPreset" data-v="${k}">${l}</button>`).join('')}${changed.length ? '<button type="button" class="btn sm" data-act="rulesDraftReset">변경안 지우기</button>' : ''}</div>
+        ${changed.length ? `<p class="rl-note">적용 중인 변경안: ${changed.map(esc).join(' · ')} — 시뮬레이터의 ‘계수 바꿔 보기’와 같은 값입니다.</p>` : '<p class="rl-note">예시 보정안을 누르거나 시뮬레이터의 ‘계수 바꿔 보기’에 값을 넣으면 확정분에 적용했을 때 분포가 어떻게 바뀌는지 겹쳐 보여 줍니다.</p>'}
+        <div class="rl-fbars"><span class="rl-lab">산출물 형태별 확정 합계</span>${byF.map((x) => `<div class="barrow"><span>${esc(x.name)}</span><div class="bar"><i style="width:${(100 * x.sum / fMax).toFixed(0)}%"></i></div><span class="num r">${kwon(x.sum)}천원 · ${x.n}건</span></div>`).join('')}</div>
+        <details class="rl-items" ${S.ui.rulesItemsOpen ? 'open' : ''}><summary>확정 건별로 보기 ${rows.length}건</summary>
+          <div class="tbl-wrap"><table class="rl-itbl"><thead><tr><th>평가 건</th><th class="r">현재 V</th><th class="r">변경안 V</th><th></th></tr></thead><tbody>
+          ${rows.map((r) => `<tr><td data-l="평가 건">${esc(r.a.title)}<div class="rl-note">${esc((F_TYPES[r.a.output_type] || ['-'])[0])} · ${r.a.headcount || 1}명 · 확정 ${md(r.a.confirmed_at)}</div></td><td data-l="현재 V" class="r num">${kwon(r.cur)}천원</td><td data-l="변경안 V" class="r num">${changed.length ? `${kwon(r.nv)}천원${r.nv !== r.cur ? `<div class="rl-dv">${r.nv > r.cur ? '+' : ''}${kwon(r.nv - r.cur)}</div>` : ''}` : '—'}</td><td data-l=""><button type="button" class="btn sm" data-act="rulesLoad" data-id="${esc(r.a.id)}">시뮬레이터로</button></td></tr>`).join('')}
+          </tbody></table></div></details>`
+        : guide('folder', '확정된 평가 건이 없습니다', '성과·레벨에서 평가 건을 확정하면 이곳에 분포가 쌓입니다.')}
+    </section>`;
+  }
+
+  /* ---------- 협상 사례집 · 비슷한 사례 찾기 ---------- */
+  const norm = (t) => String(t || '').toLowerCase().replace(/[\s.,·!?()'"‘’“”\-—:]/g, '');
+  const grams = (t) => { const s = norm(t); const g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
+  const sim = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; a.forEach((x) => { if (b.has(x)) n++; }); return (2 * n) / (a.size + b.size); };
+  const CRIT = [['수치', /\d/], ['증빙', /실측|측정|로그|증빙|데이터|자료|기록|첨부/], ['적용 범위', /명|인원|가맹|매장|재사용|확산|부서|본사|브랜드/]];
+  const critOf = (t) => CRIT.filter(([, re]) => re.test(t)).map(([k]) => k);
+  function allCases() {
     const real = S.achievements.flatMap((a) => a.negotiations.map((n, i, arr) => ({ ...n, title: a.title, n_before: i ? arr[i - 1].n_after : 1.0, sample: false })));
-    const all = [...real, ...S.rulesExtra.negoSamples.map((n) => ({ ...n, sample: true }))];
-    const list = all.filter((n) => f === '전체' || n.verdict === f).sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
+    return { real, all: [...real, ...S.rulesExtra.negoSamples.map((n) => ({ ...n, sample: true }))] };
+  }
+  const vp = (v) => `<span class="pill ${v === '수용' ? 'st-done' : v === '부분수용' ? 'st-wait' : 'p-urgent'}">${v}</span>`;
+  const caseHtml = (n, extra) => `<article class="nego rl-nego">
+      <div class="rl-nego-h"><b>${esc(n.title)}</b><span class="row">${extra || ''}${n.sample ? '<span class="pill">샘플</span>' : ''}${vp(n.verdict)}<span class="rl-note num">${n.round}차 · ${md(n.created_at)} · N ${(+n.n_before).toFixed(2)} → ${(+n.n_after).toFixed(2)}</span></span></div>
+      <p><span class="rl-who">회장</span>${esc(n.chairman_msg)}</p>
+      <p><span class="rl-who ai">Claude</span>${esc(n.claude_reply)}</p>
+      <div class="rl-crit">${CRIT.map(([k]) => `<span class="${critOf(n.chairman_msg).includes(k) ? 'on' : ''}">${k}</span>`).join('')}</div>
+    </article>`;
+  function similarBox(all) {
+    const q = S.ui.rulesSimQ || '';
+    let res = '';
+    if (q) {
+      const g = grams(q);
+      const top = all.map((n) => ({ n, s: sim(g, grams(n.chairman_msg + ' ' + n.title)) })).sort((a, b) => b.s - a.s).slice(0, 3);
+      const have = critOf(q); const miss = CRIT.map(([k]) => k).filter((k) => !have.includes(k));
+      const guess = have.length >= 2 && q.length >= 20 ? '수용' : have.length >= 1 || q.length >= 20 ? '부분수용' : '거절';
+      res = `<div class="rl-guess"><span class="rl-lab">이 근거의 예상 판정 ${AI_BADGE}</span><span class="row">${vp(guess)}<span class="rl-note">갖춘 근거: ${have.join('·') || '없음'}${miss.length ? ` · 더하면 좋은 근거: ${miss.join('·')}` : ''}</span></span></div>
+        ${top.map(({ n, s }) => caseHtml(n, `<span class="pill">비슷함 ${Math.round(100 * s)}%</span>`)).join('')}`;
+    }
+    return `<div class="rl-similar"><form class="form" data-form="rulesSimilar">
+        <label class="f wide">협상하려는 근거를 적으면 비슷한 과거 사례를 찾아 드립니다 ${AI_BADGE}<textarea name="q" rows="2" placeholder="예: 가맹점 20곳에서 재사용 예정이고 실측 자료가 있다">${esc(q)}</textarea></label>
+        <div class="row wide"><button class="btn primary sm">비슷한 사례 찾기</button>${q ? '<button type="button" class="btn sm" data-act="rulesSimClear">지우기</button>' : ''}</div></form>${res}</div>`;
+  }
+  function negoPanel() {
+    const f = S.ui.rulesNegoF || '전체'; const q = S.ui.rulesNegoQ || '';
+    const { real, all } = allCases();
+    const list = all.filter((n) => (f === '전체' || n.verdict === f) && (!q || norm(n.title + n.chairman_msg + n.claude_reply).includes(norm(q)))).sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
     const cnt = (v) => all.filter((n) => n.verdict === v).length;
-    const vp = (v) => `<span class="pill ${v === '수용' ? 'st-done' : v === '부분수용' ? 'st-wait' : 'p-urgent'}">${v}</span>`;
+    const accBy = CRIT.map(([k]) => { const l = all.filter((n) => critOf(n.chairman_msg).includes(k)); return { k, n: l.length, acc: l.filter((n) => n.verdict !== '거절').length }; });
     return `<section class="panel" id="rl-log" aria-labelledby="h-rl-log">
-      <h3 id="h-rl-log">협상 로그 전문 <span class="rl-note">총 ${all.length}건 · 수용 ${cnt('수용')} · 부분수용 ${cnt('부분수용')} · 거절 ${cnt('거절')}</span></h3>
-      <div class="seg rl-seg" role="group" aria-label="판정 필터">${['전체', ...VERDICTS].map((v) => `<button type="button" data-act="rulesNegoF" data-v="${v}" aria-pressed="${v === f}">${v}</button>`).join('')}</div>
-      ${list.length ? list.map((n) => `<article class="nego rl-nego">
-          <div class="rl-nego-h"><b>${esc(n.title)}</b><span class="row">${n.sample ? '<span class="pill">샘플</span>' : ''}${vp(n.verdict)}<span class="rl-note num">${n.round}차 · ${md(n.created_at)} · N ${(+n.n_before).toFixed(2)} → ${n.n_after.toFixed(2)}</span></span></div>
-          <p><span class="rl-who">회장</span>${esc(n.chairman_msg)}</p>
-          <p><span class="rl-who ai">Claude</span>${esc(n.claude_reply)}</p>
-        </article>`).join('') : guide('folder', '해당 판정의 협상 기록 없음', '성과·레벨 메뉴에서 평가 건에 이의를 제기하시면 대화 전문을 이곳에 남깁니다.')}
+      <h3 id="h-rl-log">협상 사례집 <span class="rl-note">총 ${all.length}건 · 수용 ${cnt('수용')} · 부분수용 ${cnt('부분수용')} · 거절 ${cnt('거절')}</span></h3>
+      <div class="rl-critsum">${accBy.map((x) => `<div><span class="rl-lab">‘${x.k}’ 근거가 있을 때 ${badge('측정')}</span><b class="num">${x.n ? Math.round(100 * x.acc / x.n) + '%' : '—'}</b><span class="rl-note">반영(수용·부분수용) ${x.acc}/${x.n}건</span></div>`).join('')}</div>
+      ${similarBox(all)}
+      <div class="rl-logtools"><div class="seg rl-seg" role="group" aria-label="판정 필터">${['전체', ...VERDICTS].map((v) => `<button type="button" data-act="rulesNegoF" data-v="${v}" aria-pressed="${v === f}">${v}</button>`).join('')}</div>
+        <form class="rl-q" data-form="rulesNegoQ" role="search"><label class="sr-only" for="rl-q">사례 검색</label><input type="text" id="rl-q" name="q" value="${esc(q)}" placeholder="낱말로 찾기 (예: 가맹, 실측)"><button class="btn sm">찾기</button>${q ? '<button type="button" class="btn sm" data-act="rulesNegoQClear">지우기</button>' : ''}</form></div>
+      <h4 class="rl-h4">협상 로그 전문 <span class="rl-note">${list.length}건${q ? ` · ‘${esc(q)}’ 포함` : ''}</span></h4>
+      ${list.length ? list.map((n) => caseHtml(n)).join('') : guide('folder', '조건에 맞는 협상 기록이 없습니다', '판정 필터나 검색어를 바꿔 보세요. 성과·레벨에서 이의를 제기하면 대화 전문이 이곳에 쌓입니다.')}
       ${real.length ? '' : '<p class="rl-note" style="margin-top:8px">실제 협상 기록이 아직 없어 이해를 돕는 샘플만 보입니다.</p>'}
     </section>`;
   }
@@ -184,7 +259,7 @@
     const ok = exampleOk();
     return `<div class="view-head"><div><h2>보상 기준</h2><p>계수를 바꾸면 적용일과 사유를 남기고, 과거 확정분은 소급하지 않습니다.</p></div>
         <div class="row"><button type="button" class="btn sm" data-act="tab" data-v="value">← 성과·레벨</button><span class="pill st-done">현재 ${esc(cur.version)}</span><span class="pill ${ok ? 'st-done' : 'p-urgent'}">${ok ? '공식 예시 재현 ✓' : '공식 예시 불일치'}</span></div></div>
-      <nav class="rl-jump" aria-label="이 화면 바로가기">${[['rl-formula', '공식·계수표'], ['rl-sim', '시뮬레이터'], ['rl-rule', '협상 규칙'], ['rl-hist', '변경 이력'], ['rl-log', '협상 로그']].map(([id, l]) => `<button type="button" class="btn sm" data-act="rulesJump" data-v="${id}">${l}</button>`).join('')}</nav>
+      <nav class="rl-jump" aria-label="이 화면 바로가기">${[['rl-formula', '공식·계수표'], ['rl-sim', '시뮬레이터'], ['rl-rule', '협상 규칙'], ['rl-dist', '분포·보정'], ['rl-hist', '변경 이력'], ['rl-log', '협상 사례집']].map(([id, l]) => `<button type="button" class="btn sm" data-act="rulesJump" data-v="${id}">${l}</button>`).join('')}</nav>
       <section class="panel" id="rl-formula" aria-labelledby="h-rl-f"><h3 id="h-rl-f">산정 공식</h3><div class="formula">수익가치 V = B × L × F × S × A × N   (천원 단위 반올림)</div>
         <dl class="rl-dl">
           <div><dt>B</dt><dd><b>기본 예상가치</b> — <b>1인 기준</b> 월 효과 × 유효개월(상한 12). 월 효과 = 절감시간 × ${won(HOUR_VALUE)}원/시간 + 월 매출·이익 기여 + 월 비용절감. 1회성은 1개월분만.</dd></div>
@@ -200,6 +275,7 @@
         ${coefTables()}
       </section>
       ${simPanel()}
+      ${distPanel()}
       <div class="grid2">
         <section class="panel" id="rl-rule" aria-labelledby="h-rl-r"><h3 id="h-rl-r">협상 규칙</h3><ol class="rl-ol">
           <li>회장이 근거(실측 데이터, 영향 인원 증빙, 재사용 가능성)를 내면 Claude가 <b>수용 / 부분수용 / 거절</b>과 사유를 답합니다.</li>
@@ -224,6 +300,13 @@
   APP.acts.rulesDraftReset = () => { S.ui.rulesDraft = clone(BASE); S.ui.rulesDraftOpen = true; };
   APP.acts.rulesNegoF = (el) => { S.ui.rulesNegoF = el.dataset.v; };
   APP.acts.rulesJump = (el) => { setTimeout(() => { const t = document.getElementById(el.dataset.v); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 0); };
+  APP.acts.rulesPreset = (el) => { const pr = PRESETS[+el.dataset.v]; if (!pr) return; pr[1](S.ui.rulesDraft); S.ui.rulesDraftOpen = true; toast(`예시 보정안 적용: ${pr[0]} (시뮬레이션만)`); };
+  APP.acts.rulesLoad = (el) => { const a = S.achievements.find((x) => x.id === el.dataset.id); if (!a) return; S.ui.rulesSim = simInput(a); S.ui.rulesItemsOpen = true; toast('이 건 값을 시뮬레이터에 넣었습니다'); setTimeout(() => { const t = document.getElementById('rl-sim'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 0); };
+  APP.acts.rulesSimClear = () => { S.ui.rulesSimQ = ''; };
+  APP.acts.rulesNegoQClear = () => { S.ui.rulesNegoQ = ''; };
+  APP.forms.rulesSimilar = (fd) => { S.ui.rulesSimQ = (fd.get('q') || '').toString().trim().slice(0, 300); if (S.activity && S.ui.rulesSimQ) S.activity.unshift({ id: 'ac' + Date.now().toString(36), at: new Date().toISOString(), menu: 'rules', type: 'similar', text: '협상 비슷한 사례 찾기', ref: '' }); };
+  APP.forms.rulesNegoQ = (fd) => { S.ui.rulesNegoQ = (fd.get('q') || '').toString().trim().slice(0, 40); };
+  document.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('rl-items')) S.ui.rulesItemsOpen = e.target.open; }, true);
   APP.acts.rulesUndo = () => { const r = S.rewardRules.pop(); toast(`${r.version} 기록을 취소했습니다`); };
   APP.forms.rulesChange = (fd) => {
     const g = (k) => (fd.get(k) || '').toString().trim();
@@ -234,6 +317,7 @@
     const last = S.rewardRules[S.rewardRules.length - 1].version.replace('v', '').split('.').map(Number);
     const version = `v${last[0]}.${last[1] + 1}`;
     S.rewardRules.push({ version, effective_from: eff, reason: g('reason'), kind, changes, draft: clone(S.ui.rulesDraft) });
+    if (S.activity) { S.activity.unshift({ id: 'ac' + Date.now().toString(36), at: new Date().toISOString(), menu: 'rules', type: 'change', text: `보상 기준 ${version} 기록(${kind}) · ${eff} 적용`, ref: version }); if (S.activity.length > 300) S.activity = S.activity.slice(0, 300); }
     S.ui.rulesDraft = clone(BASE); S.ui.rulesDraftOpen = false;
     toast(`${version} 기록 — ${md(eff)}부터 적용 예정(목업)`);
   };
@@ -264,6 +348,7 @@
   }
   function refresh(form) {
     const box = $('#rl-result'); if (box) box.innerHTML = simResult();
+    const dp = document.getElementById('rl-dist'); if (dp && form.dataset.rl === 'draft') dp.outerHTML = distPanel();
     // 구간·형태 이름이 바뀌는 라벨, 1회성 시 유효개월 비활성, 변경안 기록 버튼 상태를 맞춘다
     const view = form.closest('#rl-sim'); if (!view) return;
     const s = S.ui.rulesSim; const ti = tierIdx(+s.headcount || 1); const d = S.ui.rulesDraft;
