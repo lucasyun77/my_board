@@ -464,6 +464,46 @@
       </div>`;
   }
 
+
+  /* ---------- P3: 작업 종류별 AI 추천표 · 직원 비교 자리 ---------- */
+  // Claude 의견(추정). 회사 도입·연결 여부는 '연결' 칸에 따로 적고, 확인 안 된 것은 미확인.
+  const RECO = [
+    { job: '보고서·기획서 초안, 긴 문서 요약', ai: 'Claude', why: '긴 문서를 한 번에 읽고 한국어 문장으로 정리. 사내 스킬(파일명 규칙·벌툰 PPT 등)을 그대로 적용', alt: 'ChatGPT', how: '자료를 붙이고 "누가 읽는지·몇 장·결론 먼저"를 함께 적어 주세요.' },
+    { job: '업무 자동화·프로그램(스킬·예약 작업·코드)', ai: 'Claude Code', why: '저장소 파일을 직접 고치고 실행·확인까지 해서 결과물이 바로 남음', alt: '—', how: '"무엇을 자동으로, 언제, 결과는 어디에"를 한 문장으로 주시면 됩니다.' },
+    { job: '엑셀 정리·집계, 표 만들기', ai: 'Claude', why: 'xlsx 스킬로 실제 파일을 만들고 수식까지 넣음', alt: 'ChatGPT', how: '원본 파일과 원하는 결과 표 모양(열 이름)을 주세요.' },
+    { job: '사내 자료 찾기(Slack·Asana·Drive·메일)', ai: 'Claude + 커넥터', why: '이미 연결된 커넥터로 원본을 직접 검색해 출처와 함께 답함', alt: 'Gemini(구글 문서 안에서만)', how: '"기간·채널(또는 폴더)·찾는 것"을 적어 주세요.' },
+    { job: '구글 문서·시트 안에서 바로 고치기', ai: 'Gemini', why: '구글 워크스페이스 화면 안에서 바로 쓰는 용도', alt: 'Claude(구글 커넥터)', how: '회사 Gemini 도입 여부부터 확인이 필요합니다.' },
+    { job: '이미지·디자인 시안, 카드뉴스', ai: 'Canva 커넥터', why: 'Claude는 그림을 직접 그리지 않음. 시안·편집은 Canva가 맞음', alt: 'ChatGPT(이미지 생성)', how: '브랜드(벌툰 등)와 크기·문구를 정해 주세요.' },
+    { job: '최신 정보 조사(시장·경쟁사·법령)', ai: 'Claude(웹 검색·법령 커넥터)', why: '출처 링크를 붙여 정리. 법령은 법령 커넥터로 원문 확인', alt: 'Gemini·ChatGPT 검색', how: '"언제 기준·어느 나라·몇 개 출처"를 적어 주세요.' },
+    { job: '회의 녹음 → 회의록', ai: '미확인', why: '녹음·받아쓰기 도구가 정해지지 않음. 받아쓴 글이 있으면 요약은 Claude', alt: '—', how: '녹음 도구를 정하면 추천을 채웁니다.' }
+  ];
+  const CONN = { claude: ['측정', 'Claude Code 세션 기록으로 사용량 확인됨'], chatgpt: ['미확인', '회사 계정·관리자 키 확인 전'], gemini: ['미확인', '회사 도입·관리자 키 확인 전'], canva: ['미확인', '이 계정에 커넥터는 있으나 사용량 경로 없음'] };
+  const connOf = (ai) => /Claude/.test(ai) ? 'claude' : /ChatGPT/.test(ai) ? 'chatgpt' : /Gemini/.test(ai) ? 'gemini' : /Canva/.test(ai) ? 'canva' : null;
+  function guideView() {
+    const q = (S.ui.aiRecoQ || '').trim();
+    const rows = RECO.filter((r) => !q || (r.job + r.ai + r.why + r.alt).toLowerCase().includes(q.toLowerCase()));
+    const open = S.ui.aiRecoOpen;
+    return `<div class="ai-tabtop"><p class="small muted">작업 종류마다 어떤 AI가 알맞은지 정리한 표입니다. Claude의 의견(${badge('추정')})이며, 회사에서 실제로 쓸 수 있는지는 '연결' 칸을 보세요.</p></div>
+      <section class="panel"><h3>작업 종류별 알맞은 AI ${badge('추정')}</h3>
+        <label class="ai-search"><span class="small muted">작업 찾기</span><input type="search" id="aiRecoQ" value="${esc(q)}" placeholder="예: 엑셀, 회의록, 디자인" autocomplete="off"></label>
+        <ul class="ai-reco" id="aiRecoList">${recoRows(rows, open)}</ul>
+        <p class="small muted ai-note">추천은 이 회사에 연결된 도구 기준입니다. 새 AI·커넥터가 연결되면 이 표를 고칩니다.</p>
+      </section>
+      <section class="panel"><h3>직원 AI 활용 비교 ${badge('미확인')}</h3>
+        <div class="tbl-wrap"><table class="ai-prov"><thead><tr><th>부서·직원</th><th class="r">AI 사용</th><th class="r">AI 비용</th><th class="r">확정 가치</th><th class="r">효과 배수</th></tr></thead>
+          <tbody><tr class="unk"><td data-l="AI"><b>수훈보드 연동 전</b><div class="small muted">직원 목록·사용 기록을 아직 받지 않습니다</div></td><td data-l="입력" class="r muted">—</td><td data-l="출력" class="r muted">—</td><td data-l="비용" class="r muted">—</td><td data-l="근거">${badge('미확인')}</td></tr></tbody></table></div>
+        <h4 class="ai-h4">채우려면 필요한 것</h4>
+        <ul class="ai-need small"><li>수훈보드 직원·부서 목록 연동(이름은 수훈보드에서 가져오고 여기서 만들지 않음)</li><li>직원별 Claude 사용 기록(팀·엔터프라이즈 관리자 사용량 보고서)</li><li>성과·레벨 확정 건에 담당 직원 표시</li><li>ChatGPT·Gemini 회사 계정의 관리자 사용량</li></ul>
+        <p class="small muted ai-note">연봉·임금 정보는 이 비교에 쓰지 않습니다.</p>
+      </section>`;
+  }
+  function recoRows(rows, open) {
+    if (!rows.length) return '<li class="none muted">맞는 작업이 없습니다. 다른 말로 찾아 보세요.</li>';
+    return rows.map((r) => { const k = connOf(r.ai); const c = k ? CONN[k] : ['미확인', '추천 AI가 정해지지 않음']; const on = open === r.job;
+      return `<li class="${on ? 'on' : ''}"><button type="button" class="ai-reco-h" data-act="aiReco" data-v="${esc(r.job)}" aria-expanded="${on}"><span class="j">${esc(r.job)}</span><span class="a">${esc(r.ai)}</span><span class="c"><span class="small muted">연결</span> ${badge(c[0])} <span class="chev" aria-hidden="true">${on ? '▾' : '▸'}</span></span></button>
+        ${on ? `<div class="ai-reco-b small"><p><b>이유</b> ${esc(r.why)}</p><p><b>대안</b> ${esc(r.alt)}</p><p><b>맡기는 법</b> ${esc(r.how)}</p><p class="muted"><b>연결</b> ${esc(c[1])}</p></div>` : ''}</li>`; }).join('');
+  }
+
   /* 받은 항목(다른 메뉴가 ai로 보낸 것) */
   function inboxBox() {
     const items = S.inbox.filter((x) => x.to === 'ai' && !x.done);
@@ -539,6 +579,13 @@
       else { S.ui.aiPickFor = null; toast('목록에 없는 스킬이라 원래 값을 그대로 둡니다'); }
       rerender();
     } else if (e.key === 'Escape') { e.preventDefault(); S.ui.aiPickFor = null; rerender(); }
+  });
+
+  APP.acts.aiReco = (el) => { S.ui.aiRecoOpen = S.ui.aiRecoOpen === el.dataset.v ? null : el.dataset.v; };
+  document.addEventListener('input', (e) => {
+    if (e.target.id !== 'aiRecoQ') return;
+    S.ui.aiRecoQ = e.target.value; const q = e.target.value.trim().toLowerCase();
+    const ul = document.getElementById('aiRecoList'); if (ul) ul.innerHTML = recoRows(RECO.filter((r) => !q || (r.job + r.ai + r.why + r.alt).toLowerCase().includes(q)), S.ui.aiRecoOpen);
   });
   APP.acts.aiPeriod = (el) => { S.ui.aiPeriod = el.dataset.v; S.ui.aiPick = null; };
   APP.acts.aiPick = (el) => { S.ui.aiPick = +el.dataset.v; };

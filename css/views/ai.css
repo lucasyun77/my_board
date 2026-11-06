@@ -193,3 +193,25 @@
 .ai-pp li.on, .ai-pp li[data-v]:hover { background: var(--goldSoft); color: var(--ink); }
 .ai-pp li.none { color: var(--sub); cursor: default; }
 @media (max-width: 900px) { .ai-ach .sk { width: 100%; } .ai-pp { width: 100%; } }
+
+/* ── AI 추천 ── */
+.ai-search { display: flex; flex-direction: column; gap: 4px; max-width: 360px; margin: 2px 0 12px; }
+.ai-search input { font-size: 15px; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.ai-search input:focus { border-color: var(--gold); outline: none; }
+.ai-reco { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-reco > li { border-radius: 12px; background: var(--paper2); }
+.ai-reco > li.on { box-shadow: inset 0 0 0 1.5px var(--gold); }
+.ai-reco > li.none { background: none; padding: 8px 0; }
+.ai-reco-h { width: 100%; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; border: 0; background: none; padding: 12px 14px; cursor: pointer; font: inherit; color: var(--ink); font-size: 15px; min-height: 48px; }
+.ai-reco-h .j { font-weight: 700; }
+.ai-reco-h .a { color: var(--goldInk); font-weight: 700; }
+.ai-reco-b { padding: 0 14px 12px; line-height: 1.6; font-size: 14.5px; }
+.ai-reco-b p { margin: 4px 0 0; }
+.ai-need { margin: 4px 0 0; padding-left: 20px; line-height: 1.8; font-size: 15px; }
+@media (max-width: 600px) {
+  .ai-reco-h { grid-template-columns: minmax(0, 1fr) auto; }
+  .ai-reco-h .a { grid-column: 1; grid-row: 2; }
+  .ai-reco-h .c { grid-column: 2; grid-row: 1 / span 2; }
+}
+.ai-reco-h .c { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.ai-reco-h .chev { color: var(--goldInk); font-size: 13px; margin-left: 2px; }
