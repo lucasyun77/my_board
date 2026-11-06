@@ -188,18 +188,20 @@
   /* ---------- ⑦ 보상 기준 ---------- */
 
   /* ---------- 라우팅 ---------- */
-  const TABS = [['today', '오늘 할 일', null, '#3D1E0F'], ['directives', '지시 관리', null, '#E9A400'], ['ideas', '신사업', null, '#E46F8C'], ['value', '성과·레벨', null, '#2E8B57'], ['learn', '경영학습', null, '#5B6FB8'], ['ai', 'AI 사용', null, '#2F8C7A'], ['ops', '경영 현황', null, '#8C6A4F'], ['rules', '보상 기준', null, '#C0392B']];
+  const TABS = [['today', '오늘 할 일', null, '#3D1E0F'], ['numbers', '내가 보는 숫자', null, '#1F2A4D'], ['directives', '지시 관리', null, '#E9A400'], ['ideas', '신사업', null, '#E46F8C'], ['value', '성과·레벨', null, '#2E8B57'], ['learn', '경영학습', null, '#5B6FB8'], ['ai', 'AI 사용', null, '#2F8C7A'], ['ops', '경영 현황', null, '#8C6A4F'], ['ideabank', '아이디어뱅크', null, '#C0392B']];
+  // 사이드 메뉴에는 없지만 링크로 여는 화면(보상 기준은 성과·레벨의 버튼으로 연다). 값 = 사이드에서 켜 둘 메뉴
+  const SUB_ROUTES = { rules: 'value' };
   /* 테마: 시스템 설정을 따르되, 버튼으로 바꾸면 이 브라우저에 기억 */
   const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
   try { const t = localStorage.getItem('myboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* */ }
   function syncThemeBtn() { const b = document.getElementById('themeBtn'); if (b) b.textContent = isDark() ? '밝게 보기' : '어둡게 보기'; }
-  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) ? h : 'home'; };
+  const curTab = () => { const h = location.hash.slice(1); return TABS.some((t) => t[0] === h) || SUB_ROUTES[h] ? h : 'home'; };
   function render() {
     const tab = curTab();
     const isHome = tab === 'home';
     const bf = document.getElementById('brandFace'); if (bf && !bf.firstChild) bf.innerHTML = ART.face(44);
     if (isHome) renderTop(); else $('#top').innerHTML = '';
-    $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
+    $('#tabbar').innerHTML = TABS.map(([id, label, , color]) => `<button type="button" role="tab" aria-selected="${id === tab || id === SUB_ROUTES[tab]}" data-act="tab" data-v="${id}"><span class="ico" style="background:${color}"></span>${label}</button>`).join('');
     syncThemeBtn();
     $('#view').innerHTML = isHome ? viewHome() : (APP.views[tab] ? APP.views[tab]() : '<p class="muted">이 메뉴 파일을 불러오지 못했습니다.</p>');
     save();
