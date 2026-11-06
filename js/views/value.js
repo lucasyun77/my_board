@@ -63,6 +63,9 @@
     S.valueInboxSeeded = true;
   }
   const FROM_NAME = { today: '오늘 할 일', directives: '지시 관리', ideas: '신사업', learn: '경영학습', ops: '경영 현황', ai: 'AI 사용', ideabank: '아이디어뱅크', numbers: '내가 보는 숫자' };
+  const KIND_NAME = { achievement: '성과 평가 요청', '성과 평가': '성과 평가 요청' };
+  const BADGE_OK = { '측정': 1, '수기': 1, '추정': 1, '미확인': 1 };
+  const inTitle = (x) => x.title || (x.payload && x.payload.title) || '제목 없는 완료분';
   const myInbox = () => S.inbox.filter((x) => x.to === 'value' && !x.done);
 
   /* ---------- 커리어 게임: 칭호·연속 기록·업적 배지 ---------- */
@@ -272,7 +275,7 @@
     if (!list.length) return '';
     return `<section class="panel val-inbox" aria-labelledby="h-vin"><h3 id="h-vin">받은 항목 <span class="pill st-wait">${list.length}</span><span class="small muted val-hint">다른 메뉴에서 넘어온 완료분입니다. 평가를 시작하면 아래 평가 건으로 들어갑니다.</span></h3>
       ${list.map((x) => `<div class="val-inrow">
-        <div class="val-ititle"><b>${esc(x.title)}</b><div class="small muted">${esc(FROM_NAME[x.from] || x.from)} · ${esc(x.kind || '')} · ${md(x.at.slice(0, 10))}${x.payload && x.payload.est_minutes ? ` · 예상 ${x.payload.est_minutes}분 / 실제 ${x.payload.actual_minutes ?? '-'}분` : ''}</div></div>
+        <div class="val-ititle"><b>${esc(inTitle(x))}</b><div class="small muted">${esc(FROM_NAME[x.from] || x.from || '다른 메뉴')} · ${esc(KIND_NAME[x.kind] || x.kind || '완료분')} · ${md(((x.payload && x.payload.date) || x.at || S.today).slice(0, 10))}${x.payload && x.payload.est_minutes ? ` · 예상 ${x.payload.est_minutes}분 / 실제 ${x.payload.actual_minutes ?? '-'}분${x.payload.actual_minutes != null && BADGE_OK[x.payload.time_source] ? ' ' + badge(x.payload.time_source) : ''}` : ''}</div></div>
         ${u.evalOpen === x.id ? '' : u.skip === x.id
           ? `<div class="val-ask"><span>평가하지 않고 받은 항목에서 뺍니다.</span><span class="row"><button type="button" class="btn sm" data-act="vInSkip" data-id="${x.id}">빼기</button><button type="button" class="btn sm" data-act="vInAskSkip" data-id="">취소</button></span></div>`
           : `<div class="row"><button type="button" class="btn primary sm" data-act="vInOpen" data-id="${x.id}">바로 평가 시작</button><button type="button" class="btn sm" data-act="vInAskSkip" data-id="${x.id}">평가 안 함</button></div>`}
@@ -300,7 +303,7 @@
   function evalInput(fd, x, fromPayload) {
     const p = x.payload || {}; const g = (n, d) => (fromPayload ? d : (fd.get(n) ?? '').toString().trim());
     const num = (v, d) => (v === '' || v == null || isNaN(+v) ? d : +v);
-    return { id: uid('a'), title: x.title, date: S.today, output_url: p.output_url || '', output_type: F_TYPES[g('output_type', p.output_type)] ? g('output_type', p.output_type) : 'doc', headcount: Math.max(1, num(g('headcount', p.headcount), 1)), by_agent: fromPayload ? !!p.by_agent : g('by_agent') === '1', saved_hours: Math.max(0, num(g('saved_hours', p.saved_hours), 1)), months: Math.min(12, Math.max(1, num(g('months', p.months), 12))), monthly_revenue: Math.max(0, num(g('monthly_revenue', p.monthly_revenue), 0)), monthly_cost: Math.max(0, num(g('monthly_cost', p.monthly_cost), 0)), one_off: fromPayload ? false : g('one_off') === '1', est_minutes: Math.max(1, num(g('est', p.est_minutes), 60)), actual_minutes: num(g('act', p.actual_minutes), null), N: 1, status: '평가중', negotiations: [], from_inbox: x.id, source_menu: x.from };
+    return { id: uid('a'), title: inTitle(x), date: S.today, output_url: p.output_url || '', output_type: F_TYPES[g('output_type', p.output_type)] ? g('output_type', p.output_type) : 'doc', headcount: Math.max(1, num(g('headcount', p.headcount), 1)), by_agent: fromPayload ? !!p.by_agent : g('by_agent') === '1', saved_hours: Math.max(0, num(g('saved_hours', p.saved_hours), 1)), months: Math.min(12, Math.max(1, num(g('months', p.months), 12))), monthly_revenue: Math.max(0, num(g('monthly_revenue', p.monthly_revenue), 0)), monthly_cost: Math.max(0, num(g('monthly_cost', p.monthly_cost), 0)), one_off: fromPayload ? false : g('one_off') === '1', est_minutes: Math.max(1, num(g('est', p.est_minutes), 60)), actual_minutes: num(g('act', p.actual_minutes), null), N: 1, status: '평가중', negotiations: [], from_inbox: x.id, source_menu: x.from };
   }
   const previewHtml = (inp) => { const a = evaluate(Object.assign({}, inp)); return `<span class="small muted">예상 수익가치 ${badge('추정')}</span> <b class="val-mid num">${kwon(a.value_won)}<small>천원</small></b> <span class="small muted">B ${won(a.B)}원 × L ${a.L.toFixed(1)} × F ${a.F.toFixed(1)} × S ${a.S.toFixed(2)} × A ${a.A.toFixed(1)} × N 1.00</span>`; };
 
