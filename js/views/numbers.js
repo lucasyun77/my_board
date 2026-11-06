@@ -145,7 +145,8 @@
     const meta = [
       c.target != null ? `목표 ${fmtUnit(c.target, c.unit)}${better(c) === 'down' ? ' 이하' : ''}` : '목표 없음',
       c.alarmDir && c.alarmV != null ? `경보 ${fmtUnit(c.alarmV, c.unit)} ${c.alarmDir}` : '경보 없음',
-      c.freq
+      c.freq,
+      c.owner ? `담당자: ${c.owner}` : '담당자 없음'
     ];
     const first = idx === 0, last = idx === list.length - 1;
     const blank = v == null && c.source === '미확인' && !c.hist.length;
@@ -205,6 +206,7 @@
       <label class="f">경보 값<input type="number" step="any" name="alarmV" value="${o.alarmV ?? ''}"></label>
       ${o.calc ? `<label class="f">데이터 원천<input type="text" value="현황판 자동 계산 (${esc(o.source)})" disabled></label>` : `<label class="f">데이터 원천${sel('source', SOURCES.map((s) => [s, s]), o.source || '수기')}</label>`}
       <label class="f">갱신 주기${sel('freq', FREQS.map((f) => [f, f]), o.freq || '매일')}</label>
+      <label class="f">담당자${picker({ key: 'f-' + (o.id || 'new'), name: 'owner', value: o.owner || '', label: '담당자 찾기' })}</label>
       <label class="f wide">메모(원천·정의)<input type="text" name="note" maxlength="80" value="${esc(o.note || '')}" placeholder="예: 가맹 계약 대장 기준, 월말 마감"></label>`;
   }
   function editForm(c) {
@@ -288,6 +290,7 @@
     if (!c.calc && SOURCES.includes(g('source'))) c.source = g('source');
     c.freq = FREQS.includes(g('freq')) ? g('freq') : c.freq;
     c.note = g('note');
+    c.owner = people().some((p) => p.n === g('owner')) ? g('owner') : '';
     return c;
   }
   APP.forms.numbersAdd = (fd) => {
@@ -356,7 +359,7 @@
     if (m.manual && mv) return { v: mv.v, s: '수기', d: mv.d };
     return { v: null, s: '미확인' };
   }
-  const shortWon = (v) => (Math.abs(v) >= 1e8 ? `${(v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억` : Math.abs(v) >= 1e4 ? `${Math.round(v / 1e4).toLocaleString('ko-KR')}만` : Number(v).toLocaleString('ko-KR'));
+  const shortWon = (v) => (Math.abs(v) >= 1e8 ? `${(v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억` : Math.abs(v) >= 1e6 ? `${Math.round(v / 1e4).toLocaleString('ko-KR')}만` : Math.round(v).toLocaleString('ko-KR'));
   const showV = (v, unit) => (v == null ? '—' : unit === '원' ? `${shortWon(v)}<small>원</small>` : `${Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}${unit ? `<small>${esc(unit)}</small>` : ''}`);
 
   /* ---------- Claude가 요청을 읽고 페이지를 구성(목업 규칙) ---------- */
@@ -581,14 +584,16 @@
   /* ---------- 메뉴 화면 ---------- */
   function viewNumbers() {
     const u = ui();
-    const mode = u.mode || 'board';
+    if (!u.mode) u.mode = 'dash';
     const pg = u.open ? pageById(u.open) : null;
-    if ((mode === 'page') && !pg) u.mode = 'board';
-    const head = `<div class="view-head"><div><h2>내가 보는 숫자</h2><p>보고 싶은 숫자를 적으면 Claude가 찾아 카드로 올리고, 누르면 그 숫자를 지켜보는 페이지가 열립니다.</p></div>
-      <div class="seg" role="tablist" aria-label="보기"><button type="button" data-act="numbersMode" data-v="board" aria-pressed="${u.mode !== 'cards'}">숫자 게시판</button><button type="button" data-act="numbersMode" data-v="cards" aria-pressed="${u.mode === 'cards'}">핵심 숫자</button></div></div>`;
-    if (u.mode === 'cards') return head + viewCards();
-    if (u.mode === 'page') return head + viewPage(pg);
-    if (u.mode === 'studio') return head + viewStudio(pg);
+    if (u.mode === 'page' && !pg) u.mode = 'board';
+    const mode = u.mode;
+    const head = `<div class="view-head"><div><h2>내가 보는 숫자</h2><p>아침에 「오늘 볼 숫자」만 보면 됩니다. 보고 싶은 숫자는 글로 적으면 Claude가 찾아 카드로 올립니다.</p></div>
+      <div class="seg" role="tablist" aria-label="보기">${[['dash', '계기판'], ['board', '숫자 게시판'], ['cards', '핵심 숫자']].map(([k, l]) => `<button type="button" data-act="numbersMode" data-v="${k}" aria-pressed="${(k === 'board' ? ['board', 'page', 'studio'].includes(mode) : mode === k)}">${l}</button>`).join('')}</div></div>${inboxBox()}`;
+    if (mode === 'dash') return head + viewDash();
+    if (mode === 'cards') return head + viewCards();
+    if (mode === 'page') return head + viewPage(pg);
+    if (mode === 'studio') return head + viewStudio(pg);
     return head + viewBoard();
   }
 
@@ -624,5 +629,365 @@
     toast(`${mLabel(pg, k)}: ${Number(v).toLocaleString('ko-KR')}${M[k].unit} 기록(수기)`);
   };
 
+
+  /* =====================================================================
+     회장 계기판 — 아침에 '오늘 볼 숫자 3개'만 보면 되는 화면.
+     P1 숫자 분해 나무·목표 역산·담당자 / P2 이상 신호·오늘 볼 숫자·원인 가설·오늘 할 일로 보내기
+     P3 시나리오 계산기·주간 숫자 리포트. 원천 없는 숫자는 '—'·미확인, 예시는 '예시값' 표시로만.
+     ===================================================================== */
+  S.activity = S.activity || [];
+  S.inbox = S.inbox || [];
+  const NX = N();
+  NX.hyp = NX.hyp || {};
+  NX.ex = NX.ex || { stores: 100, guests: 3000, ticket: 10000 }; // 예시값(실제 수치 아님)
+  NX.treeTarget = NX.treeTarget || {};
+  NX.scn = NX.scn || { ds: 5, dg: 0, dt: 3 };
+  NX.cards.forEach((c) => { if (c.owner == null) c.owner = ''; });
+
+  function logAct(type, text, ref) {
+    S.activity.push({ id: uid('ac'), at: new Date().toISOString(), menu: 'numbers', type, text, ref: ref || '' });
+    if (S.activity.length > 300) S.activity.splice(0, S.activity.length - 300);
+  }
+  const exBadge = '<span class="b nb-exb" title="예시값: 구조를 보여 주려고 넣은 가짜 값입니다. 실제 수치가 아닙니다">예시값</span>';
+  const aiBadge = '<span class="b nb-aib" title="목업 AI: 화면 안 규칙으로 만든 문장입니다">목업 AI</span>';
+  const curVal = (c) => { if (c.source === '미확인' && !c.calc) return null; const p = series(c); return p.length ? p[p.length - 1].v : null; };
+
+  /* ---------- 담당자: 입력해서 찾는 칸 (이름·부서·직급·초성, ↑↓·Enter·Esc·×) ---------- */
+  function people() {
+    const m = new Map();
+    const add = (n, d, g) => { if (n && !m.has(n)) m.set(n, { n, d, g }); };
+    add('회장 직접', '회장실', '');
+    (S.ORGS || []).forEach((o) => add(`${o} 책임자`, o, '부서장'));
+    S.directives.forEach((d) => add(d.assignee, d.org, '담당'));
+    return [...m.values()].filter((p) => p.n !== '미지정');
+  }
+  const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const cho = (s) => String(s || '').replace(/[가-힣]/g, (ch) => CHO[Math.floor((ch.charCodeAt(0) - 0xAC00) / 588)]);
+  const NBP = {};
+  function picker(o) {
+    NBP[o.key] = { act: o.act || '', id: o.id || '' };
+    const v = o.value || '';
+    return `<span class="nbp"><input type="text" class="nbp-in" id="nbp-${esc(o.key)}" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="nbpl-${esc(o.key)}" aria-label="${esc(o.label || '담당자 찾기')}" autocomplete="off" spellcheck="false" data-nbpk="${esc(o.key)}" data-prev="${esc(v)}" value="${esc(v)}" placeholder="담당 없음 · 이름·부서·초성" title="이름·부서·직급·초성(예: ㄱㅇㅈ)으로 찾기">${o.name ? `<input type="hidden" name="${esc(o.name)}" value="${esc(v)}">` : ''}${v ? `<button type="button" class="nbp-x" data-nbpx="${esc(o.key)}" tabindex="-1" aria-label="담당자 지우기" title="지우기">×</button>` : ''}<ul class="nbp-list" id="nbpl-${esc(o.key)}" role="listbox" hidden></ul></span>`;
+  }
+  function nbpMatches(q) {
+    q = String(q || '').trim().toLowerCase();
+    const onlyCho = q && /^[ㄱ-ㅎ\s]+$/.test(q);
+    return people().map((p) => {
+      if (!q) return [p, 0];
+      const n = p.n.toLowerCase(); const hay = [p.n, p.d, p.g].join(' ').toLowerCase();
+      if (onlyCho) { const c = cho(p.n); return [p, c.startsWith(q) ? 1 : c.includes(q) ? 2 : cho(hay).includes(q) ? 3 : -1]; }
+      return [p, n.startsWith(q) ? 1 : n.includes(q) ? 2 : hay.includes(q) ? 3 : -1];
+    }).filter((x) => x[1] >= 0).sort((a, b) => a[1] - b[1] || a[0].n.localeCompare(b[0].n, 'ko')).map((x) => x[0]);
+  }
+  function nbpOpen(inp, q) {
+    const ul = inp.parentNode.querySelector('.nbp-list'); const hits = nbpMatches(q);
+    ul.innerHTML = (!String(q || '').trim() ? '<li role="option" data-v="" class="nbp-empty">담당 없음</li>' : '')
+      + hits.map((p) => `<li role="option" data-v="${esc(p.n)}"><b>${esc(p.n)}</b><span>${esc([p.d, p.g].filter(Boolean).join(' · '))}</span></li>`).join('')
+      + (!hits.length ? '<li class="nbp-none" aria-disabled="true">맞는 사람이 없습니다</li>' : '');
+    ul.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    nbpActive(inp, ul.querySelector('li[data-v]' + (String(q || '').trim() ? ':not(.nbp-empty)' : '')));
+  }
+  function nbpActive(inp, li) {
+    const ul = inp.parentNode.querySelector('.nbp-list');
+    ul.querySelectorAll('li.on').forEach((x) => x.classList.remove('on'));
+    if (li) { li.classList.add('on'); li.id = li.id || uid('nbpo'); inp.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); } else inp.removeAttribute('aria-activedescendant');
+  }
+  function nbpClose(inp) { const ul = inp.parentNode && inp.parentNode.querySelector('.nbp-list'); if (ul) ul.hidden = true; inp.setAttribute('aria-expanded', 'false'); }
+  function nbpPick(inp, v) {
+    const reg = NBP[inp.dataset.nbpk]; if (!reg) return;
+    inp.value = v; inp.dataset.prev = v; nbpClose(inp);
+    const h = inp.parentNode.querySelector('input[type="hidden"]'); if (h) h.value = v;
+    if (reg.act) { inp.dataset.picked = '1'; const b = document.createElement('button'); b.type = 'button'; b.hidden = true; b.dataset.act = reg.act; b.dataset.id = reg.id; b.dataset.v = v; document.body.appendChild(b); b.click(); b.remove(); }
+  }
+  document.addEventListener('focusin', (e) => { const t = e.target; if (t && t.dataset && t.dataset.nbpk) { t.select(); nbpOpen(t, ''); } });
+  document.addEventListener('input', (e) => { const t = e.target; if (t && t.dataset && t.dataset.nbpk) nbpOpen(t, t.value); });
+  document.addEventListener('focusout', (e) => {
+    const t = e.target; if (!t || !t.dataset || !t.dataset.nbpk) return;
+    if (t.dataset.picked) { delete t.dataset.picked; nbpClose(t); return; }
+    nbpClose(t);
+    const typed = t.value.trim(); if (typed === t.dataset.prev) return;
+    if (!typed) { nbpPick(t, ''); return; }
+    const hits = nbpMatches(typed); const exact = hits.find((p) => p.n === typed) || (hits.length === 1 ? hits[0] : null);
+    if (exact) nbpPick(t, exact.n); else t.value = t.dataset.prev; // 없는 이름은 원래 값으로
+  });
+  window.addEventListener('keydown', (e) => {
+    const t = e.target; if (!t || !t.dataset || !t.dataset.nbpk) return;
+    const ul = t.parentNode.querySelector('.nbp-list');
+    const opts = [...ul.querySelectorAll('li[data-v]')]; const cur = ul.querySelector('li.on'); const i = opts.indexOf(cur);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (ul.hidden) { nbpOpen(t, ''); return; } nbpActive(t, opts[e.key === 'ArrowDown' ? Math.min(opts.length - 1, i + 1) : Math.max(0, i - 1)] || null); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (!ul.hidden && cur) nbpPick(t, cur.dataset.v); }
+    else if (e.key === 'Escape' && !ul.hidden) { e.preventDefault(); e.stopImmediatePropagation(); t.value = t.dataset.prev; nbpClose(t); }
+  }, true);
+  document.addEventListener('mousedown', (e) => {
+    const t = e.target; if (!t || !t.closest) return;
+    const li = t.closest('.nbp-list li[data-v]');
+    if (li) { e.preventDefault(); nbpPick(li.closest('.nbp').querySelector('.nbp-in'), li.dataset.v); return; }
+    if (t.closest('.nbp-list')) { e.preventDefault(); return; }
+    const x = t.closest('[data-nbpx]');
+    if (x) { e.preventDefault(); const inp = x.closest('.nbp').querySelector('.nbp-in'); nbpPick(inp, ''); if (!NBP[inp.dataset.nbpk].act) { x.remove(); inp.focus(); } }
+  });
+  A.numbersOwnerSet = (el) => { const c = byId(el.dataset.id); if (!c) return; c.owner = el.dataset.v || ''; logAct('owner', `「${c.name}」 담당 → ${c.owner || '없음'}`, c.id); toast(c.owner ? `「${c.name}」 담당을 ${c.owner}(으)로 정했습니다` : '담당을 비웠습니다'); };
+
+  /* ---------- P2 이상 신호 ---------- */
+  function signals(c) {
+    if (c.hidden) return [];
+    const out = []; const pts = series(c); const v = curVal(c);
+    if (isAlarm(c, v)) out.push({ k: 'alarm', w: 3, t: `경보 기준(${fmtUnit(c.alarmV, c.unit)} ${c.alarmDir}) 넘음` });
+    const r = rate(c, v); if (r != null && r <= 80) out.push({ k: 'target', w: 2, t: `목표 대비 ${r - 100}%` });
+    if (pts.length >= 4) {
+      const l = pts.slice(-4).map((p) => p.v); const worse = (a, b) => (better(c) === 'up' ? b < a : b > a);
+      if (worse(l[0], l[1]) && worse(l[1], l[2]) && worse(l[2], l[3])) out.push({ k: 'streak', w: 2, t: `3회 연속 ${better(c) === 'up' ? '하락' : '상승'}` });
+    }
+    if (stale(c)) out.push({ k: 'stale', w: 1, t: `갱신 지연(${c.freq} 주기)` });
+    return out;
+  }
+  function flagged() {
+    return NX.cards.map((c) => ({ c, s: signals(c) })).filter((x) => x.s.length)
+      .map((x) => Object.assign(x, { w: x.s.reduce((a, b) => a + b.w, 0) })).sort((a, b) => b.w - a.w);
+  }
+  function hypo(c, sig) {
+    const ks = sig.map((x) => x.k); const p = [];
+    const open = S.directives.filter(isOpen);
+    if (c.calc === 'overdue' || c.calc === 'dirRate') {
+      const od = open.filter((d) => d.due_at < S.today).sort((a, b) => a.due_at.localeCompare(b.due_at));
+      if (od[0]) p.push(`가장 오래 밀린 지시는 「${od[0].title}」(${od[0].org}, ${days(od[0].due_at, S.today)}일 경과)입니다.`);
+      const by = {}; od.forEach((d) => { by[d.org] = (by[d.org] || 0) + 1; }); const top = Object.entries(by).sort((a, b) => b[1] - a[1])[0];
+      if (top && top[1] > 1) p.push(`기한 경과가 ${top[0]}에 ${top[1]}건 몰려 있습니다.`);
+      const wait = open.filter((d) => d.status === '보고대기').length;
+      if (c.calc === 'dirRate' && wait) p.push(`보고대기 ${wait}건을 확인·완료하면 이행률이 바로 오릅니다.`);
+    } else if (c.calc === 'waiting') {
+      const w = (S.waiting || []).slice().sort((a, b) => a.since.localeCompare(b.since))[0];
+      if (w) p.push(`가장 오래 기다린 건은 「${w.title}」(${w.from}, ${days(w.since, S.today)}일)입니다.`);
+    } else if (c.calc === 'quizToday') {
+      p.push('오늘 학습 기록이 아직 적습니다. 경영학습의 「오늘의 복습 도전」 10문제로 목표를 채울 수 있습니다.');
+    } else if (c.calc === 'aiTok' || c.calc === 'aiCost') {
+      p.push([0, 6].includes(new Date().getDay()) ? '주말에는 사용량이 줄어드는 패턴입니다.' : '평일 사용량 변동입니다. 특정 작업(대량 문서 처리 등)이 몰렸는지 확인이 필요합니다.');
+    }
+    if (ks.includes('stale')) p.push('수기 입력이 밀렸습니다. 담당자에게 갱신을 요청하세요.');
+    if (!p.length) p.push('원인을 판단할 자료가 부족합니다. 담당자 확인이 필요합니다.');
+    return p.join(' ');
+  }
+  function sentToday(c) { return S.inbox.some((x) => x.from === 'numbers' && x.to === 'today' && !x.done && x.payload && x.payload.cardId === c.id && x.at.slice(0, 10) === S.today); }
+
+  function todayCard(x, i) {
+    const { c, s } = x; const v = curVal(c); const u = ui();
+    const memo = NX.hyp[c.id]; const editing = u.hypEdit === c.id;
+    const sent = sentToday(c);
+    return `<article class="nb-t3" aria-labelledby="nb-t3-${c.id}">
+      <div class="nb-t3-top"><span class="nb-t3-n num">${i + 1}</span><div class="nb-t3-name"><span class="nb-group">${esc(c.group)}</span><h3 id="nb-t3-${c.id}">${esc(c.name)}</h3></div>${badge(c.source)}</div>
+      <div class="nb-t3-v num">${v == null ? '—' : fmt(v)}${v != null && c.unit ? `<small>${esc(c.unit)}</small>` : ''}</div>
+      <ul class="nb-sigs">${s.map((g) => `<li class="sg-${g.k}">${esc(g.t)}</li>`).join('')}</ul>
+      <div class="nb-hyp">
+        <div class="nb-hyp-h">원인 가설 ${memo ? `<span class="b h" title="직접 고친 메모">수기</span><span class="small muted">${esc(memo.at)}</span>` : aiBadge}</div>
+        ${editing ? `<form data-form="numbersHyp" data-id="${c.id}" class="nb-hyp-form"><textarea id="nb-hyp-${c.id}" name="t" rows="3" maxlength="300" aria-label="원인 가설 메모">${esc(memo ? memo.text : hypo(c, s))}</textarea><div class="row"><button class="btn sm primary">메모 저장</button>${memo ? `<button type="button" class="btn sm" data-act="numbersHypReset" data-id="${c.id}">AI 가설로 되돌리기</button>` : ''}<button type="button" class="btn sm" data-act="numbersHypEdit" data-id="">취소</button></div></form>`
+          : `<p>${esc(memo ? memo.text : hypo(c, s))}</p><button type="button" class="btn sm" data-act="numbersHypEdit" data-id="${c.id}">메모 고치기</button>`}
+      </div>
+      <label class="nb-own"><span>담당</span>${picker({ key: 't3-' + c.id, act: 'numbersOwnerSet', id: c.id, value: c.owner, label: `${c.name} 담당자 찾기` })}</label>
+      <div class="row nb-t3-act">
+        <button type="button" class="btn sm ${sent ? '' : 'primary'}" data-act="numbersSendToday" data-id="${c.id}" ${sent ? 'disabled' : ''}>${sent ? '오늘 할 일로 보냄 ✓' : '오늘 할 일로 보내기'}</button>
+        <button type="button" class="btn sm" data-act="numbersGoCard" data-id="${c.id}">카드 보기</button>
+      </div>
+    </article>`;
+  }
+
+  /* ---------- P1 숫자 분해 나무 ---------- */
+  const node = (k, label, unit, op, kids) => ({ k, label, unit, op, kids });
+  const TREES = {
+    sales: { title: '월 매출', root: node('sales', '월 매출(3개 브랜드)', '원', '×', [node('stores', '운영 점포 수', '곳'), node('perStore', '점당 월 매출', '원', '×', [node('guests', '점당 월 객수', '명'), node('ticket', '객단가', '원')])]) },
+    dir: { title: '지시 이행률', root: node('rate', '지시 이행률', '%', '÷', [node('done', '완료한 지시', '건'), node('all', '전체 지시', '건')]) },
+    tok: { title: '토큰 산출물 가치', root: node('val', '산출물 추정가치(확정)', '원', '×', [node('tok', '사용 토큰(14일)', 'M'), node('per', '토큰 100만당 가치', '원')]) }
+  };
+  function leaves(id) {
+    if (id === 'sales') {
+      if (!ui().useEx) return {};
+      const e = NX.ex; return { stores: { v: e.stores, s: '예시' }, guests: { v: e.guests, s: '예시' }, ticket: { v: e.ticket, s: '예시' } };
+    }
+    if (id === 'dir') return { done: { v: S.directives.filter((d) => d.status === '완료').length, s: '측정' }, all: { v: S.directives.length, s: '측정' } };
+    if (id === 'tok') { const pg = { manual: {} }; const t = mval(pg, 'tok14'); const p = mval(pg, 'valuePerM'); return { tok: { v: t.v, s: t.s }, per: { v: p.v, s: p.s } }; }
+    return {};
+  }
+  const RANK = ['측정', '수기', '추정', '예시', '미확인'];
+  function evalNode(n, L) {
+    if (!n.kids) { const x = L[n.k]; return x && x.v != null ? { v: x.v, s: x.s } : { v: null, s: '미확인' }; }
+    const vs = n.kids.map((k) => evalNode(k, L));
+    const s = vs.map((x) => x.s).sort((a, b) => RANK.indexOf(b) - RANK.indexOf(a))[0];
+    if (vs.some((x) => x.v == null)) return { v: null, s: '미확인' };
+    if (n.op === '×') return { v: vs.reduce((a, b) => a * b.v, 1), s };
+    if (n.op === '÷') return { v: vs[1].v ? (vs[0].v / vs[1].v) * (n.unit === '%' ? 100 : 1) : null, s };
+    return { v: null, s: '미확인' };
+  }
+  function need(n, T, L, out) {
+    out[n.k] = T; if (!n.kids || T == null) return;
+    const vs = n.kids.map((k) => evalNode(k, L).v);
+    n.kids.forEach((k, i) => {
+      let r = null;
+      if (n.op === '×') { const o = vs.filter((_, j) => j !== i); r = o.every((x) => x) ? T / o.reduce((a, b) => a * b, 1) : null; }
+      else if (n.op === '÷') { const t = n.unit === '%' ? T / 100 : T; r = i === 0 ? (vs[1] != null ? t * vs[1] : null) : (t && vs[0] != null ? vs[0] / t : null); }
+      need(k, r, L, out);
+    });
+  }
+  const srcBadge = (s) => (s === '예시' ? exBadge : badge(s));
+  const nfmt = (v, unit) => (v == null ? '—' : unit === '원' ? `${shortWon(v)}원` : `${Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}${unit ? ' ' + unit : ''}`);
+  function treeNode(id, n, L, req, depth) {
+    const r = evalNode(n, L); const q = req[n.k];
+    const gap = q != null && r.v ? Math.round(((q - r.v) / Math.abs(r.v)) * 1000) / 10 : null;
+    const exIn = id === 'sales' && ui().useEx && !n.kids;
+    return `<li class="nb-node${depth ? '' : ' root'}">
+      <div class="nb-node-row">
+        <span class="nb-node-l">${esc(n.label)}</span>
+        ${exIn ? `<input type="number" id="nb-ex-${n.k}" class="nb-ex-in" min="0" step="any" value="${NX.ex[n.k]}" data-act="numbersEx" data-k="${n.k}" aria-label="${esc(n.label)} 예시값">` : `<b class="num">${nfmt(r.v, n.unit)}</b>`}
+        ${srcBadge(r.s)}
+        ${q != null && depth ? `<span class="nb-need${gap != null && gap > 0 ? ' up' : ''}">필요 <b class="num">${nfmt(q, n.unit)}</b>${gap != null ? ` (${gap > 0 ? '+' : ''}${gap}%)` : ''}</span>` : ''}
+      </div>
+      ${n.kids ? `<div class="nb-node-op">= ${n.kids.map((k) => esc(k.label)).join(n.op === '×' ? ' × ' : ' ÷ ')}${n.op === '÷' && n.unit === '%' ? ' × 100' : ''}</div><ul>${n.kids.map((k) => treeNode(id, k, L, req, depth + 1)).join('')}</ul>` : ''}
+    </li>`;
+  }
+  function treeBox() {
+    const u = ui(); const id = TREES[u.tree] ? u.tree : 'sales'; const t = TREES[id];
+    const L = leaves(id); const root = evalNode(t.root, L); const T = NX.treeTarget[id];
+    const req = {}; if (T != null && root.v != null) need(t.root, T, L, req);
+    return `<section class="panel nb-sec" aria-labelledby="nb-h-tree">
+      <div class="nb-sec-h"><h3 id="nb-h-tree">숫자 분해 나무</h3>
+        <div class="seg" role="tablist" aria-label="나무 고르기">${Object.entries(TREES).map(([k, x]) => `<button type="button" data-act="numbersTree" data-v="${k}" aria-pressed="${k === id}">${esc(x.title)}</button>`).join('')}</div></div>
+      ${id === 'sales' ? `<p class="nb-sec-note">매출 원천(POS·회계)이 아직 없어 실제 값은 '—'입니다. ${u.useEx ? '지금은 <b>예시값</b>으로 구조와 역산만 보여 드립니다. 칸의 숫자를 바꿔 볼 수 있습니다.' : '예시값을 켜면 구조와 목표 역산을 미리 볼 수 있습니다.'} <button type="button" class="btn sm" data-act="numbersUseEx">${u.useEx ? '예시값 끄기' : '예시값으로 보기'}</button></p>` : ''}
+      <ul class="nb-tree">${treeNode(id, t.root, L, req, 0)}</ul>
+      <form class="nb-target" data-form="numbersTreeTarget" data-id="${id}">
+        <label class="f" for="nb-tt-${id}">목표 ${esc(t.root.label)}${t.root.unit ? `(${esc(t.root.unit)})` : ''}<input type="number" step="any" id="nb-tt-${id}" name="t" value="${T ?? ''}" placeholder="목표를 넣으면 거꾸로 계산합니다"></label>
+        <div class="row"><button class="btn sm primary">역산</button>${T != null ? `<button type="button" class="btn sm" data-act="numbersTreeClear" data-id="${id}">목표 지우기</button>` : ''}</div>
+      </form>
+      <p class="nb-sec-note">${T == null ? '목표를 넣으면 각 칸에 「필요」 값이 나옵니다.' : root.v == null ? '현재 값이 없어 역산할 수 없습니다.' : `목표 ${nfmt(T, t.root.unit)} — 현재보다 ${Math.round(((T - root.v) / Math.abs(root.v || 1)) * 1000) / 10}%. 「필요」는 다른 칸이 그대로일 때 그 칸 하나만 바꿔서 목표에 닿는 값입니다.`}</p>
+    </section>`;
+  }
+
+  /* ---------- P3 시나리오 계산기 ---------- */
+  function scnCalc() {
+    const e = NX.ex; const sc = NX.scn;
+    const base = e.stores * e.guests * e.ticket;
+    const s2 = e.stores + sc.ds; const g2 = e.guests * (1 + sc.dg / 100); const t2 = e.ticket * (1 + sc.dt / 100);
+    const after = s2 * g2 * t2;
+    return { base, after, rows: [['점포 수만', (s2 * e.guests * e.ticket) - base], ['객수만', (e.stores * g2 * e.ticket) - base], ['객단가만', (e.stores * e.guests * t2) - base]] };
+  }
+  function parseScn(t) {
+    const out = {}; const num = (x) => parseFloat(String(x).replace('−', '-'));
+    let m = t.match(/(점포|매장|가맹점)\s*([+\-−]?\s*\d+(?:\.\d+)?)/); if (m) out.ds = num(m[2].replace(/\s/g, ''));
+    m = t.match(/(객단가|단가)\s*([+\-−]?\s*\d+(?:\.\d+)?)\s*%/); if (m) out.dt = num(m[2].replace(/\s/g, ''));
+    m = t.match(/(객수|손님|방문)\s*([+\-−]?\s*\d+(?:\.\d+)?)\s*%/); if (m) out.dg = num(m[2].replace(/\s/g, ''));
+    return out;
+  }
+  function scnBox() {
+    const r = scnCalc(); const sc = NX.scn; const e = NX.ex; const d = r.after - r.base;
+    const sw = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${shortWon(Math.abs(v))}원`;
+    return `<section class="panel nb-sec" aria-labelledby="nb-h-scn">
+      <div class="nb-sec-h"><h3 id="nb-h-scn">시나리오 계산기 ${exBadge}</h3></div>
+      <p class="nb-sec-note">기준은 분해 나무의 예시값(점포 ${e.stores.toLocaleString('ko-KR')}곳 · 객수 ${e.guests.toLocaleString('ko-KR')}명 · 객단가 ${e.ticket.toLocaleString('ko-KR')}원)입니다. 매출 원천이 연결되면 실제 값으로 바꿔 계산합니다.</p>
+      <form class="nb-scn-ask" data-form="numbersScnAsk">
+        <label class="f" for="nb-scn-q">말로 물어보기<input type="text" id="nb-scn-q" name="q" maxlength="80" placeholder="예: 점포 +5, 객단가 +3%면?"></label>
+        <button class="btn sm primary">계산</button>
+      </form>
+      <form class="nb-scn-f form" data-form="numbersScn">
+        <label class="f" for="nb-scn-ds">점포 증감(곳)<input type="number" step="1" id="nb-scn-ds" name="ds" value="${sc.ds}"></label>
+        <label class="f" for="nb-scn-dg">객수 증감(%)<input type="number" step="0.1" id="nb-scn-dg" name="dg" value="${sc.dg}"></label>
+        <label class="f" for="nb-scn-dt">객단가 증감(%)<input type="number" step="0.1" id="nb-scn-dt" name="dt" value="${sc.dt}"></label>
+        <div><button class="btn sm">다시 계산</button></div>
+      </form>
+      <div class="nb-scn-out">
+        <div><span>지금(예시)</span><b class="num">${shortWon(r.base)}원</b></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div><span>바꾼 뒤</span><b class="num">${shortWon(r.after)}원</b></div>
+        <div class="${d >= 0 ? 'good' : 'bad'}"><span>차이</span><b class="num">${sw(d)} (${r.base ? (d >= 0 ? '+' : '') + Math.round((d / r.base) * 1000) / 10 : 0}%)</b></div>
+      </div>
+      <ul class="nb-scn-rows">${r.rows.map(([l, v]) => `<li><span>${l} 바꾸면</span><b class="num">${sw(v)}</b></li>`).join('')}<li class="muted"><span>함께 바꾸면 곱해져서 합보다 조금 커집니다</span><b class="num">${sw(d - r.rows.reduce((a, b) => a + b[1], 0))}</b></li></ul>
+    </section>`;
+  }
+
+  /* ---------- P3 주간 숫자 리포트 ---------- */
+  function reportText() {
+    const from = dayStr(-6); const f = flagged();
+    const shown = NX.cards.filter((c) => !c.hidden);
+    const line = (c) => {
+      const p = series(c); const v = curVal(c);
+      const first = p.length > 1 ? p.find((x) => x.d >= from) : null;
+      const wk = v != null && first && first.d !== p[p.length - 1].d ? ` (주초 ${md(first.d)} 대비 ${v - first.v >= 0 ? '+' : ''}${fmt(+(v - first.v).toFixed(2))}${c.unit})` : '';
+      return `- ${c.name}: ${v == null ? '—' : fmt(v) + c.unit} [${c.source}]${wk}${c.owner ? ` · 담당자: ${c.owner}` : ''}`;
+    };
+    const L = [`# 주간 숫자 리포트 (${md(from)}~${md(S.today)})`, '', '## 오늘 볼 숫자'];
+    if (f.length) f.slice(0, 3).forEach((x) => { L.push(line(x.c) + ` — ${x.s.map((g) => g.t).join(', ')}`); L.push(`  - 원인 가설: ${NX.hyp[x.c.id] ? NX.hyp[x.c.id].text : hypo(x.c, x.s) + ' (목업 AI)'}`); });
+    else L.push('- 이상 신호가 있는 숫자가 없습니다.');
+    L.push('', '## 핵심 숫자');
+    shown.filter((c) => c.source !== '미확인' || c.hist.length).forEach((c) => L.push(line(c)));
+    const unk = shown.filter((c) => c.source === '미확인' && !c.hist.length);
+    if (unk.length) L.push('', '## 원천 미확인(값 없음)', `- ${unk.map((c) => c.name).join(', ')}`);
+    L.push('', `_배지: 측정=현황판 계산, 수기=직접 입력, 추정=Claude 산정, 미확인=수집 경로 없음 · 생성 ${S.today}_`);
+    return L.join('\n');
+  }
+  function reportBox() {
+    return `<section class="panel nb-sec" aria-labelledby="nb-h-rep">
+      <div class="nb-sec-h"><h3 id="nb-h-rep">주간 숫자 리포트</h3><button type="button" class="btn sm primary" data-act="numbersCopyReport">Markdown 복사</button></div>
+      <pre class="nb-report" id="nbReport" tabindex="0">${esc(reportText())}</pre>
+      <p class="nb-sec-note">복사가 막힌 화면에서는 글을 선택해 두니 길게 눌러 복사하세요.</p>
+    </section>`;
+  }
+
+  /* ---------- 받은 항목 ---------- */
+  function inboxBox() {
+    const items = S.inbox.filter((x) => x.to === 'numbers' && !x.done);
+    if (!items.length) return '';
+    return `<section class="panel nb-inbox" aria-labelledby="nb-h-in"><h3 id="nb-h-in">받은 항목 <span class="num">${items.length}</span></h3>
+      <ul>${items.map((x) => `<li><div><b>${esc(x.title || '제목 없음')}</b><span class="small muted">${esc(x.from || '')} · ${esc(String(x.at || '').slice(0, 10))}</span></div><button type="button" class="btn sm" data-act="numbersInboxDone" data-id="${esc(x.id)}">처리 완료</button></li>`).join('')}</ul></section>`;
+  }
+
+  /* ---------- 계기판 화면 ---------- */
+  function viewDash() {
+    const f = flagged(); const top3 = f.slice(0, 3); const rest = f.slice(3);
+    return `<section class="nb-today" aria-labelledby="nb-h-today">
+        <div class="nb-sec-h"><h3 id="nb-h-today">오늘 볼 숫자 ${top3.length}개</h3><span class="small muted">경보 · 목표 대비 −20% · 3회 연속 악화 · 갱신 지연을 점수로 골랐습니다</span></div>
+        ${top3.length ? `<div class="nb-t3s">${top3.map(todayCard).join('')}</div>` : '<div class="nb-empty">오늘은 이상 신호가 있는 숫자가 없습니다.</div>'}
+      </section>
+      ${rest.length ? `<section class="panel nb-sec" aria-labelledby="nb-h-sig"><h3 id="nb-h-sig">그 밖의 이상 신호</h3><ul class="nb-siglist">${rest.map((x) => `<li><button type="button" class="nb-link" data-act="numbersGoCard" data-id="${x.c.id}">${esc(x.c.name)}</button><span class="num">${curVal(x.c) == null ? '—' : fmt(curVal(x.c)) + esc(x.c.unit)}</span><ul class="nb-sigs">${x.s.map((g) => `<li class="sg-${g.k}">${esc(g.t)}</li>`).join('')}</ul></li>`).join('')}</ul></section>` : ''}
+      ${treeBox()}
+      <div class="nb-two">${scnBox()}${reportBox()}</div>`;
+  }
+
+  /* ---------- 동작 ---------- */
+  A.numbersHypEdit = (el) => { ui().hypEdit = el.dataset.id || null; if (el.dataset.id) setTimeout(() => { const t = document.getElementById('nb-hyp-' + el.dataset.id); if (t) t.focus(); }, 0); };
+  A.numbersHypReset = (el) => { delete NX.hyp[el.dataset.id]; ui().hypEdit = null; toast('AI 가설로 되돌렸습니다'); };
+  APP.forms.numbersHyp = (fd, form) => { const t = (fd.get('t') || '').toString().trim(); const id = form.dataset.id; if (t) NX.hyp[id] = { text: t, at: S.today }; else delete NX.hyp[id]; ui().hypEdit = null; const c = byId(id); logAct('hypothesis', `「${c ? c.name : id}」 원인 가설 메모`, id); toast('원인 가설을 저장했습니다'); };
+  A.numbersSendToday = (el) => {
+    const c = byId(el.dataset.id); if (!c || sentToday(c)) return;
+    const s = signals(c); const v = curVal(c);
+    S.inbox.push({ id: uid('ib'), at: new Date().toISOString(), from: 'numbers', to: 'today', kind: 'numberAlert', title: `[숫자 경보] ${c.name}: ${v == null ? '—' : fmt(v) + c.unit}`, payload: { cardId: c.id, value: v, unit: c.unit, source: c.source, signals: s.map((g) => g.t), owner: c.owner || '', hypothesis: NX.hyp[c.id] ? NX.hyp[c.id].text : hypo(c, s) }, done: false });
+    logAct('sendToday', `「${c.name}」 경보를 오늘 할 일로 보냄`, c.id);
+    toast('오늘 할 일의 받은 항목으로 보냈습니다');
+  };
+  A.numbersGoCard = (el) => { const c = byId(el.dataset.id); const u = ui(); u.mode = 'cards'; u.group = c && c.hidden ? '숨김' : '전체'; top(); setTimeout(() => { const a = document.getElementById('nb-t-' + el.dataset.id); if (a) { const card = a.closest('.nb-card'); card.scrollIntoView({ block: 'center' }); card.classList.add('flash'); } }, 30); };
+  A.numbersTree = (el) => { ui().tree = el.dataset.v; };
+  A.numbersUseEx = () => { const u = ui(); u.useEx = !u.useEx; };
+  A.numbersTreeClear = (el) => { delete NX.treeTarget[el.dataset.id]; };
+  APP.forms.numbersTreeTarget = (fd, form) => { const v = num(fd.get('t')); if (v == null) { delete NX.treeTarget[form.dataset.id]; return; } NX.treeTarget[form.dataset.id] = v; logAct('target', `${TREES[form.dataset.id].title} 목표 역산 ${v}`, form.dataset.id); };
+  APP.changes.numbersEx = (el) => { const v = num(el.value); if (v == null || v < 0) return; NX.ex[el.dataset.k] = v; };
+  APP.forms.numbersScn = (fd) => { NX.scn = { ds: num(fd.get('ds')) || 0, dg: num(fd.get('dg')) || 0, dt: num(fd.get('dt')) || 0 }; };
+  APP.forms.numbersScnAsk = (fd) => {
+    const q = (fd.get('q') || '').toString(); const p = parseScn(q);
+    if (!Object.keys(p).length) { toast('「점포 +5, 객단가 +3%」처럼 적어 주세요'); return; }
+    NX.scn = Object.assign({ ds: 0, dg: 0, dt: 0 }, p); logAct('scenario', `시나리오: ${q}`, '');
+    toast('시나리오를 계산했습니다(예시값 기준)');
+  };
+  A.numbersCopyReport = () => {
+    const text = reportText();
+    const sel = () => setTimeout(() => { const pre = document.getElementById('nbReport'); if (!pre) return; const r = document.createRange(); r.selectNodeContents(pre); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); pre.focus(); toast('복사가 막혀 있어 글을 선택해 두었습니다'); }, 30);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('리포트를 Markdown으로 복사했습니다'), sel);
+      else sel();
+    } catch (e) { sel(); }
+    logAct('report', '주간 숫자 리포트 복사', '');
+  };
+  A.numbersInboxDone = (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (x) { x.done = true; logAct('inboxDone', `받은 항목 처리: ${x.title || ''}`, x.id); } };
+
+  /* 기존 동작에 활동 기록 붙이기 */
+  const logWrap = (obj, name, type, text) => { const f = obj[name]; obj[name] = function (a, b) { const r = f.apply(this, arguments); try { const t = text(a, b); if (t) logAct(type, t, ''); } catch (e) { /* 기록 실패는 무시 */ } return r; }; };
+  logWrap(APP.forms, 'numbersAdd', 'add', (fd) => `숫자 추가: ${(fd.get('name') || fd.get('calc') || '').toString()}`);
+  logWrap(APP.forms, 'numbersEntry', 'entry', (fd, form) => { const c = byId(form.dataset.id); return c ? `「${c.name}」 값 기록 ${fd.get('v')}${c.unit}` : ''; });
+  logWrap(A, 'numbersDel', 'delete', () => '숫자 카드 삭제');
+  logWrap(APP.forms, 'numbersAsk', 'page', (fd) => `숫자 페이지 요청: ${(fd.get('req') || '').toString().slice(0, 40)}`);
   APP.views.numbers = viewNumbers;
 })();
