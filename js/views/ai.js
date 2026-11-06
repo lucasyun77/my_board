@@ -402,6 +402,68 @@
       </div>`;
   }
 
+
+  /* ---------- P2: AI 효과 배수 · 스킬별 가치 ---------- */
+  const AI_TYPES = ['ai', 'code', 'ai_code'];
+  const isAiWork = (a) => AI_TYPES.includes(a.output_type) || !!a.by_agent;
+  const TYPE_NAME = { doc: '문서', ai: 'AI 고도화', code: '코드', ai_code: 'AI+코드' };
+  const VPER = { month: '이번 달', d30: '최근 30일', all: '누적' };
+  function skillOptions() {
+    const set = new Set((S.topSkills || []).map((x) => x[0]));
+    ((S.aiReal && S.aiReal.today_skills) || []).forEach((x) => set.add(x.name));
+    Object.values(S.aiSkillLink).forEach((n) => n && set.add(n));
+    return [...set].sort();
+  }
+  function skillUses(name) { // 표시 중인 데이터 기준 스킬 사용 횟수(실데이터는 오늘만, 목업은 30일)
+    const real = realOn() ? S.aiReal : null;
+    if (real) { const f = (real.today_skills || []).find((x) => x.name === name); return f ? { n: f.count, label: '오늘' } : null; }
+    const f = topSkills('month').find((x) => x[0] === name); return f ? { n: f[1], label: '30일' } : null;
+  }
+  function valueView() {
+    const { real, daily } = series();
+    const per = VPER[S.ui.aiValPer] ? S.ui.aiValPer : 'month';
+    const last = daily[daily.length - 1].date;
+    const from = per === 'month' ? last.slice(0, 8) + '01' : per === 'd30' ? daily[Math.max(0, daily.length - 30)].date : '0000-00-00';
+    const costRows = daily.filter((r) => r.date >= from);
+    const cost = sum(costRows).usd * RATE;
+    const done = (S.achievements || []).filter((a) => a.status === '확정' && (a.confirmed_at || a.date || '') >= from && (a.confirmed_at || a.date || '') <= last);
+    const aiDone = done.filter(isAiWork);
+    const vAll = done.reduce((t, a) => t + (a.value_won || 0), 0); const vAi = aiDone.reduce((t, a) => t + (a.value_won || 0), 0);
+    const mult = cost > 0 ? vAi / cost : null;
+    const src = real ? badge('측정') : '<span class="ai-mock">목업</span>';
+    const costNote = per === 'all' ? `비용은 데이터가 있는 ${costRows[0] ? costRows[0].date : '—'} 이후만 합산` : `${from} ~ ${last}`;
+    const seg = `<div class="seg ai-seg" role="group" aria-label="효과 기간">${Object.entries(VPER).map(([k, l]) => `<button type="button" data-act="aiValPer" data-v="${k}" aria-pressed="${k === per}">${l}</button>`).join('')}</div>`;
+    // 스킬별 가치
+    const by = {};
+    aiDone.forEach((a) => { const k = S.aiSkillLink[a.id]; if (!k) return; const r = by[k] = by[k] || { name: k, v: 0, n: 0 }; r.v += a.value_won || 0; r.n++; });
+    const rank = Object.values(by).sort((x, y) => y.v - x.v);
+    const rMax = rank[0] ? rank[0].v : 1;
+    const unlinked = aiDone.filter((a) => !S.aiSkillLink[a.id]).length;
+    const opts = skillOptions();
+    const pickFor = S.ui.aiPickFor;
+    const ppList = (q) => { const qq = (q || '').toLowerCase(); return opts.filter((o) => o.toLowerCase().includes(qq)).slice(0, 8); };
+    const picker = (a) => `<div class="ai-pp" data-id="${esc(a.id)}"><input id="aiPP" type="text" autocomplete="off" spellcheck="false" aria-label="스킬 이름 입력" placeholder="스킬 이름 입력 · ↑↓ Enter · Esc" value="" data-id="${esc(a.id)}" aria-controls="aiPPList" aria-autocomplete="list"><button type="button" class="btn sm" data-act="aiPPClose" aria-label="닫기">×</button><ul id="aiPPList" role="listbox">${ppList('').map((o, i) => `<li role="option" class="${i === 0 ? 'on' : ''}" data-act="aiPPPick" data-id="${esc(a.id)}" data-v="${esc(o)}">${esc(o)}</li>`).join('')}</ul></div>`;
+    return `<div class="ai-tabtop"><p class="small muted">성과·레벨에서 <b>확정된</b> 가치를 같은 기간 AI 비용으로 나눠 봅니다. 쓴 돈 대비 무엇을 벌었는지 보는 숫자입니다.</p>${seg}</div>
+      <section class="panel ai-mult"><h3>AI 효과 배수 · ${VPER[per]} ${badge('추정')}</h3>
+        <div class="ai-bnums ai-bnums4">
+          <div><div class="small muted">AI 관련 확정 가치 ${badge('추정')}</div><div class="v num">${won(vAi / 1000)}<small>천원</small></div><div class="small muted">${aiDone.length}건 · 전체 확정 ${won(vAll / 1000)}천원(${done.length}건)</div></div>
+          <div><div class="small muted">같은 기간 Claude 비용 ${src}</div><div class="v num">${won(cost)}<small>원</small></div><div class="small muted">${esc(costNote)}</div></div>
+          <div class="hl"><div class="small muted">효과 배수 ${badge('추정')}</div><div class="v num">${mult == null ? '—' : mult >= 100 ? won(mult) : mult.toFixed(1)}<small>${mult == null ? '' : '배'}</small></div><div class="small muted">${mult == null ? (cost > 0 ? '' : '비용 기록이 없어 계산 불가') : `AI에 1만 원 쓸 때 확정 가치 ${won(mult)}만 원`}</div></div>
+        </div>
+        <p class="small muted ai-note">AI 관련 = 결과물 종류가 AI 고도화·코드·AI+코드이거나 에이전트로 수행한 건. 확정 가치는 최대 12개월 효과를 미리 더한 값이라 같은 달 비용과 바로 맞대면 배수가 크게 나옵니다. ChatGPT·Gemini 비용은 ${badge('미확인')}이라 빠져 있습니다.${real ? '' : ' 지금 비용은 목업입니다.'}</p>
+      </section>
+      <div class="grid2 ai-top">
+        <section class="panel"><h3>스킬별 가치 순위 · ${VPER[per]} ${badge('추정')}</h3>
+          ${rank.length ? `<ol class="ai-skills">${rank.map((r, i) => { const u = skillUses(r.name); return `<li class="ai-vr"><span class="rk num">${i + 1}</span><span class="nm">${esc(r.name)}<span class="small muted"> · ${r.n}건${u ? ` · 사용 ${won(u.n)}회(${u.label})` : ''}</span></span><span class="bar"><i style="width:${(r.v / rMax * 100).toFixed(0)}%"></i></span><span class="num r">${won(r.v / 1000)}천원</span></li>`; }).join('')}</ol>` : '<p class="ai-cta">아래 확정 건에 쓰인 스킬을 연결하면 스킬별로 번 가치가 순위로 나옵니다.</p>'}
+          <p class="small muted ai-note">스킬 1회당 가치·스킬별 비용은 스킬마다 비용을 나눠 모으는 경로가 없어 ${badge('미확인')}. ${unlinked ? `연결 안 된 AI 확정 건 ${unlinked}개.` : ''}</p>
+        </section>
+        <section class="panel"><h3>AI 관련 확정 건 · 스킬 연결 ${badge('수기')}</h3>
+          ${aiDone.length ? `<ul class="ai-ach">${aiDone.sort((x, y) => (y.value_won || 0) - (x.value_won || 0)).map((a) => `<li><div class="t"><b>${esc(a.title)}</b><div class="small muted">${esc(TYPE_NAME[a.output_type] || a.output_type || '')}${a.by_agent ? ' · 에이전트' : ''} · 확정 ${esc(a.confirmed_at || '')} · <span class="num">${won((a.value_won || 0) / 1000)}천원</span></div></div>
+            <div class="sk">${pickFor === a.id ? picker(a) : S.aiSkillLink[a.id] ? `<span class="ai-chip">${esc(S.aiSkillLink[a.id])}<button type="button" data-act="aiUnlink" data-id="${esc(a.id)}" aria-label="${esc(S.aiSkillLink[a.id])} 연결 해제">×</button></span><button type="button" class="btn sm" data-act="aiPPOpen" data-id="${esc(a.id)}">바꾸기</button>` : `<button type="button" class="btn sm" data-act="aiPPOpen" data-id="${esc(a.id)}">스킬 연결</button>`}</div></li>`).join('')}</ul>` : `<p class="muted">${VPER[per]} 확정된 AI 관련 성과가 없습니다. 성과·레벨 메뉴에서 평가를 확정하면 여기에 나옵니다.</p>`}
+        </section>
+      </div>`;
+  }
+
   /* 받은 항목(다른 메뉴가 ai로 보낸 것) */
   function inboxBox() {
     const items = S.inbox.filter((x) => x.to === 'ai' && !x.done);
@@ -445,6 +507,39 @@
     logAct('send', `경보를 오늘 할 일로 보냄: ${a.title}`, a.id); toast('오늘 할 일의 받은 항목으로 보냈습니다');
   };
   APP.acts.aiInboxDone = (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (!x) return; x.done = true; logAct('inbox_done', `받은 항목 처리: ${x.title}`, x.id); };
+
+  APP.acts.aiValPer = (el) => { S.ui.aiValPer = el.dataset.v; S.ui.aiPickFor = null; };
+  const ppFocus = () => setTimeout(() => { const i = document.getElementById('aiPP'); if (i) i.focus(); }, 0);
+  APP.acts.aiPPOpen = (el) => { S.ui.aiPickFor = el.dataset.id; ppFocus(); };
+  APP.acts.aiPPClose = () => { S.ui.aiPickFor = null; };
+  const linkSkill = (id, name) => { const a = (S.achievements || []).find((x) => x.id === id); S.aiSkillLink[id] = name; S.ui.aiPickFor = null; logAct('skill_link', `확정 건 「${a ? a.title : id}」에 스킬 ${name} 연결`, id); };
+  APP.acts.aiPPPick = (el) => linkSkill(el.dataset.id, el.dataset.v);
+  APP.acts.aiUnlink = (el) => { const id = el.dataset.id; const n = S.aiSkillLink[id]; delete S.aiSkillLink[id]; logAct('skill_unlink', `스킬 ${n} 연결 해제`, id); };
+  // 입력해서 찾는 칸: 타이핑은 다시 그리지 않고 목록만 바꾼다
+  document.addEventListener('input', (e) => {
+    if (e.target.id !== 'aiPP') return;
+    const q = e.target.value.trim().toLowerCase(); const id = e.target.dataset.id;
+    const list = skillOptions().filter((o) => o.toLowerCase().includes(q)).slice(0, 8);
+    const ul = document.getElementById('aiPPList'); if (!ul) return;
+    ul.innerHTML = list.length ? list.map((o, i) => `<li role="option" class="${i === 0 ? 'on' : ''}" data-act="aiPPPick" data-id="${esc(id)}" data-v="${esc(o)}">${esc(o)}</li>`).join('') : '<li class="none">맞는 스킬이 없습니다</li>';
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.id !== 'aiPP') return;
+    const ul = document.getElementById('aiPPList'); const items = ul ? [...ul.querySelectorAll('li[data-v]')] : [];
+    let i = items.findIndex((x) => x.classList.contains('on'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); if (!items.length) return;
+      i = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      items.forEach((x, k) => x.classList.toggle('on', k === i)); items[i].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const typed = e.target.value.trim(); const exact = skillOptions().find((o) => o.toLowerCase() === typed.toLowerCase());
+      const pick = exact || (items[i] && items[i].dataset.v);
+      if (pick) linkSkill(e.target.dataset.id, pick);
+      else { S.ui.aiPickFor = null; toast('목록에 없는 스킬이라 원래 값을 그대로 둡니다'); }
+      rerender();
+    } else if (e.key === 'Escape') { e.preventDefault(); S.ui.aiPickFor = null; rerender(); }
+  });
   APP.acts.aiPeriod = (el) => { S.ui.aiPeriod = el.dataset.v; S.ui.aiPick = null; };
   APP.acts.aiPick = (el) => { S.ui.aiPick = +el.dataset.v; };
   APP.acts.aiToggleMock = () => { S.ui.aiShowMock = !S.ui.aiShowMock; S.ui.aiPick = null; };
