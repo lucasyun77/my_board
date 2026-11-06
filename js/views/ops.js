@@ -365,8 +365,122 @@
     log('decision', `${it.title}: ${d.decision}`, it.id); toast('결정을 기록했습니다');
   };
 
+  /* ---------- 주간 경영회의 한 장 자료 ---------- */
+  S.opsMeeting = S.opsMeeting || {};
+  const weekKey = () => { const d = new Date(S.today); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.toISOString().slice(0, 10); };
+  const clean = (t) => String(t || '').replace(/^\[예시\]\s*/, '');
+  function meetingData() {
+    const wl = S.waiting.slice().sort((a, b) => a.since.localeCompare(b.since));
+    const st = waitStats();
+    const riskDepts = S.depts.filter((d) => sigOf(d) === 'r' || trendOf(d).k === 'down').sort((a, b) => SIG_RANK[sigOf(b)] - SIG_RANK[sigOf(a)] || b.delayed - a.delayed);
+    const open = S.issues.filter((i) => i.status !== '종결');
+    const top = open.slice().sort((a, b) => riskOf(b) - riskOf(a) || a.due.localeCompare(b.due)).slice(0, 3);
+    const since = dayStr(-6);
+    const decs = []; S.issues.forEach((i) => (i.decisions || []).forEach((d) => { if (d.at >= since) decs.push(Object.assign({ issue: i.title }, d)); }));
+    return { wl, st, riskDepts, top, open, decs, memo: (S.opsMeeting[weekKey()] || {}).memo || '' };
+  }
+  function meetingMd() {
+    const m = meetingData();
+    const L = [`# 주간 경영회의 자료 — ${S.today} (${weekKey()} 주)`, '',
+      `## 1. 회장 결재 대기 ${m.wl.length}건 (기준 ${SLA}일 초과 ${m.st.over.length}건, 평균 처리 ${m.st.avg == null ? '—' : m.st.avg.toFixed(1) + '일'})`,
+      ...(m.wl.length ? m.wl.map((w) => `- ${days(w.since, S.today)}일째 · ${w.title} (${w.from})${days(w.since, S.today) > SLA ? ' ⚠ 기준 초과' : ''}`) : ['- 없음']), '',
+      `## 2. 위험·악화 부서 ${m.riskDepts.length}곳 (샘플값, 수훈보드 연동 전)`,
+      ...(m.riskDepts.length ? m.riskDepts.map((d) => `- ${d.name}: ${SIG_TXT[sigOf(d)]} · 지연 ${d.delayed}건${d.registered ? '' : ' · 현황판 미등록'} · 지난주 대비 ${trendOf(d).txt.replace(/^[▲▼—]\s*/, '')}`) : ['- 없음']), '',
+      `## 3. 이슈·분쟁 Top 3 (진행 ${m.open.length}건 중)`,
+      ...(m.top.length ? m.top.map((i, n) => `${n + 1}. ${clean(i.title)} — 위험 ${riskOf(i)}(영향 ${LV[i.impact]}×가능성 ${LV[i.likely]}) · 다음 조치: ${i.next} · ${i.owner} · 기한 ${i.due}`) : ['- 없음']), '',
+      `## 4. 이번 주 결정 ${m.decs.length}건`,
+      ...(m.decs.length ? m.decs.map((d) => `- ${d.at} ${clean(d.issue)}: ${d.decision}${d.reason ? ` (근거: ${d.reason})` : ''}${d.follow ? ` → 후속: ${d.follow}${d.follow_due ? ' ~' + d.follow_due : ''}` : ''}`) : ['- 없음']), '',
+      '## 5. 브랜드 핵심 지표', '- 블랙라벨·벌툰·생전포차: 데이터 원천 확정 전 — 미확인', ''];
+    if (m.memo) L.push('## 6. 회의 메모', m.memo, '');
+    return L.join('\n');
+  }
+  function meetingBlock() {
+    const m = meetingData();
+    const sec = (n, t, body) => `<section class="ops-mt-sec"><h4><span class="num">${n}</span>${t}</h4>${body}</section>`;
+    return `<section class="panel ops-meeting" aria-labelledby="h-ops-mt">
+      <h3 id="h-ops-mt">주간 경영회의 한 장 자료<span class="ops-count">${weekKey()} 주 · 화면 데이터로 자동 구성</span></h3>
+      <div class="row ops-mt-acts"><button type="button" class="btn primary sm" data-act="opsCopyMd" data-v="meeting">Markdown 복사</button><span class="ops-meta">옵시디언·슬랙에 붙여 넣을 수 있습니다.</span></div>
+      <div class="ops-mt-grid">
+      ${sec(1, `회장 결재 대기 <b class="num">${m.wl.length}</b>건 ${badge('측정')}`, `<p class="ops-meta">기준 ${SLA}일 초과 <b class="ops-bad">${m.st.over.length}건</b> · 평균 처리 ${m.st.avg == null ? '—' : m.st.avg.toFixed(1) + '일'}</p>
+        <ul class="ops-mt-list">${m.wl.map((w) => { const d = days(w.since, S.today); return `<li><span class="num ${d > SLA ? 'ops-bad' : ''}">${d}일째</span> ${esc(w.title)} <span class="ops-meta">${esc(w.from)}</span></li>`; }).join('') || '<li class="muted">없음</li>'}</ul>`)}
+      ${sec(2, `위험·악화 부서 <b class="num">${m.riskDepts.length}</b>곳 ${badge('미확인')}`, `<ul class="ops-mt-list">${m.riskDepts.map((d) => { const c = sigOf(d); const t = trendOf(d); return `<li><span class="ops-light ${c}">${SIG_TXT[c]}</span> <b>${esc(d.name)}</b> <span class="ops-tr ${t.k}">${t.txt}</span><div class="ops-meta">지연 ${d.delayed}건${d.registered ? '' : ' · 현황판 미등록'}</div></li>`; }).join('') || '<li class="muted">없음</li>'}</ul>`)}
+      ${sec(3, `이슈·분쟁 Top 3 ${badge('수기')}`, `<ol class="ops-mt-list">${m.top.map((i) => `<li><span class="ops-risk ${riskCls(riskOf(i))}">위험 ${riskOf(i)}</span> <b>${esc(clean(i.title))}</b> ${dueTxt(i.due)}<div class="ops-meta">다음 조치: ${esc(i.next)} · ${esc(i.owner)}</div></li>`).join('') || '<li class="muted">없음</li>'}</ol>`)}
+      ${sec(4, `이번 주 결정 <b class="num">${m.decs.length}</b>건`, `<ul class="ops-mt-list">${m.decs.map((d) => `<li><span class="num">${md(d.at)}</span> <b>${esc(d.decision)}</b><div class="ops-meta">${esc(clean(d.issue))}${d.follow ? ` → 후속: ${esc(d.follow)}` : ''}</div></li>`).join('') || '<li class="muted">이번 주 기록된 결정이 없습니다. 이슈·위험 탭에서 기록합니다.</li>'}</ul>`)}
+      </div>
+      ${sec(5, '브랜드 핵심 지표', `<p class="ops-meta" style="margin:0">블랙라벨·벌툰·생전포차 — 데이터 원천 확정 전 ${badge('미확인')}</p>`)}
+      <form class="form ops-form" data-form="opsMeetMemo"><label class="f wide">회의 메모<textarea name="memo" rows="3" placeholder="회의에서 정한 것을 적어 두면 Markdown에 함께 들어갑니다.">${esc(m.memo)}</textarea></label><div><button class="btn sm">메모 저장</button></div></form>
+    </section>`;
+  }
+
+  /* ---------- 부서별 1:1 점검 질문(목업 AI) ---------- */
+  S.opsOneOnOne = S.opsOneOnOne || [];
+  const aiBadge = '<span class="ops-ai" title="실제 AI가 아니라 화면 데이터로 만든 목업 결과">목업 AI</span>';
+  function makeQuestions(dept) {
+    const d = S.depts.find((x) => x.name === dept); const qs = [];
+    const add = (q, why) => qs.push({ q, why, done: false });
+    if (d) {
+      const t = trendOf(d); const tasks = (S.opsDeptTasks[dept] || []).slice(0, d.delayed || 0);
+      if (!d.registered) add('수훈보드 현황판에 아직 등록하지 않은 이유가 무엇이고, 언제까지 올릴 수 있습니까?', '현황판 미등록');
+      tasks.forEach((tk) => add(`'${tk}'이(가) 늦어진 가장 큰 원인은 무엇이고, 새 완료일은 언제입니까?`, '지연 과제'));
+      if (t.k === 'down') add('지난주보다 지연이 늘었습니다. 일이 몰린 곳이 있다면 어디서 도움이 필요합니까?', '신호등 나빠짐');
+      if (t.k === 'up') add('지난주보다 좋아졌습니다. 효과가 있었던 방법을 다른 부서에 나눌 수 있습니까?', '신호등 좋아짐');
+    }
+    S.issues.filter((i) => i.status !== '종결' && i.owner === dept).forEach((i) => add(`'${clean(i.title)}'의 다음 조치(${i.next})는 기한 ${md(i.due)}까지 가능합니까? 막히는 점은 무엇입니까?`, '담당 이슈'));
+    S.waiting.filter((w) => w.from === dept).forEach((w) => add(`회장 결재를 ${days(w.since, S.today)}일째 기다리는 '${w.title}' — 결정에 더 필요한 자료가 있습니까?`, '결재 대기'));
+    S.directives.filter((x) => x.org === dept && !['완료', '보류'].includes(x.status) && x.due_at < S.today).forEach((x) => add(`기한이 지난 지시 '${x.title}'은 어디까지 진행됐고, 언제 보고할 수 있습니까?`, '기한 경과 지시'));
+    add('이번 주 가장 중요한 한 가지 결과물은 무엇입니까?', '공통');
+    add('회장이 직접 풀어 줘야 할 걸림돌이 있습니까?', '공통');
+    return qs.slice(0, 8);
+  }
+  function oneOnOneBlock() {
+    const o = ui(); const dept = o.ooDept || '';
+    const sets = S.opsOneOnOne.filter((x) => x.dept === dept).sort((a, b) => b.at.localeCompare(a.at));
+    const cur = sets[0];
+    return `<section class="panel" aria-labelledby="h-ops-oo">
+      <h3 id="h-ops-oo">부서별 1:1 점검 질문 ${aiBadge}</h3>
+      <p class="ops-note" style="margin-top:0">부서를 고르면 신호등·지연 과제·담당 이슈·결재 대기·기한 지난 지시를 보고 물어볼 질문을 만듭니다.</p>
+      <form class="form ops-form ops-oo-form" data-form="opsOneOnOne">
+        <label class="f">부서${picker({ key: 'oo-dept', name: 'dept', list: deptList(), value: dept, label: '부서 찾기' })}</label>
+        <div class="row"><button class="btn primary sm">질문 만들기</button></div>
+      </form>
+      ${!dept ? `<div class="ops-oo-quick">${S.depts.slice().sort((a, b) => SIG_RANK[sigOf(b)] - SIG_RANK[sigOf(a)]).map((d) => `<button type="button" class="btn sm" data-act="opsOoPick" data-v="${esc(d.name)}"><span class="sig ${sigOf(d)}"></span>${esc(d.name)}</button>`).join('')}</div>` : ''}
+      ${cur ? `<div class="ops-oo">
+        <div class="ops-oo-h"><b>${esc(cur.dept)}</b> <span class="ops-meta">${md(cur.at)} 작성 · ${cur.qs.filter((q) => q.done).length}/${cur.qs.length} 물어봄</span>
+          <span class="row"><button type="button" class="btn sm" data-act="opsCopyMd" data-v="oo">Markdown 복사</button>
+          ${o.ooDel === cur.id ? `<span class="ops-confirm">이 질문지를 지울까요? <button type="button" class="btn sm ops-danger" data-act="opsOoDel" data-id="${esc(cur.id)}">지우기</button><button type="button" class="btn sm" data-act="opsOoDelAsk" data-v="">취소</button></span>` : `<button type="button" class="btn sm" data-act="opsOoDelAsk" data-v="${esc(cur.id)}">지우기</button>`}</span></div>
+        <ol class="ops-oo-list">${cur.qs.map((q, i) => `<li class="${q.done ? 'done' : ''}"><label><input type="checkbox" data-act="opsOoCheck" data-id="${esc(cur.id)}" data-k="${i}" ${q.done ? 'checked' : ''}> <span>${esc(q.q)}</span></label><span class="ops-why">${esc(q.why)}</span></li>`).join('')}</ol>
+        <form class="form ops-form" data-form="opsOoMemo" data-id="${esc(cur.id)}"><label class="f wide">1:1 메모<textarea name="memo" rows="2" placeholder="받은 답과 약속한 것을 적어 둡니다.">${esc(cur.memo || '')}</textarea></label><div><button class="btn sm">메모 저장</button></div></form>
+        ${sets.length > 1 ? `<p class="ops-meta">이 부서의 이전 질문지 ${sets.length - 1}개가 저장돼 있습니다.</p>` : ''}
+      </div>` : dept ? '<p class="ops-empty">아직 만든 질문지가 없습니다. 「질문 만들기」를 누르세요.</p>' : ''}
+    </section>`;
+  }
+  function ooMd() {
+    const o = ui(); const cur = S.opsOneOnOne.filter((x) => x.dept === o.ooDept).sort((a, b) => b.at.localeCompare(a.at))[0]; if (!cur) return '';
+    return [`# ${cur.dept} 1:1 점검 질문 — ${cur.at} (목업 AI)`, '', ...cur.qs.map((q, i) => `${i + 1}. [${q.done ? 'x' : ' '}] ${q.q} _(${q.why})_`), ...(cur.memo ? ['', '## 메모', cur.memo] : [])].join('\n');
+  }
+  function copyText(text) {
+    const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (er) { ok = false; } ta.remove(); toast(ok ? 'Markdown을 복사했습니다' : '복사가 막혀 있습니다 — 화면에서 직접 선택해 주세요'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('Markdown을 복사했습니다'), fallback); else fallback();
+  }
+  APP.opsMd = { meeting: meetingMd, oo: ooMd };
+  APP.acts.opsCopyMd = (el) => { const t = (APP.opsMd[el.dataset.v] || (() => ''))(); if (!t) return; copyText(t); log('copy-md', el.dataset.v === 'meeting' ? '주간 회의 자료 Markdown 복사' : `${ui().ooDept} 1:1 질문 Markdown 복사`, ''); };
+  APP.forms.opsMeetMemo = (fd) => { S.opsMeeting[weekKey()] = { memo: (fd.get('memo') || '').toString().trim() }; log('meeting-memo', '주간 회의 메모 저장', weekKey()); toast('회의 메모를 저장했습니다'); };
+  const genOo = (dept) => {
+    if (!S.depts.some((d) => d.name === dept)) { toast('목록에 있는 부서를 골라 주세요'); return; }
+    const o = ui(); o.ooDept = dept; o.ooDel = null;
+    S.opsOneOnOne.push({ id: uid('oo'), dept, at: S.today, qs: makeQuestions(dept), memo: '' });
+    if (S.opsOneOnOne.length > 60) S.opsOneOnOne.splice(0, S.opsOneOnOne.length - 60);
+    log('oneonone', `${dept} 1:1 점검 질문 생성(목업 AI)`, dept); toast('질문지를 만들었습니다 (목업 AI)');
+  };
+  APP.forms.opsOneOnOne = (fd) => genOo((fd.get('dept') || '').toString().trim());
+  APP.acts.opsOoPick = (el) => genOo(el.dataset.v);
+  APP.acts.opsOoDelAsk = (el) => { ui().ooDel = el.dataset.v || null; };
+  APP.acts.opsOoDel = (el) => { S.opsOneOnOne = S.opsOneOnOne.filter((x) => x.id !== el.dataset.id); ui().ooDel = null; log('oneonone-del', '1:1 질문지 삭제', el.dataset.id); toast('질문지를 지웠습니다'); };
+  APP.changes.opsOoCheck = (el) => { const x = S.opsOneOnOne.find((s) => s.id === el.dataset.id); if (x && x.qs[+el.dataset.k]) x.qs[+el.dataset.k].done = el.checked; };
+  APP.forms.opsOoMemo = (fd, form) => { const x = S.opsOneOnOne.find((s) => s.id === form.dataset.id); if (!x) return; x.memo = (fd.get('memo') || '').toString().trim(); log('oneonone-memo', `${x.dept} 1:1 메모 저장`, x.id); toast('메모를 저장했습니다'); };
+
   /* ---------- 화면 ---------- */
-  const TABS_OPS = [['board', '상황판'], ['issues', '이슈·위험']];
+  const TABS_OPS = [['board', '상황판'], ['issues', '이슈·위험'], ['meeting', '주간 회의'], ['oneonone', '부서 1:1']];
   function viewOps() {
     const o = ui();
     if (!TABS_OPS.some((t) => t[0] === o.tab)) o.tab = 'board';
@@ -378,7 +492,9 @@
     const hiRisk = openIss.filter((i) => riskOf(i) >= 6).length;
     const body = {
       board: () => `<div class="grid2 ops-grid">${waitingBlock()}${deptBlock()}</div>${brandBlock()}${calBlock()}`,
-      issues: () => `<div class="grid2 ops-grid ops-grid-issue">${riskBlock()}${issueBlock()}</div>`
+      issues: () => `<div class="grid2 ops-grid ops-grid-issue">${riskBlock()}${issueBlock()}</div>`,
+      meeting: meetingBlock,
+      oneonone: oneOnOneBlock
     }[o.tab]();
     return `<div class="view-head"><div><h2>경영 현황</h2><p>위험과 결재 지연을 먼저 봅니다.</p></div></div>
       ${inboxBlock()}
