@@ -2417,6 +2417,95 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     tplSave(t).then((ok) => { if (ok) { toast(`「${t.name}」 서식으로 저장했습니다 — 지시 후보 위 「서식 모음」에서 쓸 수 있습니다`); logAct('tpl_save', `지시 서식 「${t.name}」 저장`, t.id); rerender(); } });
   };
 
+  /* ================= P2-1 막힌 곳(병목) 감지 ================= */
+  const overDays = (d) => (isOverdue(d) ? days(d.due_at, S.today) : 0);
+  function pushCount(d) {
+    let n = (d.log || []).filter((l) => /마감일|기한/.test(l.text || '') && /→|변경|미룸|연기/.test(l.text || '')).length;
+    const det = isAsana(d) ? DET[d.asana_gid] : null;
+    if (det && Array.isArray(det.stories)) n = Math.max(n, det.stories.filter((s) => s.resource_subtype === 'due_date_changed').length);
+    return n;
+  }
+  function blockReasons(d) {
+    const r = [];
+    if (d.status === '보고대기' && quiet(d) >= 3) r.push({ k: 'wait', w: 3, t: `보고대기 ${quiet(d)}일째` });
+    const pc = pushCount(d); if (pc >= 2) r.push({ k: 'push', w: 2 + pc, t: `기한 ${pc}번 미룸` });
+    const od = overDays(d); if (od >= 7) r.push({ k: 'over', w: 3 + Math.min(5, Math.floor(od / 7)), t: `기한 ${od}일 지남` });
+    else if (od > 0) r.push({ k: 'over', w: 1, t: `기한 ${od}일 지남` });
+    if (quiet(d) >= 7 && d.status !== '보고대기') r.push({ k: 'quiet', w: 2 + Math.min(4, Math.floor(quiet(d) / 7)), t: `${quiet(d)}일째 소식 없음` });
+    return r;
+  }
+  const NUDGE = {};
+  function nudgeBase(d, rs) {
+    const who = d.assignee && d.assignee !== '미지정' ? d.assignee + '님' : '담당자님';
+    const k = (rs[0] || {}).k;
+    const why = k === 'wait' ? `보고대기로 넘어온 지 ${quiet(d)}일 됐는데 아직 못 봤네요.` : k === 'push' ? '기한이 몇 번 밀렸던데, 걸리는 게 있는 것 같아서요.' : k === 'over' ? `기한이 ${overDays(d)}일 지났어요.` : `${quiet(d)}일째 소식이 없어서요.`;
+    return `${who}, ${shortT(d).replace(/\s*\([^)]*\)/g, '')} 어떻게 되고 있어요? ${why} 지금 어디까지 왔는지, 막힌 게 있으면 뭔지 오늘 안에 짧게 알려 줄래요? 도울 게 있으면 바로 말해 주세요.`;
+  }
+  async function nudgeAI(d, rs) {
+    const N = NUDGE[d.id] = Object.assign({}, NUDGE[d.id] || {}, { busy: true, err: '' }); rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const r = await llm(`윤석범 회장이 Slack에서 직원에게 직접 보내는 짧은 확인 메시지를 씁니다. AI가 쓴 티가 나면 안 됩니다.
+- 2~3문장, 120자 안팎. "OO님,"으로 시작.
+- 다그치지 말고 담백하게. 무엇이 걸리는지 묻고, 도울 게 있으면 말하라고.
+- 언제까지 답을 달라는 말 하나(예: 오늘 안에, 내일 오전까지).
+- 상투어("노고", "귀하", "확인 부탁드립니다만"), 느낌표 여러 개, 영어, 서명은 쓰지 않음. 기록에 없는 일은 지어내지 않음.
+
+받는 사람: ${d.assignee} (${d.org})
+업무: ${d.title}
+상태: ${d.status} · 기한 ${dueFull(d)}
+막힌 신호: ${rs.map((x) => x.t).join(', ')}
+현황판 메모: ${d.memo || '(없음)'}
+
+메시지 본문만 출력하세요.`, { modelTier: 'quick', cache: false });
+      const t = String((r && r.text) || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["“'`]+|["”'`]+$/g, '').trim();
+      if (!t) throw { code: 'empty_completion' };
+      Object.assign(N, { text: t, by: aiName(used) + ' 초안' });
+    } catch (e) { N.err = e && e.code === 'no_llm' ? '이 화면에서는 AI를 부를 수 없어 기본 문구를 그대로 둡니다(claude.ai에서 연 현황판에서는 AI로 다듬을 수 있습니다).' : aiErr(e); }
+    N.busy = false; rerender();
+  }
+  function blockPanel(list) {
+    const items = list.filter(isOpen).map((d) => ({ d, rs: blockReasons(d) })).filter((x) => x.rs.length).map((x) => Object.assign(x, { w: x.rs.reduce((a, r) => a + r.w, 0) })).sort((a, b) => b.w - a.w);
+    const cnt = (k) => items.filter((x) => x.rs.some((r) => r.k === k)).length;
+    const all = S.ui.blkAll; const shown = all ? items : items.slice(0, 6);
+    return `<section class="panel mg-block" aria-labelledby="h-blk"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 id="h-blk" style="margin:0">막힌 곳 먼저 보기 ${badge('측정')}</h3><p class="small muted" style="margin:2px 0 0">보고대기 3일 이상 · 기한 2번 이상 미룸 · 기한 지남 · 7일 넘게 소식 없음. 많이 막힌 순서입니다.</p></div>
+      <div class="row mg-blkcnt">${[['wait', '보고대기 장기'], ['push', '반복 연기'], ['over', '기한 지남'], ['quiet', '오래 무소식']].map(([k, l]) => `<span class="pill ${cnt(k) ? 'p-urgent' : 'st-hold'}">${l} <b class="num">${cnt(k)}</b></span>`).join('')}</div></div>
+      ${items.length ? `<ul class="mg-blk">${shown.map(({ d, rs }) => { const N = NUDGE[d.id]; const open = N && N.open; return `<li><div class="t"><button type="button" class="dir-title" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small muted">${esc(d.assignee)} · ${esc(d.org)} · ${esc(d.status)}</span><span class="row mg-flags">${rs.map((r) => `<span class="dir-flag ${r.k === 'quiet' || r.k === 'wait' ? 'warn' : 'crit'}">${esc(r.t)}</span>`).join('')}</span></div>
+          <button type="button" class="btn sm ${open ? 'on' : ''}" data-act="nudgeOpen" data-id="${esc(d.id)}" aria-expanded="${!!open}">독촉 문구 초안</button>
+          ${open ? `<div class="mg-nudge"><p class="small muted" style="margin:0">이 화면에서는 보내지 않습니다. 고친 뒤 복사해서 Slack이나 Asana 댓글에 붙여 넣으세요. <span class="pill st-hold">${esc(N.by || '기본 문구')}</span></p>
+            <textarea id="ng-${esc(d.id)}" class="mg-nudge-ta" rows="4" aria-label="독촉 문구">${esc(N.text || nudgeBase(d, rs))}</textarea>${N.err ? `<p class="small dir-err" style="margin:0">${esc(N.err)}</p>` : ''}
+            <div class="row"><button type="button" class="btn primary sm" data-act="nudgeCopy" data-id="${esc(d.id)}">복사</button><button type="button" class="btn sm" data-act="nudgeAI" data-id="${esc(d.id)}" ${N.busy ? 'disabled' : ''}>${N.busy ? 'AI가 다듬는 중…' : 'AI로 다듬기'}</button>${safeUrl(d.source_url) ? `<a class="btn sm" href="${esc(d.source_url)}" target="_blank" rel="noopener noreferrer">Asana에서 열기 ↗</a>` : ''}</div></div>` : ''}</li>`; }).join('')}</ul>
+        ${items.length > 6 ? `<button type="button" class="dir-link" data-act="blkAll">${all ? '6개만 보기' : `모두 보기 (${items.length}건)`}</button>` : ''}` : '<p class="small muted" style="margin:8px 0 0">지금 조건에서 막힌 지시가 없습니다.</p>'}</section>`;
+  }
+  APP.acts.blkAll = () => { S.ui.blkAll = !S.ui.blkAll; };
+  APP.acts.nudgeOpen = (el) => { const N = NUDGE[el.dataset.id] = NUDGE[el.dataset.id] || {}; N.open = !N.open; };
+  document.addEventListener('input', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('mg-nudge-ta')) { const id = t.id.slice(3); NUDGE[id] = Object.assign(NUDGE[id] || {}, { text: t.value }); } });
+  APP.acts.nudgeAI = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => nudgeAI(d, blockReasons(d)), 0); };
+  APP.acts.nudgeCopy = (el) => {
+    const d = find(el.dataset.id); const ta = document.getElementById('ng-' + el.dataset.id); const t = ta ? ta.value : '';
+    const done = () => { toast('독촉 문구를 복사했습니다 — 붙여 넣어 보내 주세요'); if (d) logAct('nudge_copy', `독촉 문구 복사 — ${d.assignee} · ${shortT(d)}`, d.id); };
+    try { navigator.clipboard.writeText(t).then(done, () => { if (ta) { ta.select(); } toast('글을 선택했습니다 — Ctrl+C(맥은 ⌘+C)로 복사하세요'); }); } catch (e) { if (ta) ta.select(); toast('글을 선택했습니다 — Ctrl+C로 복사하세요'); }
+  };
+
+  /* ================= P2-2 담당자별 업무량 지도 (사람 × 주) ================= */
+  function loadMap(base) {
+    const mon = (t) => { const x = new Date(t + 'T00:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
+    const w0 = mon(S.today); const weeks = [0, 1, 2, 3, 4, 5].map((i) => { const x = new Date(w0 + 'T00:00:00'); x.setDate(x.getDate() + 7 * i); return x.toISOString().slice(0, 10); });
+    const open = base.filter(isOpen);
+    const people = [...new Set(open.map((d) => d.assignee))];
+    const col = (d) => (noDue(d) ? 'none' : d.due_at < S.today ? 'past' : weeks.indexOf(mon(d.due_at)) >= 0 ? 'w' + weeks.indexOf(mon(d.due_at)) : 'later');
+    const cols = [['past', '지난 기한'], ...weeks.map((w, i) => ['w' + i, i === 0 ? '이번 주' : `${+w.slice(5, 7)}/${+w.slice(8)}주`]), ['later', '그 뒤'], ['none', '기한 없음']];
+    const rows = people.map((n) => { const m = {}; open.filter((d) => d.assignee === n).forEach((d) => { const c = col(d); m[c] = (m[c] || 0) + 1; }); return { n, m, tot: open.filter((d) => d.assignee === n).length, peak: Math.max(0, ...weeks.map((w, i) => m['w' + i] || 0)) }; }).sort((a, b) => b.tot - a.tot || a.n.localeCompare(b.n, 'ko'));
+    const hot = rows.filter((r) => r.peak >= 3 || (r.m.past || 0) >= 2).length;
+    const lv = (v) => (!v ? '' : v >= 3 ? 'h3' : v === 2 ? 'h2' : 'h1');
+    return `<details class="panel mg-map" ${S.ui.mapOpen ? 'open' : ''}><summary data-act="mapT"><b>담당자별 업무량 지도</b> <span class="small muted">사람 × 주 · 기한 기준 진행 중 지시 ${open.length}건 · 몰린 사람 ${hot}명</span> ${badge('측정')}</summary>
+      <p class="small muted" style="margin:8px 0">칸의 숫자는 그 주에 기한이 돌아오는 진행 중 지시 수입니다. 한 주에 3건 이상이거나 지난 기한이 2건 이상이면 몰린 사람으로 봅니다. 이름을 누르면 그 사람만 봅니다.</p>
+      ${rows.length ? `<div class="tbl-wrap"><table class="mg-heat"><thead><tr><th scope="col">담당자</th>${cols.map(([, l]) => `<th scope="col">${l}</th>`).join('')}<th scope="col">합계</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><th scope="row"><button type="button" class="dir-link" data-act="mgWho" data-v="${esc(r.n)}">${esc(r.n)}</button></th>${cols.map(([k]) => `<td class="${lv(r.m[k])}${k === 'past' && r.m[k] ? ' past' : ''}">${r.m[k] || ''}</td>`).join('')}<td class="num"><b>${r.tot}</b></td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">진행 중인 지시가 없습니다.</p>'}</details>`;
+  }
+  APP.acts.mapT = () => { S.ui.mapOpen = !S.ui.mapOpen; };
+
   /* ================= 지시 관리: 지시한 것들의 진행과 경영지표·직원 평가 ================= */
   const MGR = { eval: {} };
   const STEP = { '지시': 10, '진행': 50, '보고대기': 85, '완료': 100, '보류': 0 };
@@ -2499,6 +2588,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       </div>
       <div class="mg-graphs">${weekChart(list)}${statusBar(list)}</div>
     </section>
+    ${f.who ? '' : blockPanel(list)}
     ${sel ? `<section class="panel mg-person"><div class="row" style="justify-content:space-between"><div class="dir-who">${avatar(sel.n, true)}<span><b>${esc(sel.n)}</b><small>${esc(sel.d)}${(staffOf(sel.n) || {}).g ? ' · ' + esc(staffOf(sel.n).g) : ''}</small></span></div><div class="row"><span class="mg-grade g${sel.s.grade}">${sel.s.grade}</span><span class="num">${sel.s.score == null ? '—' : sel.s.score + '점'}</span>${badge('추정')}<button type="button" class="dir-iconbtn" data-act="mgWho" data-v="" aria-label="사람 선택 해제">×</button></div></div>
       <div class="mg-meters">${[['성과(완료율)', sel.s.rate], ['성실도(기한 준수)', sel.s.ontime], ['응답성(최근 갱신)', sel.s.resp]].map(([l, v]) => `<div><span class="small">${l}</span><span class="bar"><i style="width:${v || 0}%"></i></span><b class="num small">${pctTxt(v)}</b></div>`).join('')}<div><span class="small">업무 부하</span>${loadPill(sel.n)}<span class="small muted">진행 중 ${sel.load.tasks.length} · 경과 ${sel.load.over}</span></div></div>
       ${sel.s.few ? '<p class="small muted" style="margin:6px 0 0">지시가 3건보다 적어 점수는 참고만 해 주세요.</p>' : ''}
@@ -2510,6 +2600,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       ${ppl.map((p) => `<tr class="${f.who === p.n ? 'on' : ''}"><td data-label="이름"><button type="button" class="dir-link dir-who" data-act="mgWho" data-v="${esc(p.n)}">${avatar(p.n)}<span>${esc(p.n)}<small>${esc(p.d)}</small></span></button></td>
         <td data-label="부하">${loadPill(p.n)}</td><td data-label="지시·완료" class="num">${p.s.done}/${p.s.n}</td><td data-label="완료율" class="num">${pctTxt(p.s.rate)}</td><td data-label="기한 준수" class="num">${pctTxt(p.s.ontime)}</td><td data-label="평균 처리" class="num">${p.s.lead == null ? '—' : p.s.lead + '일'}</td><td data-label="무응답" class="num ${p.s.stale ? 'warn' : ''}">${p.s.stale}</td>
         <td data-label="평가"><span class="mg-grade g${p.s.grade}">${p.s.grade}</span> <span class="num small">${p.s.score == null ? '' : p.s.score}</span>${p.s.few ? ' <span class="small muted">표본 적음</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">조건에 맞는 지시가 없습니다.</td></tr>'}</tbody></table></div></section>
+    ${f.who ? '' : loadMap(byDept)}
     ${cws.length && !f.who ? `<section class="panel"><h3 style="margin:0 0 6px">전사 지시 진행</h3><div class="dir-org">${cws.map((c) => { const st = cwStat(cwRows(c)); return `<button type="button" class="dir-org-row" data-act="mgCw" data-v="${esc(c.id)}"><span class="o">${esc(c.title)}</span><span class="bar"><i style="width:${st.pct}%"></i></span><span class="num p">${st.pct}%</span><span class="small muted m">완료 ${st.done}/${st.n}</span></button>`; }).join('')}</div></section>` : ''}
     <section class="panel"><h3 style="margin:0 0 6px">지시 목록 <span class="num muted">${list.length}</span></h3>
       <ul class="mg-list">${list.slice().sort((a, b) => (isOpen(b) - isOpen(a)) || a.due_at.localeCompare(b.due_at)).map((d) => `<li><div class="t"><button type="button" class="dir-title" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small muted">${esc(d.assignee)} · ${esc(d.org)} · 지시 ${esc(md(d.issued_at))}</span>${alerts(d) ? `<span class="row mg-flags">${alerts(d)}</span>` : ''}</div>

@@ -531,3 +531,23 @@ body.dir-vis-open { overflow: hidden; }
 .id-tplsave { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .id-tplsave input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--paper); color: var(--ink); font: inherit; }
 .btn.on { background: var(--goldSoft); }
+
+/* P2 막힌 곳 · 독촉 문구 */
+.mg-blkcnt { gap: 6px; }
+.mg-blk { list-style: none; margin: 10px 0 6px; padding: 0; display: flex; flex-direction: column; }
+.mg-blk > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mg-blk > li .t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mg-nudge { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px dashed var(--gold); border-radius: 12px; background: var(--bg); }
+.mg-nudge-ta { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; resize: vertical; }
+
+/* P2 업무량 지도 */
+.mg-map > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mg-heat { border-collapse: separate; border-spacing: 3px; font-size: 14.5px; min-width: 640px; width: 100%; }
+.mg-heat th { font-weight: 600; color: var(--sub); font-size: 13.5px; white-space: nowrap; padding: 4px 6px; text-align: center; }
+.mg-heat tbody th { text-align: left; color: var(--ink); }
+.mg-heat td { text-align: center; padding: 6px 4px; border-radius: 6px; background: var(--bg); font-variant-numeric: tabular-nums; min-width: 44px; }
+.mg-heat td.h1 { background: color-mix(in srgb, var(--gold) 28%, transparent); }
+.mg-heat td.h2 { background: color-mix(in srgb, var(--gold) 60%, transparent); font-weight: 700; }
+.mg-heat td.h3 { background: color-mix(in srgb, var(--crit) 55%, transparent); color: #fff; font-weight: 800; }
+.mg-heat td.past.h1, .mg-heat td.past.h2 { background: color-mix(in srgb, var(--crit) 30%, transparent); }
+@media (max-width: 720px) { .mg-blk > li { grid-template-columns: minmax(0, 1fr); } }
