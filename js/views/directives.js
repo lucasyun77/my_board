@@ -409,7 +409,7 @@
     return `<section class="panel" aria-labelledby="h-org"><div class="row" style="justify-content:space-between"><h3 id="h-org">조직별 이행률 ${badge('측정')}</h3><span class="small muted">전체 <b class="num">${totPct}%</b> · 완료 ÷ (전체 − 보류)</span></div>
       <div class="dir-org">${rows.map((r) => `<button type="button" class="dir-org-row" data-act="dirOrg" data-v="${esc(r.o)}" title="${esc(r.o)} 항목만 보기">
         <span class="o">${esc(r.o)}</span><span class="bar"><i style="width:${r.pct}%"></i></span><span class="num p">${r.pct}%</span>
-        <span class="small muted m">완료 ${r.done}/${r.n}${r.gAvg != null ? ` · 목표 ${r.gN}개 평균 진척 ${r.gAvg}%` : ''}${r.over ? ` · <span class="crit">기한 경과 ${r.over}</span>` : ''}${r.stale ? ` · <span class="warn">무응답 ${r.stale}</span>` : ''}</span></button>`).join('') || '<p class="small muted">아직 항목이 없습니다.</p>'}</div></section>`;
+        <span class="small muted m">완료 ${r.done}/${r.n}${r.gAvg != null ? ` · 목표 ${r.gN}개 평균 진척 ${r.gAvg}%` : ''}${r.over ? ` · <span class="dir-crit">기한 경과 ${r.over}</span>` : ''}${r.stale ? ` · <span class="dir-warn">무응답 ${r.stale}</span>` : ''}</span></button>`).join('') || '<p class="small muted">아직 항목이 없습니다.</p>'}</div></section>`;
   }
 
   /* ---------- 등록 폼 ---------- */
@@ -520,7 +520,7 @@
       ${fld(isGoal(d) ? '등록 기준일' : '만든 날', `<span class="num">${esc(d.issued_at)}</span>${t && t.created_by && t.created_by.name ? ` <span class="small muted">· ${esc(t.created_by.name)}</span>` : ''}`)}
       ${fld('결과물', linkOut(d.result_url, '결과물 열기'))}
       ${!isAsana(d) && !isGoal(d) ? fld('원문', linkOut(d.source_url, '원문 열기')) : ''}
-      ${d.synced_fail ? fld('Asana 반영', `<span class="small crit">${esc(d.synced_fail)}</span> <button type="button" class="dir-link" data-act="dirRepush" data-id="${esc(d.id)}">다시 보내기</button>`) : ''}
+      ${d.synced_fail ? fld('Asana 반영', `<span class="small dir-crit">${esc(d.synced_fail)}</span> <button type="button" class="dir-link" data-act="dirRepush" data-id="${esc(d.id)}">다시 보내기</button>`) : ''}
     </div>`;
 
     const desc = `<section class="dir-sec"><h4>설명</h4>${notes ? `<div class="dir-notes">${linkify(notes)}</div>` : `<p class="muted small" style="margin:0">${det && det.state === 'loading' ? '불러오는 중…' : '설명이 없습니다.'}</p>`}</section>`;
@@ -1802,7 +1802,7 @@ ${cmts || '(없음)'}
         <div><span class="small muted">대상</span><b class="num">${st.n}<small>명</small></b></div>
         <div><span class="small muted">완료</span><b class="num ok">${draft ? '—' : st.done}<small>${draft ? '' : '명'}</small></b></div>
         <div><span class="small muted">진행 중</span><b class="num">${draft ? '—' : st.doing}<small>${draft ? '' : '명'}</small></b></div>
-        <div><span class="small muted">미착수</span><b class="num warn">${draft ? '—' : st.todo}<small>${draft ? '' : '명'}</small></b></div>
+        <div><span class="small muted">미착수</span><b class="num dir-warn">${draft ? '—' : st.todo}<small>${draft ? '' : '명'}</small></b></div>
         <div><span class="small muted">완료율</span><b class="num">${draft ? '—' : st.pct + '%'}</b></div>
       </div>
       ${draft ? '' : `<details class="cw-depts" ${ui.deptOpen ? 'open' : ''}><summary class="small">부서별 완료율 ${byDept.length}개 부서</summary><div class="dir-org">${byDept.map((r) => `<button type="button" class="dir-org-row" data-act="cwDept" data-v="${esc(r.d)}"><span class="o">${esc(r.d)}</span><span class="bar"><i style="width:${r.pct}%"></i></span><span class="num p">${r.pct}%</span><span class="small muted m">완료 ${r.done}/${r.n}</span></button>`).join('')}</div></details>`}
@@ -2513,7 +2513,8 @@ ${ctx}`, { modelTier: 'quick', cache: false });
   function sendToValue(d) {
     if (valueSent(d) || d.status !== '완료' || isGoal(d)) return;
     const done = String(d.completed_at || d.updated_at || S.today).slice(0, 10);
-    S.inbox.unshift({ id: 'ib' + Date.now().toString(36), at: new Date().toISOString(), from: 'directives', to: 'value', kind: 'achievement_candidate', title: shortT(d), done: false,
+    S.inbox.unshift({ id: 'ib' + Date.now().toString(36), at: new Date().toISOString(), from: 'directives', to: 'value', kind: 'achievement', title: shortT(d), done: false,
+      /* 성과·레벨 약속: est_minutes·actual_minutes·by_agent·output_type·headcount·saved_hours·months 는 모르는 값이라 비워 둠(지어내지 않음) */
       payload: { directive_id: d.id, title: shortT(d), date: done, output_url: safeUrl(d.result_url) || '', source_url: safeUrl(d.source_url) || '', assignee: d.assignee, org: d.org, issued_at: d.issued_at, due_at: noDue(d) ? '' : d.due_at, on_time: noDue(d) ? null : done <= d.due_at, memo: d.memo || '' } });
     logAct('value_candidate', `성과 평가 후보로 보냄 — ${d.assignee} · ${shortT(d)}`, d.id);
     toast(`「${shortT(d)}」을 성과·레벨 메뉴의 평가 후보로 보냈습니다`);
@@ -2594,7 +2595,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     const kp = (l, v, cls) => `<div><span class="small muted">${l}</span><b class="num ${cls || ''}">${v}</b></div>`;
     return `<section class="panel mg-retro" aria-labelledby="h-retro"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 id="h-retro" style="margin:0">주간 지시 회고 ${badge('측정')}</h3><p class="small muted" style="margin:2px 0 0">${esc(md(w))} ~ ${esc(md(st.end))} · 이 현황판에서 한 일과 Asana 기록으로 셉니다.</p></div>
       <div class="seg" role="group" aria-label="주 고르기"><button type="button" data-act="retroW" data-v="${addD(w, -7)}">← 이전 주</button><button type="button" data-act="retroW" data-v="${cur}" aria-pressed="${w === cur}">이번 주</button><button type="button" data-act="retroW" data-v="${addD(w, 7)}" ${w >= cur ? 'disabled' : ''}>다음 주 →</button></div></div>
-      <div class="cw-kpis mg-kpis">${kp('새 지시', st.made.length + '<small>건</small>')}${kp('완료', st.done.length + '<small>건</small>', 'ok')}${kp('기한 안 완료', st.done.length ? st.onTime + '<small>건</small>' : '—')}${kp('지금 기한 지남', st.over + '<small>건</small>', st.over ? 'crit' : '')}${kp('새 지시 후보', st.ideasNew + '<small>건</small>')}${kp('완료 칭찬', st.praise + '<small>번</small>')}</div>
+      <div class="cw-kpis mg-kpis">${kp('새 지시', st.made.length + '<small>건</small>')}${kp('완료', st.done.length + '<small>건</small>', 'ok')}${kp('기한 안 완료', st.done.length ? st.onTime + '<small>건</small>' : '—')}${kp('지금 기한 지남', st.over + '<small>건</small>', st.over ? 'dir-crit' : '')}${kp('새 지시 후보', st.ideasNew + '<small>건</small>')}${kp('완료 칭찬', st.praise + '<small>번</small>')}</div>
       ${st.blocked.length ? `<p class="small" style="margin:10px 0 4px"><b>가장 막힌 지시</b></p><ul class="mg-retrolist">${st.blocked.map((x) => `<li><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(x.d.id)}">${esc(shortT(x.d))}</button> <span class="small muted">${esc(x.d.assignee)} · ${esc(x.rs.map((r) => r.t).join(', '))}</span></li>`).join('')}</ul>` : ''}
       ${st.done.length ? `<details class="mg-retrodone"><summary class="small">이 주에 끝난 지시 ${st.done.length}건</summary><ul class="mg-retrolist">${st.done.map((d) => `<li><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button> <span class="small muted">${esc(d.assignee)}</span> ${valueBtn(d, true)}</li>`).join('')}</ul></details>` : ''}
       <label class="f" style="margin-top:10px">회고 메모 <span class="small muted">${RETRO.by ? '· ' + esc(RETRO.by) + ' · ' : ''}칸을 벗어나면 저장됩니다</span><textarea class="retro-ta" data-w="${esc(w)}" rows="6" placeholder="잘된 점 / 아쉬운 점 / 다음 주에 할 것">${esc(memo)}</textarea></label>
@@ -2684,7 +2685,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       </div>
       ${f.dept || f.who || f.st || f.period !== '90' ? '<p class="small" style="margin:6px 0 0"><button type="button" class="dir-link" data-act="mgFReset">조건 지우기</button></p>' : ''}
       <div class="cw-kpis mg-kpis">
-        ${kpi('지시', all.n + '<small>건</small>')}${kpi('진행 중', all.open + '<small>건</small>')}${kpi('완료율', pctTxt(all.rate), 'ok')}${kpi('기한 준수율', pctTxt(all.ontime))}${kpi('평균 처리', all.lead == null ? '—' : all.lead + '<small>일</small>')}${kpi('기한 경과', all.over + '<small>건</small>', all.over ? 'crit' : '')}${kpi('3일 무응답', all.stale + '<small>건</small>', all.stale ? 'warn' : '')}
+        ${kpi('지시', all.n + '<small>건</small>')}${kpi('진행 중', all.open + '<small>건</small>')}${kpi('완료율', pctTxt(all.rate), 'ok')}${kpi('기한 준수율', pctTxt(all.ontime))}${kpi('평균 처리', all.lead == null ? '—' : all.lead + '<small>일</small>')}${kpi('기한 경과', all.over + '<small>건</small>', all.over ? 'dir-crit' : '')}${kpi('3일 무응답', all.stale + '<small>건</small>', all.stale ? 'dir-warn' : '')}
       </div>
       <div class="mg-graphs">${weekChart(list)}${statusBar(list)}</div>
     </section>
@@ -2699,7 +2700,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       <p class="small muted" style="margin:4px 0 8px">종합 = 완료율 40% + 기한 준수율 35% + 응답성 25%(진행 중 지시의 최근 갱신, 하루 늦을 때마다 10점 감점). A 85점 이상 · B 70 · C 55 · D 그 아래. 이름을 누르면 그 사람만 봅니다.</p>
       <div class="tbl-wrap"><table class="dir-tbl mg-tbl"><thead><tr><th>이름</th><th>부하</th><th>지시·완료</th><th>완료율</th><th>기한 준수</th><th>평균 처리</th><th>무응답</th><th>평가</th></tr></thead><tbody>
       ${ppl.map((p) => `<tr class="${f.who === p.n ? 'on' : ''}"><td data-label="이름"><button type="button" class="dir-link dir-who" data-act="mgWho" data-v="${esc(p.n)}">${avatar(p.n)}<span>${esc(p.n)}<small>${esc(p.d)}</small></span></button></td>
-        <td data-label="부하">${loadPill(p.n)}</td><td data-label="지시·완료" class="num">${p.s.done}/${p.s.n}</td><td data-label="완료율" class="num">${pctTxt(p.s.rate)}</td><td data-label="기한 준수" class="num">${pctTxt(p.s.ontime)}</td><td data-label="평균 처리" class="num">${p.s.lead == null ? '—' : p.s.lead + '일'}</td><td data-label="무응답" class="num ${p.s.stale ? 'warn' : ''}">${p.s.stale}</td>
+        <td data-label="부하">${loadPill(p.n)}</td><td data-label="지시·완료" class="num">${p.s.done}/${p.s.n}</td><td data-label="완료율" class="num">${pctTxt(p.s.rate)}</td><td data-label="기한 준수" class="num">${pctTxt(p.s.ontime)}</td><td data-label="평균 처리" class="num">${p.s.lead == null ? '—' : p.s.lead + '일'}</td><td data-label="무응답" class="num ${p.s.stale ? 'dir-warn' : ''}">${p.s.stale}</td>
         <td data-label="평가"><span class="mg-grade g${p.s.grade}">${p.s.grade}</span> <span class="num small">${p.s.score == null ? '' : p.s.score}</span>${p.s.few ? ' <span class="small muted">표본 적음</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">조건에 맞는 지시가 없습니다.</td></tr>'}</tbody></table></div></section>
     ${f.who ? '' : loadMap(byDept)}
     ${cws.length && !f.who ? `<section class="panel"><h3 style="margin:0 0 6px">전사 지시 진행</h3><div class="dir-org">${cws.map((c) => { const st = cwStat(cwRows(c)); return `<button type="button" class="dir-org-row" data-act="mgCw" data-v="${esc(c.id)}"><span class="o">${esc(c.title)}</span><span class="bar"><i style="width:${st.pct}%"></i></span><span class="num p">${st.pct}%</span><span class="small muted m">완료 ${st.done}/${st.n}</span></button>`; }).join('')}</div></section>` : ''}

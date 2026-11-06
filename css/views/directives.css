@@ -49,7 +49,7 @@
 .dir-memo { margin-top: 4px; }
 .is-over { color: var(--crit); font-weight: 700; }
 .is-soon { color: var(--warn); font-weight: 700; }
-.crit { color: var(--crit); } .warn { color: var(--warn); }
+.dir-crit { color: var(--crit); } .dir-warn { color: var(--warn); } /* 다른 메뉴로 번지지 않게 dir- 접두어 */
 .dir-empty { text-align: center; }
 .dir-empty p { margin: 0 0 8px; color: var(--sub); }
 .dir-tbl select { width: auto; max-width: 100%; }
@@ -270,7 +270,7 @@
 .cw-kpis > div { background: var(--paper2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; }
 .cw-kpis b { font-size: 24px; font-weight: 900; line-height: 1.2; }
 .cw-kpis b small { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 2px; }
-.cw-kpis b.ok { color: var(--ok); } .cw-kpis b.warn { color: var(--warn); }
+.cw-kpis b.ok { color: var(--ok); } .cw-kpis b.dir-warn { color: var(--warn); }
 .cw-depts { margin: 8px 0; }
 .cw-depts summary { cursor: pointer; color: var(--goldInk); font-weight: 700; padding: 4px 0; }
 .cw-filters { margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
