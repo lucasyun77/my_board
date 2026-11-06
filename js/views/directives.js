@@ -245,6 +245,8 @@
       db.collection('progress').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.task_id) (m[v.task_id] = m[v.task_id] || []).push(Object.assign({}, v, { id: ds.id })); }); Object.values(m).forEach((a) => a.sort((x, y) => String(y.date || '').localeCompare(String(x.date || '')) || String(y.created || '').localeCompare(String(x.created || '')))); LIVE.prog = m; rerender(); }, err);
       db.collection('reports').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.task_id) (m[v.task_id] = m[v.task_id] || []).push(Object.assign({}, v, { id: ds.id })); }); Object.values(m).forEach((a) => a.sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')))); LIVE.reps = m; rerender(); }, err);
       db.doc('plans/' + new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)).onSnapshot((s) => { LIVE.plan = s.exists ? s.data() : null; rerender(); }, err);
+      db.collection('ideas').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title != null) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); if (stableStr(m) === stableStr(LIVE.ideas || null)) return; LIVE.ideas = m; rerender(); }, err);
+      db.doc('idearecs/latest').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items) && !(IDEA.recs && IDEA.recs.at > v.at)) { IDEA.recs = v; } }, err);
       db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
       db.doc('live/asana').onSnapshot((s) => {
@@ -623,6 +625,16 @@
       return `<div class="view-head"><div><h2>지시 관리</h2></div></div>
         <div class="panel dir-loading" role="alert"><div><b>${esc(errText(e))}</b><div class="row" style="margin-top:8px">${needsAllow(e) ? '<button type="button" class="btn primary sm" data-act="dirAllow">허용하고 불러오기</button>' : '<button type="button" class="btn sm" data-act="dirSync">다시 불러오기</button>'}</div></div></div>`;
     }
+    const main = S.ui.dirMain || 'task';
+    const mainTabs = `<div class="dir-maintabs" role="tablist" aria-label="지시 메뉴">${[['task', '태스크 관리', '지금 돌아가는 일'], ['dev', '지시 개발', '시킬 일을 다듬기'], ['mgr', '지시 관리', '지시한 것의 성과']].map(([v, l, h]) => `<button type="button" role="tab" data-act="dirMain" data-v="${v}" aria-selected="${main === v}"><b>${l}</b><small>${h}</small></button>`).join('')}</div>`;
+    if (main === 'dev') {
+      return `${mainTabs}<div class="view-head"><div><h2>지시 개발</h2><p>시킬 일을 후보로 모아 두고, 카드로 다듬어 Asana·Slack으로 지시합니다.</p></div></div>
+        ${devPanel()}${detailDialog()}${ideaPane()}${ideaModal()}`;
+    }
+    if (main === 'mgr') {
+      return `${mainTabs}<div class="view-head"><div><h2>지시 관리</h2><p>지시한 일의 진행과 사람별 이행 지표를 한눈에 봅니다.</p></div></div>
+        ${syncBar()}${mgrPanel()}${detailDialog()}`;
+    }
     const f = fullFilter();
     const list = filtered(f);
     const mode = S.ui.dirView || '목록';
@@ -636,8 +648,8 @@
     const body = mode === '칸반' ? kanbanView(list) : mode === '타임라인' ? timelineView(list) : listView(list);
     const tagCount = (id) => S.directives.filter((d) => d.tags.includes(id)).length;
 
-    return `
-      <div class="view-head"><div><h2>지시 관리</h2><p>${S.liveMode ? 'Asana 지시와 전사·부서 목표를 한곳에서 챙깁니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.' : '회장 지시를 등록·추적합니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.'}</p></div>
+    return `${mainTabs}
+      <div class="view-head"><div><h2>태스크 관리</h2><p>${S.liveMode ? 'Asana 지시와 전사·부서 목표를 한곳에서 챙깁니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.' : '회장 지시를 등록·추적합니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.'}</p></div>
         <button type="button" class="btn primary" data-act="dirNewToggle" aria-expanded="${!!S.ui.dirNew}">+ 지시 등록</button></div>
 
       ${syncBar()}
@@ -687,7 +699,7 @@
   APP.acts.dirNewToggle = () => { S.ui.dirNew = !S.ui.dirNew; if (!S.ui.dirNew) S.ui.dirDraft = null; if (S.ui.dirNew) focusLater('#dn-title'); };
   APP.acts.dirOpen = (el) => {
     if (S.ui.dirOpen === el.dataset.id && !el.closest('.dir-pane')) { S.ui.dirOpen = null; S.ui.dirEdit = false; return; }
-    S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d), 0); focusLater('#dir-dlg'); };
+    S.ui.idOpen = null; S.ui.dirOpen = el.dataset.id; S.ui.dirEdit = false; if (!el.closest('.dir-pane')) S.ui.dirReturn = el.dataset.id; const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d), 0); focusLater('#dir-dlg'); };
   APP.acts.dirReload = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => loadDetail(d, true), 0); };
   APP.acts.dirDone = (el) => {
     const d = find(el.dataset.id); if (!d) return;
@@ -1786,18 +1798,522 @@ ${ctx}`, { modelTier: 'default', cache: false });
     cwUi({ form: null });
   };
 
+  /* ================= 지시 개발: 지시 후보를 다듬어 Asana·Slack으로 지시 ================= */
+  const ID_CARDS = [
+    ['why', '왜 하는가', '이 일을 해야 하는 이유와 배경'],
+    ['goal', '달성 목표', '숫자나 상태로 말하는 목표'],
+    ['result', '내야 할 결과', '끝났을 때 손에 쥐는 산출물'],
+    ['process', '진행 프로세스', '단계별 진행 순서'],
+    ['brand', '브랜딩 기여', '브랜드에 어떻게 보탬이 되는가'],
+    ['upgrade', '초고도화', '지금보다 한 차원 높게 하는 방법'],
+    ['produce', '초생산', '같은 시간에 몇 배로 만들어 내는 방법'],
+    ['agent', '에이전트 위임', 'AI 에이전트에게 맡길 수 있는 부분']
+  ];
+  const ID_LABEL = Object.assign({ title: '지시 제목', body: '업무 설명', subs: 'Asana 하위 태스크' }, Object.fromEntries(ID_CARDS.map((c) => [c[0], c[1]])));
+  const APPS = [['claude', 'Claude', 'https://claude.ai/new?q='], ['gpt', 'ChatGPT', 'https://chatgpt.com/?q='], ['gemini', 'Gemini', 'https://gemini.google.com/app?q=']];
+  const IDEA = { local: null, recs: null, modal: null, fill: {}, send: {}, confirm: null, shown: null, scroll: {}, delAsk: null };
+  const stableStr = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x));
+  function ideasMap() {
+    if (LIVE.db) return LIVE.ideas || {};
+    if (!IDEA.local) {
+      const now = new Date().toISOString();
+      IDEA.local = {
+        i1: { id: 'i1', title: '블랙라벨 신규 가맹점 오픈 체크리스트 표준화', dept: '블랙라벨사업부', assignee: '담당 I', due: dayStr(14), body: '오픈 2주 전부터 당일까지 해야 할 일을 하나의 체크리스트로 정리한다', cards: { why: '오픈 때마다 빠지는 항목이 달라 초기 매출이 흔들림', goal: '오픈 첫 달 매출 편차 30% 축소' }, subs: [{ t: '최근 오픈 5개점 누락 항목 조사' }, { t: '체크리스트 초안 작성' }], status: 'idea', created: now, updated: now },
+        i2: { id: 'i2', title: '벌툰 SNS 리뷰 자동 수집 보고', dept: '벌툰사업부', assignee: '담당 J', due: '', body: '', cards: {}, subs: [], status: 'idea', created: now, updated: now }
+      };
+    }
+    return IDEA.local;
+  }
+  /* 사람 명단: Asana 직원 명단이 있으면 그것, 없으면 지시 담당자에서 */
+  function staffList() {
+    if (LIVE.staff && LIVE.staff.length) return LIVE.staff.filter((s) => !s.leave);
+    const m = new Map(); S.directives.filter((d) => !isGoal(d) && d.assignee && d.assignee !== '미지정').forEach((d) => { if (!m.has(d.assignee)) m.set(d.assignee, { n: d.assignee, d: d.org || '미지정', g: '', p: '', gid: '' }); });
+    return [...m.values()];
+  }
+  const deptsAll = () => [...new Set(staffList().map((s) => s.d).concat(S.directives.filter(isGoal).map((d) => d.org)).filter((x) => x && x !== '미지정' && x !== '회장'))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const staffOf = (n) => staffList().find((s) => s.n === n);
+  /* 업무 부하(추정): 진행 중 지시 + 기한 경과 + 전사 지시 미완료 + 보내기 전 지시 후보 */
+  const LOADCACHE = { key: '', map: {} };
+  function loadOf(name) {
+    const key = S.directives.length + '|' + Object.keys(LIVE.cw || {}).length + '|' + Object.keys(ideasMap()).length + '|' + (LIVE.asanaAt || 0);
+    if (LOADCACHE.key !== key) { LOADCACHE.key = key; LOADCACHE.map = {}; }
+    if (LOADCACHE.map[name]) return LOADCACHE.map[name];
+    const tasks = S.directives.filter((d) => !isGoal(d) && d.assignee === name && isOpen(d));
+    const over = tasks.filter(isOverdue).length;
+    const cwN = Object.values(LIVE.cw || {}).filter((c) => c.status !== 'draft' && cwRows(c).some((r) => r.n === name && (r.st === 'todo' || r.st === 'doing'))).length;
+    const ideas = Object.values(ideasMap()).filter((x) => x.assignee === name && x.status !== 'sent').length;
+    const score = tasks.length + over + cwN * 0.5 + ideas * 0.5;
+    const lv = score >= 7 ? 'hi' : score >= 4 ? 'mid' : 'lo';
+    return (LOADCACHE.map[name] = { tasks, over, cwN, ideas, score, lv, label: { hi: '과부하', mid: '보통', lo: '여유' }[lv] });
+  }
+  const loadPill = (name) => { if (!name) return ''; const l = loadOf(name); return `<span class="id-load ${l.lv}" title="진행 중 지시 ${l.tasks.length} · 기한 경과 ${l.over} · 전사 지시 ${l.cwN} · 대기 후보 ${l.ideas}">${l.label} <b class="num">${l.tasks.length}</b></span>`; };
+  const cardsFilled = (x) => ID_CARDS.filter(([k]) => String((x.cards || {})[k] || '').trim()).length;
+
+  async function ideaSave(id, patch, create) {
+    const m = ideasMap(); const now = new Date().toISOString();
+    const cur = m[id] || {};
+    const next = create ? Object.assign({ id, created: now }, patch, { updated: now }) : Object.assign({}, cur, patch, { updated: now });
+    m[id] = next; /* 화면 값은 바로 바꾸고, 저장 알림이 와도 다시 그리지 않는다 */
+    if (!LIVE.db) return true;
+    try { if (create) await LIVE.db.doc('ideas/' + id).set(next); else await LIVE.db.doc('ideas/' + id).update(Object.assign({}, patch, { updated: now })); return true; } catch (e) { toast('저장하지 못했습니다(' + (e && e.code || '오류') + ')'); return false; }
+  }
+  const setPath = (x, k, v) => {
+    if (k.startsWith('cards.')) return { cards: Object.assign({}, x.cards || {}, { [k.slice(6)]: v }) };
+    if (k.startsWith('sub.')) { const [, i, f] = k.split('.'); const subs = (x.subs || []).map((s) => Object.assign({}, s)); if (subs[+i]) subs[+i][f] = v; return { subs }; }
+    return { [k]: v };
+  };
+  const getPath = (x, k) => (ID_CARDS.some((c) => c[0] === k) ? String((x.cards || {})[k] || '') : k === 'subs' ? (x.subs || []).map((s) => s.t).join('\n') : String(x[k] || ''));
+  /* 글자 칸: 포커스가 빠지면 조용히 저장(화면을 다시 그리지 않아 누르던 단추가 사라지지 않음) */
+  document.addEventListener('change', (e) => {
+    const el = e.target; if (!el || !el.dataset || !el.dataset.idk) return;
+    const x = ideasMap()[el.dataset.id]; if (!x) return;
+    const v = el.value; if (getPath(x, el.dataset.idk) === v && !el.dataset.idk.startsWith('sub.')) return;
+    ideaSave(x.id, setPath(x, el.dataset.idk, el.dataset.idk === 'title' ? v.trim() || x.title : v));
+    const st = el.closest('.id-card, .dir-sec, .id-head'); const mark = st && st.querySelector('.id-saved'); if (mark) { mark.textContent = '저장됨'; setTimeout(() => { if (mark.isConnected) mark.textContent = ''; }, 1500); }
+  });
+  document.addEventListener('scroll', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('dir-pane-body') && S.ui.idOpen) IDEA.scroll[S.ui.idOpen] = t.scrollTop; }, true);
+
+  function ideaContext(x) {
+    const l = x.assignee ? loadOf(x.assignee) : null;
+    const goals = S.directives.filter((d) => isGoal(d) && x.dept && d.org === x.dept).slice(0, 6).map((d) => `- ${d.code} ${d.title} (진척 ${d.pct}%)`).join('\n');
+    return `지시 제목: ${x.title}
+부서: ${x.dept || '미정'} · 담당: ${x.assignee || '미정'}${l ? ` (업무 부하 ${l.label}: 진행 중 지시 ${l.tasks.length}건, 기한 경과 ${l.over}건)` : ''} · 기한: ${x.due || '미정'}
+${ID_CARDS.map(([k, lab]) => `${lab}: ${String((x.cards || {})[k] || '').trim() || '(비어 있음)'}`).join('\n')}
+업무 설명: ${String(x.body || '').trim() || '(비어 있음)'}
+하위 태스크: ${(x.subs || []).map((s) => s.t).filter(Boolean).join(' / ') || '(없음)'}
+이 부서의 현재 목표:
+${goals || '(없음)'}`;
+  }
+  const ID_RULES = '아이센스그룹(블랙라벨 PC방·벌툰 만화카페·생전포차 한식 포차·꼬치의품격 등 외식·여가 프랜차이즈 본사) 윤석범 회장의 지시를 다듬는 일입니다. 사실을 지어내지 말고 추정은 "(추정)"으로 표시합니다. 연봉·임금은 다루지 않습니다. 짧고 구체적인 한국어, 합니다체.';
+  const dicePrompt = (x, k) => `${ID_RULES}
+아래 지시의 「${ID_LABEL[k]}」 칸에 들어갈 새 제안 3가지를 서로 다른 방향으로 써 주세요.${k === 'subs' ? ' 각 제안은 Asana 하위 태스크 3~7개 목록입니다(각 30자 이내, 동사로 끝냄).' : ' 각 제안은 2~5문장 또는 짧은 목록입니다.'} 지금 칸에 있는 내용과 겹치지 않게 하세요.
+
+${ideaContext(x)}`;
+  const chatPrompt = (x, k) => `아이센스그룹 회장의 지시 「${x.title}」의 「${ID_LABEL[k]}」를 함께 다듬고 싶습니다. 지금 내용은 이렇습니다.\n${getPath(x, k) || '(비어 있음)'}\n부서 ${x.dept || '미정'}, 담당 ${x.assignee || '미정'}${x.cards && x.cards.why ? `, 이유: ${x.cards.why}` : ''}. 더 좋은 방향을 같이 생각해 주세요.`;
+  const appLinks = (prompt, only) => APPS.filter((a) => !only || only.includes(a[0])).map(([k, l, u]) => `<a class="btn sm id-app ${k}" href="${esc(u + encodeURIComponent(prompt.slice(0, 700)))}" target="_blank" rel="noopener noreferrer">${l} 앱에서 이야기 ↗</a>`).join('');
+
+  async function ideaDice(id, k) {
+    const x = ideasMap()[id]; if (!x) return;
+    const M = IDEA.modal = { kind: 'dice', id, k, busy: true, items: null, err: '', prompt: chatPrompt(x, k) }; rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const v = await llm.json(dicePrompt(x, k) + `\nJSON 배열만 출력: ${k === 'subs' ? '[{"items":["",""],"note":"이 묶음의 특징 한 줄"}, ...]' : '[{"text":"","note":"이 제안의 방향 한 줄"}, ...]'}`, { modelTier: 'quick', cache: false });
+      const arr = (Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : []).filter((o) => o && (k === 'subs' ? Array.isArray(o.items) && o.items.length : o.text)).slice(0, 3);
+      if (!arr.length) throw { code: 'empty_completion' };
+      M.items = arr.map((o) => (k === 'subs' ? { items: o.items.map((s) => String(s).slice(0, 80)).slice(0, 8), note: String(o.note || '').slice(0, 80) } : { text: String(o.text).slice(0, 1200), note: String(o.note || '').slice(0, 80) }));
+      M.ai = used;
+    } catch (e) { M.err = aiErr(e); }
+    M.busy = false; if (IDEA.modal === M) rerender();
+  }
+  const aiErr = (e) => (e && e.code === 'no_llm' ? '이 화면에서는 AI를 부를 수 없습니다(claude.ai에서 연 현황판에서만 됩니다). 아래 앱 단추로 이어서 이야기할 수 있습니다.' : e && e.code === 'not_granted' ? 'AI 사용이 허용되지 않았습니다. 허용 창에서 허용한 뒤 다시 눌러 주세요.' : '제안을 만들지 못했습니다(' + ((e && e.code) || '오류') + '). 다시 눌러 주세요.');
+
+  async function ideaFill(id) {
+    const x = ideasMap()[id]; if (!x || IDEA.fill[id]) return;
+    IDEA.fill[id] = { busy: true }; rerender();
+    try {
+      const { llm } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const empty = ID_CARDS.filter(([k]) => !String((x.cards || {})[k] || '').trim()).map((c) => c[0]);
+      const v = await llm.json(`${ID_RULES}
+아래 지시의 빈 칸을 채워 주세요. 이미 채워진 칸은 그대로 두고 그 내용과 맞게 씁니다.
+채울 칸: ${empty.map((k) => k + '(' + ID_LABEL[k] + ')').join(', ')}${String(x.body || '').trim() ? '' : ', body(업무 설명: 담당자가 읽고 바로 시작할 수 있게 4~8문장)'}${(x.subs || []).length ? '' : ', subs(Asana 하위 태스크 3~6개, 각 30자 이내)'}
+각 칸은 2~4문장 또는 짧은 목록.
+
+${ideaContext(x)}
+JSON 객체만 출력: {"why":"", ..., "body":"", "subs":["",""]}`, { modelTier: 'quick', cache: false });
+      const cur = ideasMap()[id] || x; const cards = Object.assign({}, cur.cards || {});
+      empty.forEach((k) => { if (v && v[k] && !String(cards[k] || '').trim()) cards[k] = String(v[k]).slice(0, 1200); });
+      const patch = { cards };
+      if (!String(cur.body || '').trim() && v && v.body) patch.body = String(v.body).slice(0, 2000);
+      if (!(cur.subs || []).length && v && Array.isArray(v.subs)) patch.subs = v.subs.slice(0, 8).map((s) => ({ t: String(s).slice(0, 80) }));
+      await ideaSave(id, patch);
+      IDEA.fill[id] = null; toast('빈 칸을 채웠습니다 — 고칠 곳은 바로 고쳐 쓰시면 됩니다');
+    } catch (e) { IDEA.fill[id] = { err: aiErr(e) }; }
+    rerender();
+  }
+
+  async function ideaRecs() {
+    const M = IDEA.modal = { kind: 'recs', busy: true, err: '' }; rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const goals = S.directives.filter(isGoal).filter(isOpen).slice(0, 30).map((d) => `- [${d.org}] ${d.title} (진척 ${d.pct}% / 계획 ${d.plan}%)`).join('\n');
+      const tasks = S.directives.filter((d) => !isGoal(d) && isOpen(d)).slice(0, 30).map((d) => `- ${shortT(d)} (${d.assignee}, ${d.status})`).join('\n');
+      const loads = deptsAll().map((dp) => { const ppl = staffList().filter((s) => s.d === dp); const n = ppl.reduce((a, s) => a + loadOf(s.n).tasks.length, 0); return `${dp}: 인원 ${ppl.length}명, 진행 중 지시 ${n}건`; }).join('\n');
+      const have = Object.values(ideasMap()).map((x) => x.title).join(', ');
+      const v = await llm.json(`${ID_RULES}
+회장이 지금 각 부서·사람에게 내리면 좋을 새 지시 아이디어 5가지를 추천하세요. 전사·부서 목표 중 늦은 것을 앞당기거나, 아무도 맡지 않은 빈틈을 메우는 것을 먼저 고르세요. 일이 몰린 부서·사람은 피하고 여유 있는 곳에 배정하세요.${have ? `\n이미 후보에 있는 것과 겹치지 않게: ${have}` : ''}${IDEA.recs && IDEA.recs.items ? `\n직전에 추천한 것과도 다르게: ${IDEA.recs.items.map((r) => r.title).join(', ')}` : ''}
+각 항목: title(30자 이내), dept(아래 부서 이름 중 하나), who(담당 추천, 모르면 빈칸), why(왜 지금 필요한가 60자 이내), first(담당자가 첫 주에 할 일 40자 이내).
+JSON 배열만 출력: [{"title":"","dept":"","who":"","why":"","first":""}, ...]
+
+전사·부서 목표:
+${goals || '(없음)'}
+진행 중 지시:
+${tasks || '(없음)'}
+부서별 부하:
+${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
+      const arr = (Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : []).filter((o) => o && o.title).slice(0, 5).map((o) => ({ title: String(o.title).slice(0, 60), dept: String(o.dept || '').slice(0, 30), who: String(o.who || '').slice(0, 20), why: String(o.why || '').slice(0, 120), first: String(o.first || '').slice(0, 80) }));
+      if (!arr.length) throw { code: 'empty_completion' };
+      IDEA.recs = { at: new Date().toISOString(), items: arr, ai: used };
+      if (LIVE.db) LIVE.db.doc('idearecs/latest').set(IDEA.recs).catch(() => {});
+    } catch (e) { M.err = aiErr(e); }
+    M.busy = false; if (IDEA.modal === M) rerender();
+  }
+  const recPrompt = (r) => `아이센스그룹 회장으로서 ${r.dept || '부서'}${r.who ? ' ' + r.who : ''}에게 「${r.title}」를 지시하려 합니다. 이유: ${r.why}. 이 지시를 어떻게 구체화하면 좋을지(목표·결과물·진행 순서·위험) 같이 생각해 주세요.`;
+
+  async function ideaAsana(x) {
+    if (!LIVE.mcp) { toast('Asana에 연결된 보기에서만 보낼 수 있습니다'); return; }
+    const st = staffOf(x.assignee);
+    IDEA.send[x.id] = 'asana'; IDEA.confirm = null; rerender();
+    try {
+      const notes = [String(x.body || '').trim(), '', ...ID_CARDS.filter(([k]) => String((x.cards || {})[k] || '').trim()).map(([k, lab]) => `■ ${lab}\n${String(x.cards[k]).trim()}`), '', '회장 현황판 「지시 개발」에서 보낸 지시입니다. 진행하면서 댓글로 결과를 남기고, 끝나면 완료로 표시해 주세요.'].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      const task = { name: `[업무지시] ${x.title} — ${x.assignee}${st && st.g ? ' ' + st.g : ''}`, project_id: ASANA.project, section_id: ASANA.sec['진행'], notes };
+      if (st && st.gid) task.assignee = st.gid;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(x.due || '')) task.due_on = x.due;
+      const r = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { default_project: ASANA.project, tasks: [task] });
+      const p = (r && r.payload) || {};
+      const gid = gidOf((p.succeeded || [])[0]);
+      if (!gid) throw { code: 'tool_error', message: JSON.stringify((p.failed || [])[0] || p).slice(0, 160) };
+      await ideaSave(x.id, { status: 'sent', sent: Object.assign({}, x.sent || {}, { asana_gid: gid, at: new Date().toISOString() }) });
+      const subs = (x.subs || []).filter((s) => String(s.t || '').trim());
+      let subOk = 0;
+      if (subs.length) {
+        try {
+          const r2 = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { tasks: subs.map((s) => { const who = staffOf(s.who || '') || st; const t = { name: String(s.t).trim(), parent: gid }; if (who && who.gid) t.assignee = who.gid; if (task.due_on) t.due_on = task.due_on; return t; }) });
+          subOk = (((r2 && r2.payload) || {}).succeeded || []).length;
+        } catch (e) { subOk = 0; }
+      }
+      toast(`Asana에 지시를 만들었습니다${subs.length ? ` · 하위 태스크 ${subOk}/${subs.length}개` : ''}${st && st.gid ? '' : ' (담당자 Asana 계정을 못 찾아 미배정)'}`);
+      fetchAsana(true);
+    } catch (e) { toast('Asana로 보내지 못했습니다 — ' + errText(e)); }
+    IDEA.send[x.id] = null; rerender();
+  }
+  const slackDraft = (x) => {
+    const c = x.cards || {}; const line = (lab, v) => (String(v || '').trim() ? `\n• ${lab}: ${String(v).trim().replace(/\n+/g, ' ').slice(0, 220)}` : '');
+    return `[회장 지시] ${x.assignee}님, 새 업무를 부탁드립니다.\n*${x.title}*${line('왜', c.why)}${line('목표', c.goal)}${line('결과물', c.result)}${x.due ? `\n• 기한: ${x.due}` : ''}${x.sent && x.sent.asana_gid ? `\n👉 Asana: https://app.asana.com/0/${ASANA.project}/${x.sent.asana_gid}` : ''}\n궁금한 점은 편하게 물어봐 주세요.`;
+  };
+  async function ideaSlack(x, msg) {
+    if (!LIVE.mcp) { toast('Slack에 연결된 보기에서만 보낼 수 있습니다'); return; }
+    IDEA.send[x.id] = 'slack'; IDEA.confirm = null; rerender();
+    try {
+      const who = await findSlackId({ id: 'i' + x.id, assignee: x.assignee });
+      if (!who) toast(`Slack에서 ${x.assignee}님을 찾지 못했습니다`);
+      else { await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: msg }); await ideaSave(x.id, { sent: Object.assign({}, (ideasMap()[x.id] || x).sent || {}, { slack_at: new Date().toISOString() }) }); toast(`${x.assignee}님께 Slack으로 지시를 보냈습니다`); }
+    } catch (e) { toast('Slack으로 보내지 못했습니다(' + ((e && e.code) || '오류') + ')'); }
+    IDEA.send[x.id] = null; rerender();
+  }
+
+  function workload(f) {
+    const people = staffList().filter((s) => (!f.dept || s.d === f.dept) && (!f.who || s.n === f.who));
+    if (f.who) {
+      const s = people[0] || { n: f.who, d: f.dept || '' }; const l = loadOf(s.n);
+      const goals = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === s.d);
+      return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>${esc(s.n)}님이 지금 하는 일</b>${loadPill(s.n)}</div>
+        <p class="small muted" style="margin:4px 0 8px">진행 중 지시 ${l.tasks.length}건 · 기한 경과 ${l.over}건 · 전사 지시 미완료 ${l.cwN}건 · 보내기 전 후보 ${l.ideas}건 ${badge('추정')}</p>
+        <ul class="id-doing">${l.tasks.map((d) => `<li><span class="pill ${statCls(d)}">${esc(d.status)}</span><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : ''}</span></li>`).join('') || '<li class="muted small">진행 중인 지시가 없습니다.</li>'}
+        ${goals.length ? `<li class="id-sub small muted">${esc(s.d)} 부서 목표 ${goals.length}개</li>${goals.slice(0, 8).map((d) => `<li><span class="dir-src ${d.src}">${esc(d.code || '')}</span>${esc(d.title)}<span class="small num muted">${d.pct}%</span></li>`).join('')}` : ''}</ul></div>`;
+    }
+    if (f.dept) {
+      const goals = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === f.dept);
+      const rows = people.map((s) => ({ s, l: loadOf(s.n) })).sort((a, b) => b.l.score - a.l.score);
+      const max = Math.max(4, ...rows.map((r) => r.l.score));
+      return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>${esc(f.dept)} 사람별 업무 부하</b><span class="small muted">누르면 그 사람으로 좁힙니다 ${badge('추정')}</span></div>
+        <div class="id-bars">${rows.map(({ s, l }) => `<button type="button" class="id-bar" data-act="idWho" data-v="${esc(s.n)}"><span class="n">${esc(s.n)}<small>${esc(s.g || '')}</small></span><span class="bar ${l.lv}"><i style="width:${Math.round(100 * l.score / max)}%"></i></span><span class="small num">${l.tasks.length}건${l.over ? ` · <span class="crit">경과 ${l.over}</span>` : ''}</span>${loadPill(s.n)}</button>`).join('') || '<p class="small muted">이 부서 명단이 없습니다.</p>'}</div>
+        ${goals.length ? `<p class="small muted" style="margin:10px 0 4px">부서가 이미 하고 있는 목표 ${goals.length}개</p><ul class="id-doing">${goals.map((d) => `<li><span class="dir-src ${d.src}">${esc(d.code || '')}</span><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(d.title)}</button><span class="small num muted">${d.pct}%</span></li>`).join('')}</ul>` : ''}</div>`;
+    }
+    const rows = deptsAll().map((dp) => { const ppl = staffList().filter((s) => s.d === dp); const n = ppl.reduce((a, s) => a + loadOf(s.n).tasks.length, 0); const hi = ppl.filter((s) => loadOf(s.n).lv === 'hi').length; const g = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === dp).length; return { dp, ppl: ppl.length, n, hi, g, per: ppl.length ? n / ppl.length : n }; }).filter((r) => r.ppl || r.n || r.g).sort((a, b) => b.per - a.per);
+    const max = Math.max(1, ...rows.map((r) => r.per));
+    return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>부서별 업무 부하</b><span class="small muted">1인당 진행 중 지시 · 누르면 그 부서로 좁힙니다 ${badge('추정')}</span></div>
+      <div class="id-bars">${rows.map((r) => `<button type="button" class="id-bar" data-act="idDept" data-v="${esc(r.dp)}"><span class="n">${esc(r.dp)}<small>${r.ppl}명</small></span><span class="bar ${r.per >= 3 ? 'hi' : r.per >= 1.5 ? 'mid' : 'lo'}"><i style="width:${Math.round(100 * r.per / max)}%"></i></span><span class="small num">지시 ${r.n} · 목표 ${r.g}${r.hi ? ` · <span class="crit">과부하 ${r.hi}명</span>` : ''}</span></button>`).join('') || '<p class="small muted">명단이 아직 없습니다.</p>'}</div></div>`;
+  }
+  const statCls = (d) => ({ '완료': 'st-done', '보고대기': 'st-wait', '보류': 'st-hold' }[d.status] || 'st-doing');
+
+  function devPanel() {
+    const f = S.ui.idf = Object.assign({ dept: '', who: '', sort: 'recent', q: '', st: 'idea', load: true }, S.ui.idf || {});
+    const all = Object.values(ideasMap());
+    let list = all.filter((x) => (!f.dept || x.dept === f.dept) && (!f.who || x.assignee === f.who) && (f.st === 'all' || (f.st === 'sent' ? x.status === 'sent' : x.status !== 'sent')) && (!f.q || [x.title, x.body, x.dept, x.assignee].join(' ').includes(f.q)));
+    list = list.sort((a, b) => f.sort === 'dept' ? String(a.dept || '힣').localeCompare(String(b.dept || '힣'), 'ko') || String(a.assignee || '').localeCompare(String(b.assignee || ''), 'ko')
+      : f.sort === 'who' ? String(a.assignee || '힣').localeCompare(String(b.assignee || '힣'), 'ko')
+        : f.sort === 'load' ? (b.assignee ? loadOf(b.assignee).score : -1) - (a.assignee ? loadOf(a.assignee).score : -1)
+          : String(b.updated || '').localeCompare(String(a.updated || '')));
+    const who = staffList().filter((s) => !f.dept || s.d === f.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
+    const nf = S.ui.idNew;
+    const nfWho = staffList().filter((s) => !nf || !nf.dept || s.d === nf.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
+    const form = nf ? `<section class="panel"><h3>새 지시 후보</h3><form class="form" data-form="idNew">
+        <label class="f wide">무엇을 시킬까요<input type="text" id="idn-title" name="title" required maxlength="120" value="${esc(nf.title || '')}" placeholder="예: 생전포차 점심 메뉴 시범 운영"></label>
+        <label class="f">부서<select id="idn-dept" name="dept" data-act="idNewDept"><option value="">미정</option>${deptsAll().map((d) => `<option ${nf.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+        <label class="f">담당자<select id="idn-who" name="who"><option value="">미정</option>${nfWho.map((s) => { const l = loadOf(s.n); return `<option value="${esc(s.n)}" ${nf.who === s.n ? 'selected' : ''}>${esc(s.n)}${nf.dept ? '' : ' · ' + esc(s.d)} — ${l.label} ${l.tasks.length}건</option>`; }).join('')}</select></label>
+        <label class="f">기한<input type="date" id="idn-due" name="due" value="${esc(nf.due || '')}"></label>
+        <label class="f wide">메모(업무 설명)<textarea id="idn-body" name="body" rows="2" placeholder="생각난 것을 짧게 적어 두면 나중에 AI로 다듬을 수 있습니다">${esc(nf.body || '')}</textarea></label>
+        <div class="row wide"><button class="btn primary">후보로 등록</button><button type="button" class="btn sm" data-act="idNewToggle">취소</button><span class="small muted">등록만 해 두면 아무에게도 가지 않습니다.</span></div></form></section>` : '';
+    return `<section class="panel id-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시 후보</h3><p class="small muted" style="margin:2px 0 0">생각날 때 적어 두고, 카드로 다듬은 뒤 Asana·Slack으로 지시합니다. 맡기기 전에 그 사람의 업무 부하를 봅니다.</p></div>
+        <div class="row"><button type="button" class="btn sm id-dicebtn" data-act="idRecs">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
+      <div class="form id-filters">
+        <label class="f">부서<select id="idf-dept" data-act="idF" data-k="dept"><option value="">전체</option>${deptsAll().map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+        <label class="f">담당자<select id="idf-who" data-act="idF" data-k="who"><option value="">전체</option>${who.map((s) => `<option value="${esc(s.n)}" ${f.who === s.n ? 'selected' : ''}>${esc(s.n)}${f.dept ? '' : ' · ' + esc(s.d)}</option>`).join('')}</select></label>
+        <label class="f">상태<select id="idf-st" data-act="idF" data-k="st">${[['idea', '보내기 전'], ['sent', '보낸 지시'], ['all', '전체']].map(([v, l]) => `<option value="${v}" ${f.st === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f">정렬<select id="idf-sort" data-act="idF" data-k="sort">${[['recent', '최근 고친 순'], ['dept', '부서순'], ['who', '담당자순'], ['load', '부하 큰 사람 먼저']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f">검색<input type="text" id="idf-q" data-act="idF" data-k="q" value="${esc(f.q)}" placeholder="제목·설명"></label>
+      </div>
+      <div class="row small" style="justify-content:space-between;margin-top:8px"><label class="chip"><input type="checkbox" data-act="idLoadT" ${f.load ? 'checked' : ''}> 이미 하고 있는 일·업무 부하 보기</label>${f.dept || f.who || f.q || f.st !== 'idea' ? '<button type="button" class="dir-link" data-act="idFReset">조건 지우기</button>' : ''}</div>
+      ${f.load ? workload(f) : ''}
+    </section>
+    ${form}
+    <p class="small" style="margin:12px 2px 6px"><b class="num">${list.length}</b>건 / 후보 전체 ${all.length}건</p>
+    <div class="id-list">${list.map((x) => `<button type="button" class="id-row ${S.ui.idOpen === x.id ? 'on' : ''}" data-act="idOpen" data-id="${esc(x.id)}">
+        <span class="t"><b>${esc(x.title)}</b><span class="small muted">${esc(x.dept || '부서 미정')} · ${esc(x.assignee || '담당 미정')}${x.due ? ' · 기한 ' + esc(md(x.due)) : ''}</span></span>
+        <span class="m">${x.assignee ? loadPill(x.assignee) : ''}<span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보냄' : '후보'}</span><span class="small muted num">카드 ${cardsFilled(x)}/8 · 하위 ${(x.subs || []).length}</span></span></button>`).join('') || '<p class="muted">조건에 맞는 지시 후보가 없습니다. 「+ 지시 후보 등록」이나 「AI 추천 아이디어」로 시작해 보세요.</p>'}</div>`;
+  }
+
+  function ideaPane() {
+    const x = S.ui.idOpen && ideasMap()[S.ui.idOpen];
+    if (!x) { IDEA.shown = null; return ''; }
+    document.body.classList.add('dir-lock');
+    const enter = IDEA.shown !== x.id; IDEA.shown = x.id;
+    queueMicrotask(() => { const b = document.querySelector('.dir-pane-body'); const v = IDEA.scroll[x.id]; if (b && v) b.scrollTop = v; });
+    const wl = x.assignee ? loadOf(x.assignee) : null;
+    const pplDept = staffList().filter((s) => !x.dept || s.d === x.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
+    const dice = (k) => `<button type="button" class="id-dice" data-act="idDice" data-id="${esc(x.id)}" data-k="${k}" title="AI 주사위: 새 제안 3개" aria-label="${esc(ID_LABEL[k])} AI 주사위">🎲</button>`;
+    const sending = IDEA.send[x.id]; const fill = IDEA.fill[x.id] || {};
+    const sent = x.sent || {};
+    const conf = IDEA.confirm && IDEA.confirm.id === x.id ? IDEA.confirm : null;
+    const subs = x.subs || [];
+    const confirmBox = !conf ? '' : conf.kind === 'asana'
+      ? `<div class="explain cw-confirm" role="alert"><b>Asana "[지시업무] ceo 윤석범"에 지시 1건${subs.filter((s) => String(s.t || '').trim()).length ? `과 하위 태스크 ${subs.filter((s) => String(s.t || '').trim()).length}개` : ''}를 만듭니다.</b> 담당 ${esc(x.assignee || '미정')}${staffOf(x.assignee) && staffOf(x.assignee).gid ? '에게 Asana 알림이 갑니다.' : ' — Asana 계정을 찾지 못해 미배정으로 만듭니다.'}${x.due ? '' : ' 기한이 비어 있습니다.'}${sent.asana_gid ? ' 이미 한 번 보냈습니다. 또 만들면 중복됩니다.' : ''}
+        <div class="row" style="margin-top:8px"><button type="button" class="btn primary sm" data-act="idAsanaGo" data-id="${esc(x.id)}">보내기</button><button type="button" class="btn sm" data-act="idCancel">취소</button></div></div>`
+      : `<div class="explain cw-confirm" role="alert"><b>${esc(x.assignee)}님께 Slack 개인 메시지로 보냅니다.</b> 보내기 전에 고칠 수 있습니다.
+        <textarea id="id-slackmsg" rows="8" class="id-msg">${esc(conf.msg)}</textarea>
+        <div class="row" style="margin-top:8px"><button type="button" class="btn primary sm" data-act="idSlackGo" data-id="${esc(x.id)}">보내기</button><button type="button" class="btn sm" data-act="idCancel">취소</button></div></div>`;
+    return `<aside class="dir-pane id-pane${enter ? ' enter' : ''}" role="dialog" aria-labelledby="id-title" id="id-dlg" tabindex="-1">
+      <div class="dir-pane-bar">
+        ${sending ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${sending === 'asana' ? 'Asana에 만드는 중…' : 'Slack으로 보내는 중…'}</span>` : `<button type="button" class="btn primary sm" data-act="idAskAsana" data-id="${esc(x.id)}" ${LIVE.mcp && x.title ? '' : 'disabled title="Asana에 연결된 보기에서만 보낼 수 있습니다"'}>${sent.asana_gid ? 'Asana로 다시 지시' : 'Asana로 지시'}</button>
+        <button type="button" class="btn sm" data-act="idAskSlack" data-id="${esc(x.id)}" ${LIVE.mcp && x.assignee ? '' : `disabled title="${x.assignee ? 'Slack에 연결된 보기에서만 보낼 수 있습니다' : '담당자를 먼저 정해 주세요'}"`}>${sent.slack_at ? 'Slack 다시 보내기' : 'Slack으로 지시'}</button>`}
+        <span class="dir-pane-sp"></span>
+        ${sent.asana_gid ? `<a class="dir-iconbtn" href="https://app.asana.com/0/${ASANA.project}/${esc(sent.asana_gid)}" target="_blank" rel="noopener noreferrer">Asana ↗</a>` : ''}
+        <button type="button" class="dir-iconbtn danger" data-act="idAskDel" data-id="${esc(x.id)}">삭제</button>
+        <button type="button" class="dir-iconbtn" data-act="idClose" aria-label="패널 닫기" title="닫기 (Esc)">→|</button>
+      </div>
+      <div class="dir-pane-body">
+        ${confirmBox}
+        ${IDEA.delAsk === x.id ? `<div class="explain dir-delask" role="alert"><b>이 지시 후보를 지웁니다.</b>${sent.asana_gid ? ' Asana에 이미 만든 지시는 그대로 남습니다.' : ''}<div class="row" style="margin-top:8px"><button type="button" class="btn sm dir-dangerbtn" data-act="idDel" data-id="${esc(x.id)}">삭제</button><button type="button" class="btn sm" data-act="idCancel">취소</button></div></div>` : ''}
+        <div class="row small dir-pane-kind"><span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보낸 지시' : '지시 후보'}</span>${sent.at ? `<span class="muted">Asana ${esc(when(sent.at))}</span>` : ''}${sent.slack_at ? `<span class="muted">Slack ${esc(when(sent.slack_at))}</span>` : ''}</div>
+        <div class="id-head"><textarea class="id-title" id="id-title" rows="2" data-idk="title" data-id="${esc(x.id)}" aria-label="지시 제목">${esc(x.title)}</textarea>${dice('title')}<span class="id-saved small" aria-live="polite"></span></div>
+        <div class="dir-fields">
+          <div class="dir-f"><span class="k">부서</span><div class="v"><select class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="dept" aria-label="부서"><option value="">미정</option>${deptsAll().map((d) => `<option ${x.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div></div>
+          <div class="dir-f"><span class="k">담당자</span><div class="v"><select class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="assignee" aria-label="담당자"><option value="">미정</option>${pplDept.map((s) => { const l = loadOf(s.n); return `<option value="${esc(s.n)}" ${x.assignee === s.n ? 'selected' : ''}>${esc(s.n)}${x.dept ? '' : ' · ' + esc(s.d)} — ${l.label} ${l.tasks.length}건</option>`; }).join('')}${x.assignee && !pplDept.some((s) => s.n === x.assignee) ? `<option selected>${esc(x.assignee)}</option>` : ''}</select></div></div>
+          <div class="dir-f"><span class="k">업무 부하</span><div class="v">${wl ? `${loadPill(x.assignee)} <span class="small muted">진행 중 ${wl.tasks.length} · 기한 경과 ${wl.over} · 전사 지시 ${wl.cwN} · 대기 후보 ${wl.ideas}</span>` : '<span class="small muted">담당자를 정하면 보입니다</span>'}</div></div>
+          <div class="dir-f"><span class="k">기한</span><div class="v"><input type="date" class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="due" value="${esc(x.due || '')}" aria-label="기한"></div></div>
+        </div>
+        <div class="row id-fillrow"><span class="small muted">각 칸은 바로 고쳐 쓰면 저장됩니다. 🎲를 누르면 AI가 새 제안 3개를 냅니다.</span>${fill.busy ? '<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>빈 칸을 채우는 중…</span>' : `<button type="button" class="btn sm id-dicebtn" data-act="idFill" data-id="${esc(x.id)}">빈 칸 AI로 채우기</button>`}${fill.err ? `<p class="small dir-err" style="margin:0;flex-basis:100%">${esc(fill.err)}</p>` : ''}</div>
+        <div class="id-cards">${ID_CARDS.map(([k, lab, hint]) => `<div class="id-card"><div class="h"><b>${lab}</b><span class="id-saved small" aria-live="polite"></span>${dice(k)}</div><textarea rows="3" data-idk="cards.${k}" data-id="${esc(x.id)}" placeholder="${esc(hint)}" aria-label="${esc(lab)}">${esc((x.cards || {})[k] || '')}</textarea></div>`).join('')}</div>
+        <section class="dir-sec"><div class="id-sech"><h4>업무 설명</h4><span class="id-saved small" aria-live="polite"></span>${dice('body')}</div><textarea class="id-body" rows="5" data-idk="body" data-id="${esc(x.id)}" placeholder="담당자가 읽고 바로 시작할 수 있게">${esc(x.body || '')}</textarea></section>
+        <section class="dir-sec"><div class="id-sech"><h4>Asana 하위 태스크로 등록할 것 <span class="num muted">${subs.length}</span></h4><span class="id-saved small" aria-live="polite"></span>${dice('subs')}</div>
+          <ul class="id-subs">${subs.map((s, i) => `<li><span class="dir-chk" aria-hidden="true"></span><input type="text" data-idk="sub.${i}.t" data-id="${esc(x.id)}" value="${esc(s.t || '')}" aria-label="하위 태스크 ${i + 1}"><select data-act="idSubWho" data-id="${esc(x.id)}" data-i="${i}" aria-label="하위 태스크 ${i + 1} 담당"><option value="">${esc(x.assignee || '담당')}와 같음</option>${pplDept.filter((p) => p.n !== x.assignee).map((p) => `<option ${s.who === p.n ? 'selected' : ''}>${esc(p.n)}</option>`).join('')}</select><button type="button" class="dir-iconbtn" data-act="idSubDel" data-id="${esc(x.id)}" data-i="${i}" aria-label="하위 태스크 ${i + 1} 지우기">×</button></li>`).join('')}</ul>
+          <button type="button" class="dir-link" data-act="idSubAdd" data-id="${esc(x.id)}">+ 하위 태스크 추가</button></section>
+      </div>
+    </aside>`;
+  }
+
+  function ideaModal() {
+    const M = IDEA.modal; if (!M) return '';
+    let body = '';
+    if (M.kind === 'recs') {
+      const R = IDEA.recs;
+      body = `<div class="dir-modal-h"><b>🎲 AI가 추천하는 지시 아이디어</b><button type="button" class="dir-iconbtn" data-act="idModalClose" aria-label="닫기">×</button></div>
+        ${M.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 목표·진행 중 지시·부서별 부하를 보고 고르는 중…</p>' : ''}${M.err ? `<p class="small dir-err">${esc(M.err)}</p>` : ''}
+        ${R && R.items ? `<ol class="id-recs">${R.items.map((r, i) => `<li><b>${esc(r.title)}</b><span class="small muted">${esc(r.dept || '부서 미정')}${r.who ? ' · ' + esc(r.who) + loadPill(staffOf(r.who) ? r.who : '') : ''}</span><p class="small" style="margin:4px 0">${esc(r.why)}</p>${r.first ? `<p class="small muted" style="margin:0">첫 주: ${esc(r.first)}</p>` : ''}
+          <div class="row" style="margin-top:6px"><button type="button" class="btn primary sm" data-act="idRecAdd" data-i="${i}">후보로 등록</button>${appLinks(recPrompt(r), ['claude'])}</div></li>`).join('')}</ol><p class="small muted">${esc(aiName(R.ai || 'claude'))} · ${esc(when(R.at))}</p>` : ''}
+        <div class="row dir-modal-foot"><button type="button" class="btn sm" data-act="idRecs" ${M.busy ? 'disabled' : ''}>다시 뽑기</button><span class="dir-pane-sp"></span>${appLinks('아이센스그룹(외식·여가 프랜차이즈 본사) 회장입니다. 지금 각 부서에 내리면 좋을 새 지시 아이디어를 같이 생각해 주세요.' + (R && R.items ? ' AI가 추천한 것: ' + R.items.map((r) => r.title).join(', ') : ''))}</div>`;
+    } else {
+      const x = ideasMap()[M.id];
+      body = `<div class="dir-modal-h"><b>🎲 「${esc(ID_LABEL[M.k])}」 새 제안 3개</b><button type="button" class="dir-iconbtn" data-act="idModalClose" aria-label="닫기">×</button></div>
+        ${M.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 제안을 만드는 중…</p>' : ''}${M.err ? `<p class="small dir-err">${esc(M.err)}</p>` : ''}
+        ${M.items ? `<ol class="id-recs">${M.items.map((o, i) => `<li>${o.note ? `<span class="small muted">${esc(o.note)}</span>` : ''}${M.k === 'subs' ? `<ul class="small">${o.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div class="id-sugg">${esc(o.text).replace(/\n/g, '<br>')}</div>`}
+          <div class="row" style="margin-top:6px"><button type="button" class="btn primary sm" data-act="idDiceUse" data-i="${i}" data-mode="set">이걸로 바꾸기</button>${M.k === 'title' ? '' : `<button type="button" class="btn sm" data-act="idDiceUse" data-i="${i}" data-mode="add">아래에 덧붙이기</button>`}</div></li>`).join('')}</ol>` : ''}
+        <div class="id-chat"><span class="small muted">Claude 앱에서 이어서 이야기하기 — 아래 글이 미리 채워져 열립니다</span><textarea id="id-chatp" rows="3" readonly>${esc(M.prompt || '')}</textarea>
+        <div class="row">${appLinks(M.prompt || '')}<button type="button" class="dir-link" data-act="idCopyP">글 복사</button></div></div>
+        <div class="row dir-modal-foot"><button type="button" class="btn sm" data-act="idDice" data-id="${esc(M.id)}" data-k="${esc(M.k)}" ${M.busy || !x ? 'disabled' : ''}>🎲 다시 굴리기</button></div>`;
+    }
+    return `<div class="dir-modal" role="dialog" aria-modal="true"><div class="dir-modal-bg" data-act="idModalClose"></div><div class="dir-modal-box">${body}</div></div>`;
+  }
+
+  const idf = (patch) => { S.ui.idf = Object.assign({}, S.ui.idf || {}, patch); };
+  APP.acts.dirMain = (el) => { S.ui.dirMain = el.dataset.v; S.ui.dirOpen = null; S.ui.idOpen = null; IDEA.modal = null; window.scrollTo(0, 0); };
+  APP.acts.idNewToggle = () => { S.ui.idNew = S.ui.idNew ? null : { dept: (S.ui.idf || {}).dept || '', who: (S.ui.idf || {}).who || '' }; if (S.ui.idNew) focusLater('#idn-title'); };
+  APP.changes.idNewDept = (el) => { const keep = (id) => { const e = document.getElementById(id); return e ? e.value : ''; }; S.ui.idNew = { title: keep('idn-title'), body: keep('idn-body'), due: keep('idn-due'), dept: el.value, who: '' }; };
+  APP.forms.idNew = (fd) => {
+    const g = (n) => (fd.get(n) || '').toString().trim();
+    const who = g('who'); const st = staffOf(who);
+    const id = 'i' + Date.now().toString(36);
+    ideaSave(id, { title: g('title'), dept: g('dept') || (st ? st.d : ''), assignee: who, due: /^\d{4}-\d{2}-\d{2}$/.test(g('due')) ? g('due') : '', body: g('body'), cards: {}, subs: [], status: 'idea' }, true).then(() => rerender());
+    S.ui.idNew = null; S.ui.idOpen = id; toast('지시 후보를 등록했습니다 — 오른쪽 카드에서 다듬어 보세요');
+  };
+  APP.changes.idF = (el) => { const p = { [el.dataset.k]: el.value.trim() }; if (el.dataset.k === 'dept') p.who = ''; idf(p); };
+  APP.acts.idLoadT = (el) => { idf({ load: el.checked }); };
+  APP.acts.idFReset = () => { S.ui.idf = { load: (S.ui.idf || {}).load !== false }; };
+  APP.acts.idDept = (el) => { idf({ dept: el.dataset.v, who: '' }); };
+  APP.acts.idWho = (el) => { idf({ who: el.dataset.v }); };
+  APP.acts.idOpen = (el) => { if (S.ui.idOpen === el.dataset.id) { S.ui.idOpen = null; return; } S.ui.dirOpen = null; S.ui.idOpen = el.dataset.id; IDEA.confirm = null; IDEA.delAsk = null; focusLater('#id-dlg'); };
+  APP.acts.idClose = () => { S.ui.idOpen = null; IDEA.confirm = null; IDEA.delAsk = null; };
+  APP.changes.idSet = (el) => {
+    const x = ideasMap()[el.dataset.id]; if (!x) return;
+    const k = el.dataset.k; const v = el.value; const p = { [k]: k === 'due' && !/^\d{4}-\d{2}-\d{2}$/.test(v) ? '' : v };
+    if (k === 'dept' && x.assignee && staffOf(x.assignee) && staffOf(x.assignee).d !== v) p.assignee = '';
+    if (k === 'assignee' && v && !x.dept && staffOf(v)) p.dept = staffOf(v).d;
+    ideaSave(x.id, p);
+  };
+  APP.changes.idSubWho = (el) => { const x = ideasMap()[el.dataset.id]; if (x) ideaSave(x.id, setPath(x, 'sub.' + el.dataset.i + '.who', el.value)); };
+  APP.acts.idSubAdd = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; ideaSave(x.id, { subs: (x.subs || []).concat([{ t: '' }]) }); setTimeout(() => { const a = document.querySelectorAll('.id-subs input'); if (a.length) a[a.length - 1].focus(); }, 0); };
+  APP.acts.idSubDel = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; ideaSave(x.id, { subs: (x.subs || []).filter((_, i) => i !== +el.dataset.i) }); };
+  APP.acts.idDice = (el) => { setTimeout(() => ideaDice(el.dataset.id, el.dataset.k), 0); };
+  APP.acts.idFill = (el) => { setTimeout(() => ideaFill(el.dataset.id), 0); };
+  APP.acts.idRecs = () => { if (IDEA.modal && IDEA.modal.kind === 'recs' && IDEA.modal.busy) return; setTimeout(ideaRecs, 0); };
+  APP.acts.idModalClose = () => { IDEA.modal = null; };
+  APP.acts.idCopyP = () => { const t = (IDEA.modal || {}).prompt || ''; try { navigator.clipboard.writeText(t).then(() => toast('글을 복사했습니다 — 앱에 붙여 넣으세요'), () => { const a = document.getElementById('id-chatp'); if (a) a.select(); toast('글을 선택했습니다 — Ctrl+C(맥은 ⌘+C)로 복사하세요'); }); } catch (e) { toast('복사하지 못했습니다'); } };
+  APP.acts.idDiceUse = (el) => {
+    const M = IDEA.modal; const x = M && ideasMap()[M.id]; const o = M && M.items && M.items[+el.dataset.i]; if (!x || !o) return;
+    const add = el.dataset.mode === 'add';
+    let p;
+    if (M.k === 'subs') p = { subs: (add ? (x.subs || []) : []).concat(o.items.map((t) => ({ t }))) };
+    else if (M.k === 'title') p = { title: o.text.split('\n')[0].slice(0, 120) };
+    else { const cur = getPath(x, M.k).trim(); p = setPath(x, ID_CARDS.some((c) => c[0] === M.k) ? 'cards.' + M.k : M.k, add && cur ? cur + '\n' + o.text : o.text); }
+    ideaSave(x.id, p); IDEA.modal = null; toast(add ? '제안을 덧붙였습니다' : '제안으로 바꿨습니다');
+  };
+  APP.acts.idRecAdd = (el) => {
+    const r = IDEA.recs && IDEA.recs.items[+el.dataset.i]; if (!r) return;
+    const st = staffOf(r.who); const id = 'i' + Date.now().toString(36);
+    ideaSave(id, { title: r.title, dept: deptsAll().includes(r.dept) ? r.dept : (st ? st.d : ''), assignee: st ? st.n : '', due: '', body: '', cards: { why: r.why || '' }, subs: r.first ? [{ t: r.first }] : [], status: 'idea', from: 'ai' }, true).then(() => rerender());
+    IDEA.modal = null; S.ui.idOpen = id; toast('AI 추천을 지시 후보로 등록했습니다');
+  };
+  APP.acts.idAskAsana = (el) => { IDEA.confirm = { id: el.dataset.id, kind: 'asana' }; IDEA.delAsk = null; };
+  APP.acts.idAskSlack = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; IDEA.confirm = { id: x.id, kind: 'slack', msg: slackDraft(x) }; IDEA.delAsk = null; focusLater('#id-slackmsg'); };
+  APP.acts.idCancel = () => { IDEA.confirm = null; IDEA.delAsk = null; };
+  APP.acts.idAsanaGo = (el) => { const x = ideasMap()[el.dataset.id]; if (x && !IDEA.send[x.id]) setTimeout(() => ideaAsana(x), 0); };
+  APP.acts.idSlackGo = (el) => { const x = ideasMap()[el.dataset.id]; const t = document.getElementById('id-slackmsg'); const msg = (t ? t.value : '').trim(); if (!x || !msg) { toast('보낼 내용을 적어 주세요'); return; } if (!IDEA.send[x.id]) setTimeout(() => ideaSlack(x, msg), 0); };
+  APP.acts.idAskDel = (el) => { IDEA.delAsk = el.dataset.id; IDEA.confirm = null; };
+  APP.acts.idDel = (el) => {
+    const id = el.dataset.id; IDEA.delAsk = null; S.ui.idOpen = null;
+    if (LIVE.db) LIVE.db.doc('ideas/' + id).delete().then(() => toast('지시 후보를 지웠습니다')).catch((e) => toast('지우지 못했습니다(' + (e && e.code || '오류') + ')'));
+    else { delete ideasMap()[id]; toast('지시 후보를 지웠습니다'); }
+  };
+
+  /* ================= 지시 관리: 지시한 것들의 진행과 경영지표·직원 평가 ================= */
+  const MGR = { eval: {} };
+  const STEP = { '지시': 10, '진행': 50, '보고대기': 85, '완료': 100, '보류': 0 };
+  const isOrder = (d) => !isGoal(d) && d.assignee && d.assignee !== '윤석범' && d.assignee !== '미지정' && !(d.tags || []).includes('lk-회장');
+  const dDays = (a, b) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 86400000));
+  function personStats(list) {
+    const done = list.filter((d) => d.status === '완료');
+    const target = list.filter((d) => d.status !== '보류');
+    const withDue = done.filter((d) => !noDue(d));
+    const onTime = withDue.filter((d) => String(d.completed_at || d.updated_at).slice(0, 10) <= d.due_at).length;
+    const open = list.filter(isOpen);
+    const lead = done.map((d) => dDays(d.issued_at, String(d.completed_at || d.updated_at).slice(0, 10))).filter((n) => !isNaN(n));
+    const quietAvg = open.length ? open.reduce((a, d) => a + quiet(d), 0) / open.length : 0;
+    const rate = target.length ? Math.round(100 * done.length / target.length) : null;
+    const ontime = withDue.length ? Math.round(100 * onTime / withDue.length) : null;
+    const resp = open.length ? Math.max(0, Math.round(100 - quietAvg * 10)) : null;
+    const parts = [[rate, 40], [ontime, 35], [resp, 25]].filter((p) => p[0] != null);
+    const score = parts.length ? Math.round(parts.reduce((a, p) => a + p[0] * p[1], 0) / parts.reduce((a, p) => a + p[1], 0)) : null;
+    return { n: list.length, done: done.length, open: open.length, over: list.filter(isOverdue).length, stale: list.filter(stl).length, rate, ontime, resp, lead: lead.length ? Math.round(lead.reduce((a, b) => a + b, 0) / lead.length) : null, score, grade: score == null || list.length < 3 ? '—' : score >= 85 ? 'A' : score >= 70 ? 'B' : score >= 55 ? 'C' : 'D', few: list.length < 3 };
+  }
+  const pctTxt = (v) => (v == null ? '—' : v + '%');
+  function weekChart(list) {
+    const W = 8; const mon = (t) => { const x = new Date(t + 'T00:00:00'); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return x.toISOString().slice(0, 10); };
+    const cur = mon(S.today); const weeks = [];
+    for (let i = W - 1; i >= 0; i--) { const x = new Date(cur + 'T00:00:00'); x.setDate(x.getDate() - 7 * i); weeks.push(x.toISOString().slice(0, 10)); }
+    const cnt = weeks.map((w) => ({ w, a: list.filter((d) => mon(d.issued_at) === w).length, b: list.filter((d) => d.status === '완료' && mon(String(d.completed_at || d.updated_at).slice(0, 10)) === w).length }));
+    const max = Math.max(1, ...cnt.map((c) => Math.max(c.a, c.b)));
+    const H = 120, bw = 14, gap = 44, T = 16;
+    const bars = cnt.map((c, i) => { const x = 30 + i * gap; const ha = Math.round(H * c.a / max), hb = Math.round(H * c.b / max); return `<g><rect class="mg-a" x="${x}" y="${H - ha + 10 + T}" width="${bw}" height="${ha}" rx="2"><title>${c.w.slice(5)} 주 지시 ${c.a}건</title></rect><rect class="mg-b" x="${x + bw + 2}" y="${H - hb + 10 + T}" width="${bw}" height="${hb}" rx="2"><title>${c.w.slice(5)} 주 완료 ${c.b}건</title></rect>${c.a ? `<text class="mg-v" x="${x + bw / 2}" y="${H - ha + 6 + T}">${c.a}</text>` : ''}${c.b ? `<text class="mg-v" x="${x + bw * 1.5 + 2}" y="${H - hb + 6 + T}">${c.b}</text>` : ''}<text class="mg-x" x="${x + bw}" y="${H + 26 + T}">${+c.w.slice(5, 7)}/${+c.w.slice(8)}</text></g>`; }).join('');
+    return `<div class="mg-chart"><div class="row small" style="justify-content:space-between"><b>주별 지시·완료 (최근 8주)</b><span class="mg-legend"><i class="mg-a"></i>지시 <i class="mg-b"></i>완료</span></div>
+      <svg viewBox="0 0 ${30 + W * gap} ${H + 34 + T}" role="img" aria-label="주별 지시 건수와 완료 건수"><line class="mg-axis" x1="24" x2="${24 + W * gap}" y1="${H + 10 + T}" y2="${H + 10 + T}"></line>${bars}</svg></div>`;
+  }
+  function statusBar(list) {
+    const order = ['지시', '진행', '보고대기', '완료', '보류']; const n = list.length || 1;
+    return `<div class="mg-stack"><div class="row small" style="justify-content:space-between"><b>상태 분포</b><span class="muted">${list.length}건</span></div><div class="mg-sbar">${order.map((s) => { const c = list.filter((d) => d.status === s).length; return c ? `<span class="mg-s s${order.indexOf(s)}" style="width:${100 * c / n}%" title="${s} ${c}건"></span>` : ''; }).join('')}</div>
+      <div class="row small mg-sleg">${order.map((s) => `<span><i class="mg-s s${order.indexOf(s)}"></i>${s} <b class="num">${list.filter((d) => d.status === s).length}</b></span>`).join('')}</div></div>`;
+  }
+  async function personEval(name, s, list) {
+    MGR.eval[name] = { busy: true }; rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const r = await llm(`아이센스그룹 윤석범 회장이 ${name}님의 지시 이행을 돌아보려 합니다. 아래 기록만 근거로 짧은 평가 의견을 써 주세요.
+형식: "## 잘하는 점" 2개, "## 아쉬운 점" 2개, "## 회장이 해 줄 일" 2개(코칭·업무 조정·칭찬 등). 각 1~2문장.
+규칙: 기록에 없는 일을 지어내지 말 것. 표본이 적으면 그렇다고 말할 것. 연봉·임금·인사 처우는 다루지 말 것. 존중하는 말투, 한국어 합니다체.
+
+지표(추정): 지시 ${s.n}건 · 완료 ${s.done} · 완료율 ${pctTxt(s.rate)} · 기한 준수율 ${pctTxt(s.ontime)} · 평균 처리 ${s.lead == null ? '—' : s.lead + '일'} · 진행 중 ${s.open} · 기한 경과 ${s.over} · 3일 무응답 ${s.stale} · 종합 ${s.score == null ? '—' : s.score + '점(' + s.grade + ')'}
+지시 목록:
+${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued_at} | 기한 ${dueFull(d)}${d.completed_at ? ' | 완료 ' + String(d.completed_at).slice(0, 10) : ''}`).join('\n')}`, { modelTier: 'quick', cache: false });
+      MGR.eval[name] = { text: String((r && r.text) || '').trim(), ai: used, at: new Date().toISOString() };
+    } catch (e) { MGR.eval[name] = { err: aiErr(e) }; }
+    rerender();
+  }
+
+  function mgrPanel() {
+    const f = S.ui.mgf = Object.assign({ dept: '', who: '', period: '90', st: '', sort: 'score' }, S.ui.mgf || {});
+    const since = f.period === 'all' ? '' : dayStr(-(+f.period));
+    const base = S.directives.filter(isOrder).filter((d) => !since || d.issued_at >= since || isOpen(d));
+    const byDept = base.filter((d) => !f.dept || d.org === f.dept);
+    const list = byDept.filter((d) => (!f.who || d.assignee === f.who) && (!f.st || (f.st === 'open' ? isOpen(d) : f.st === 'alert' ? isOverdue(d) || stl(d) : d.status === f.st)));
+    const all = personStats(list);
+    const names = [...new Set(byDept.map((d) => d.assignee))];
+    const ppl = names.map((n) => { const l = byDept.filter((d) => d.assignee === n); return { n, d: (staffOf(n) || {}).d || l[0].org, s: personStats(l), load: loadOf(n), list: l }; })
+      .sort((a, b) => f.sort === 'load' ? b.load.score - a.load.score : f.sort === 'rate' ? (b.s.rate ?? -1) - (a.s.rate ?? -1) : f.sort === 'name' ? a.n.localeCompare(b.n, 'ko') : (a.s.few - b.s.few) || (b.s.score ?? -1) - (a.s.score ?? -1));
+    const depts = [...new Set(base.map((d) => d.org).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+    const sel = f.who ? ppl.find((p) => p.n === f.who) : null;
+    const ev = sel ? MGR.eval[sel.n] || {} : null;
+    const cws = Object.values(LIVE.cw || {}).filter((c) => c.status !== 'draft');
+    const kpi = (l, v, cls, sub) => `<div><span class="small muted">${l}</span><b class="num ${cls || ''}">${v}</b>${sub ? `<span class="small muted">${sub}</span>` : ''}</div>`;
+    return `<section class="panel mg-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시한 것들 한눈에 ${badge('측정')}</h3><p class="small muted" style="margin:2px 0 0">Asana로 내린 지시(회장 할일 제외)를 사람·부서별로 모아 진행과 이행 지표를 봅니다. 평가 점수는 기록으로 계산한 참고값입니다.</p></div></div>
+      <div class="form mg-filters">
+        <label class="f">기간<select id="mgf-period" data-act="mgF" data-k="period">${[['30', '최근 30일'], ['90', '최근 90일'], ['180', '최근 6개월'], ['all', '전체']].map(([v, l]) => `<option value="${v}" ${f.period === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f">부서<select id="mgf-dept" data-act="mgF" data-k="dept"><option value="">전체</option>${depts.map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+        <label class="f">담당자<select id="mgf-who" data-act="mgF" data-k="who"><option value="">전체</option>${names.slice().sort((a, b) => a.localeCompare(b, 'ko')).map((n) => `<option ${f.who === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <label class="f">상태<select id="mgf-st" data-act="mgF" data-k="st"><option value="">전체</option>${[['open', '미완료'], ['alert', '경보(경과·무응답)'], ...STATUSES.map((s) => [s, s])].map(([v, l]) => `<option value="${esc(v)}" ${f.st === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      </div>
+      ${f.dept || f.who || f.st || f.period !== '90' ? '<p class="small" style="margin:6px 0 0"><button type="button" class="dir-link" data-act="mgFReset">조건 지우기</button></p>' : ''}
+      <div class="cw-kpis mg-kpis">
+        ${kpi('지시', all.n + '<small>건</small>')}${kpi('진행 중', all.open + '<small>건</small>')}${kpi('완료율', pctTxt(all.rate), 'ok')}${kpi('기한 준수율', pctTxt(all.ontime))}${kpi('평균 처리', all.lead == null ? '—' : all.lead + '<small>일</small>')}${kpi('기한 경과', all.over + '<small>건</small>', all.over ? 'crit' : '')}${kpi('3일 무응답', all.stale + '<small>건</small>', all.stale ? 'warn' : '')}
+      </div>
+      <div class="mg-graphs">${weekChart(list)}${statusBar(list)}</div>
+    </section>
+    ${sel ? `<section class="panel mg-person"><div class="row" style="justify-content:space-between"><div class="dir-who">${avatar(sel.n, true)}<span><b>${esc(sel.n)}</b><small>${esc(sel.d)}${(staffOf(sel.n) || {}).g ? ' · ' + esc(staffOf(sel.n).g) : ''}</small></span></div><div class="row"><span class="mg-grade g${sel.s.grade}">${sel.s.grade}</span><span class="num">${sel.s.score == null ? '—' : sel.s.score + '점'}</span>${badge('추정')}<button type="button" class="dir-iconbtn" data-act="mgWho" data-v="" aria-label="사람 선택 해제">×</button></div></div>
+      <div class="mg-meters">${[['성과(완료율)', sel.s.rate], ['성실도(기한 준수)', sel.s.ontime], ['응답성(최근 갱신)', sel.s.resp]].map(([l, v]) => `<div><span class="small">${l}</span><span class="bar"><i style="width:${v || 0}%"></i></span><b class="num small">${pctTxt(v)}</b></div>`).join('')}<div><span class="small">업무 부하</span>${loadPill(sel.n)}<span class="small muted">진행 중 ${sel.load.tasks.length} · 경과 ${sel.load.over}</span></div></div>
+      ${sel.s.few ? '<p class="small muted" style="margin:6px 0 0">지시가 3건보다 적어 점수는 참고만 해 주세요.</p>' : ''}
+      <div class="mg-eval">${ev.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 평가 의견을 쓰는 중…</p>' : ev.text ? `<div class="dir-repdoc">${mdHtml(ev.text)}</div><p class="small muted">${esc(aiName(ev.ai || 'claude'))} · ${esc(when(ev.at))} · 기록만 보고 쓴 의견입니다</p>` : ''}${ev.err ? `<p class="small dir-err">${esc(ev.err)}</p>` : ''}
+        <button type="button" class="btn sm" data-act="mgEval" data-v="${esc(sel.n)}" ${ev.busy ? 'disabled' : ''}>${ev.text ? 'AI 평가 의견 다시 받기' : 'AI 평가 의견 받기'}</button></div></section>` : ''}
+    <section class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">사람별 경영지표 · 평가</h3><label class="small">정렬 <select id="mgf-sort" data-act="mgF" data-k="sort">${[['score', '종합 점수'], ['load', '부하 큰 사람'], ['rate', '완료율'], ['name', '이름']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <p class="small muted" style="margin:4px 0 8px">종합 = 완료율 40% + 기한 준수율 35% + 응답성 25%(진행 중 지시의 최근 갱신, 하루 늦을 때마다 10점 감점). A 85점 이상 · B 70 · C 55 · D 그 아래. 이름을 누르면 그 사람만 봅니다.</p>
+      <div class="tbl-wrap"><table class="dir-tbl mg-tbl"><thead><tr><th>이름</th><th>부하</th><th>지시·완료</th><th>완료율</th><th>기한 준수</th><th>평균 처리</th><th>무응답</th><th>평가</th></tr></thead><tbody>
+      ${ppl.map((p) => `<tr class="${f.who === p.n ? 'on' : ''}"><td data-label="이름"><button type="button" class="dir-link dir-who" data-act="mgWho" data-v="${esc(p.n)}">${avatar(p.n)}<span>${esc(p.n)}<small>${esc(p.d)}</small></span></button></td>
+        <td data-label="부하">${loadPill(p.n)}</td><td data-label="지시·완료" class="num">${p.s.done}/${p.s.n}</td><td data-label="완료율" class="num">${pctTxt(p.s.rate)}</td><td data-label="기한 준수" class="num">${pctTxt(p.s.ontime)}</td><td data-label="평균 처리" class="num">${p.s.lead == null ? '—' : p.s.lead + '일'}</td><td data-label="무응답" class="num ${p.s.stale ? 'warn' : ''}">${p.s.stale}</td>
+        <td data-label="평가"><span class="mg-grade g${p.s.grade}">${p.s.grade}</span> <span class="num small">${p.s.score == null ? '' : p.s.score}</span>${p.s.few ? ' <span class="small muted">표본 적음</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">조건에 맞는 지시가 없습니다.</td></tr>'}</tbody></table></div></section>
+    ${cws.length && !f.who ? `<section class="panel"><h3 style="margin:0 0 6px">전사 지시 진행</h3><div class="dir-org">${cws.map((c) => { const st = cwStat(cwRows(c)); return `<button type="button" class="dir-org-row" data-act="mgCw" data-v="${esc(c.id)}"><span class="o">${esc(c.title)}</span><span class="bar"><i style="width:${st.pct}%"></i></span><span class="num p">${st.pct}%</span><span class="small muted m">완료 ${st.done}/${st.n}</span></button>`; }).join('')}</div></section>` : ''}
+    <section class="panel"><h3 style="margin:0 0 6px">지시 목록 <span class="num muted">${list.length}</span></h3>
+      <ul class="mg-list">${list.slice().sort((a, b) => (isOpen(b) - isOpen(a)) || a.due_at.localeCompare(b.due_at)).map((d) => `<li><div class="t"><button type="button" class="dir-title" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small muted">${esc(d.assignee)} · ${esc(d.org)} · 지시 ${esc(md(d.issued_at))}</span>${alerts(d) ? `<span class="row mg-flags">${alerts(d)}</span>` : ''}</div>
+        <div class="p"><span class="bar ${d.status === '완료' ? 'done' : isOverdue(d) ? 'over' : ''}"><i style="width:${STEP[d.status] ?? 10}%"></i></span><span class="small"><span class="pill ${statCls(d)}">${esc(d.status)}</span> <span class="num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : d.completed_at ? '완료 ' + esc(md(String(d.completed_at).slice(0, 10))) : ''}</span></span></div></li>`).join('') || '<li class="muted">조건에 맞는 지시가 없습니다.</li>'}</ul></section>`;
+  }
+  APP.changes.mgF = (el) => { const p = { [el.dataset.k]: el.value }; if (el.dataset.k === 'dept') p.who = ''; S.ui.mgf = Object.assign({}, S.ui.mgf || {}, p); };
+  APP.acts.mgFReset = () => { S.ui.mgf = { sort: (S.ui.mgf || {}).sort || 'score' }; };
+  APP.acts.mgWho = (el) => { S.ui.mgf = Object.assign({}, S.ui.mgf || {}, { who: (S.ui.mgf || {}).who === el.dataset.v ? '' : el.dataset.v }); if (el.dataset.v) setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0); };
+  APP.acts.mgEval = (el) => { const n = el.dataset.v; const f = S.ui.mgf || {}; const since = f.period === 'all' || !f.period ? '' : dayStr(-(+f.period)); const l = S.directives.filter(isOrder).filter((d) => d.assignee === n && (!since || d.issued_at >= since || isOpen(d))); setTimeout(() => personEval(n, personStats(l), l), 0); };
+  APP.acts.mgCw = (el) => { S.ui.dirMain = 'task'; S.ui.dirTab = 'cw'; cwUi({ sel: el.dataset.v }); window.scrollTo(0, 0); };
+
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
   const closeDlg = () => { const b = document.querySelector('.dir-pane-bar [data-act="dirClose"]'); if (b) b.click(); };
-  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (document.body.classList.contains('dir-vis-open')) { closeVisual(); return; } if (S.ui.dirOpen) closeDlg(); });
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (document.body.classList.contains('dir-vis-open')) { closeVisual(); return; } if (IDEA.modal) { IDEA.modal = null; rerender(); return; } if (S.ui.dirOpen) closeDlg(); else if (S.ui.idOpen) { S.ui.idOpen = null; IDEA.confirm = null; rerender(); } });
   /* 패널 밖을 누르면 닫는다 — 다른 항목 제목을 누르면 그 항목으로 바뀐다 */
   document.addEventListener('click', (e) => {
-    if (!e.isTrusted || !S.ui.dirOpen || !document.querySelector('.dir-pane')) return;
+    if (!e.isTrusted || !(S.ui.dirOpen || S.ui.idOpen) || !document.querySelector('.dir-pane')) return;
     const t = e.target;
     if (!t || !t.closest || !document.contains(t)) return;
-    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('[data-act="repOpen"]') || t.closest('[data-act="progOpen"]') || t.closest('.toast') || t.closest('#dir-visual')) return;
-    closeDlg();
+    if (t.closest('.dir-pane') || t.closest('[data-act="dirOpen"]') || t.closest('[data-act="repOpen"]') || t.closest('[data-act="progOpen"]') || t.closest('[data-act="idOpen"]') || t.closest('.dir-modal') || t.closest('.toast') || t.closest('#dir-visual')) return;
+    if (S.ui.dirOpen) closeDlg(); else { S.ui.idOpen = null; IDEA.confirm = null; rerender(); }
   }, true);
-  window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; });
+  window.addEventListener('hashchange', () => { document.body.classList.remove('dir-lock'); S.ui.dirOpen = null; S.ui.dirEdit = false; S.ui.idOpen = null; IDEA.modal = null; });
 
   APP.views.directives = viewDirectives;
 })();
