@@ -8,6 +8,7 @@
    - Asana: 회장 커넥터로 "[지시업무] ceo 윤석범" 프로젝트를 읽고, 상태·기한·우선순위·이름 변경은 update_tasks,
      메모·결과물은 add_comment, 신규 등록은 create_tasks 로 되돌려 보냅니다.
    - 목표: 아티팩트 DB live/goals(부서현황판의 전사목표·부서목표 정의), track/<id>(진척·메모)에서 읽고 씁니다.
+   - 화면 규칙: 고를 항목이 많은 칸(사람 등)은 select 대신 입력해서 찾는 칸(picker: 이름·부서·초성, ↑↓·Enter·Esc)을 씁니다.
    - 실데이터는 저장소에 넣지 않습니다. 로컬 파일로 열면 기존 목업 그대로 동작합니다. */
 (function () {
   'use strict';
@@ -1832,6 +1833,82 @@ ${ctx}`, { modelTier: 'default', cache: false });
   }
   const deptsAll = () => [...new Set(staffList().map((s) => s.d).concat(S.directives.filter(isGoal).map((d) => d.org)).filter((x) => x && x !== '미지정' && x !== '회장'))].sort((a, b) => a.localeCompare(b, 'ko'));
   const staffOf = (n) => staffList().find((s) => s.n === n);
+  /* ---------- 사람 고르기: 입력해서 찾는 칸 (이름·부서·직급·초성, ↑↓·Enter·Esc) ---------- */
+  const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const cho = (s) => String(s || '').replace(/[가-힣]/g, (c) => CHO[Math.floor((c.charCodeAt(0) - 0xAC00) / 588)]);
+  const PP = {};
+  function picker(o) {
+    PP[o.key] = { list: o.list, empty: o.empty || '', act: o.act || '', data: o.data || {}, load: !!o.load, pri: o.pri || '' };
+    const v = o.value || '';
+    return `<span class="pp" data-pp="${esc(o.key)}"><input type="text" class="pp-in${o.cls ? ' ' + o.cls : ''}" ${o.id ? `id="${esc(o.id)}"` : ''} role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="ppl-${esc(o.key)}" aria-label="${esc(o.label || '사람 찾기')}" autocomplete="off" spellcheck="false" data-ppk="${esc(o.key)}" data-prev="${esc(v)}" value="${esc(v)}" placeholder="${esc((o.empty ? o.empty + ' · ' : '') + '이름·초성')}" title="이름·부서·직급·초성(예: ㄱㅁㅇ)으로 찾기">${o.name ? `<input type="hidden" name="${esc(o.name)}" value="${esc(v)}">` : ''}${v ? `<button type="button" class="pp-x" data-ppx="${esc(o.key)}" tabindex="-1" aria-label="지우기" title="지우기">×</button>` : ''}<ul class="pp-list" id="ppl-${esc(o.key)}" role="listbox" hidden></ul></span>`;
+  }
+  function ppMatches(reg, q) {
+    q = String(q || '').trim().toLowerCase();
+    const onlyCho = q && /^[ㄱ-ㅎ\s]+$/.test(q);
+    const scored = reg.list.map((s) => {
+      if (!q) return [s, 0];
+      const n = s.n.toLowerCase(); const hay = [s.n, s.d, s.g, s.p].filter(Boolean).join(' ').toLowerCase();
+      if (onlyCho) { const c = cho(s.n); return [s, c.startsWith(q) ? 1 : c.includes(q) ? 2 : cho(hay).includes(q) ? 3 : -1]; }
+      return [s, n.startsWith(q) ? 1 : n.includes(q) ? 2 : hay.includes(q) ? 3 : -1];
+    }).filter((x) => x[1] >= 0);
+    scored.sort((a, b) => a[1] - b[1] || (reg.pri ? (b[0].d === reg.pri) - (a[0].d === reg.pri) : 0) || a[0].n.localeCompare(b[0].n, 'ko'));
+    return scored.map((x) => x[0]);
+  }
+  function ppOpen(inp, q) {
+    const reg = PP[inp.dataset.ppk]; if (!reg) return;
+    const ul = inp.parentNode.querySelector('.pp-list');
+    const all = ppMatches(reg, q); const hits = all.slice(0, 60);
+    ul.innerHTML = (reg.empty && !String(q || '').trim() ? `<li role="option" data-v="" class="pp-empty">${esc(reg.empty)}</li>` : '')
+      + hits.map((s) => `<li role="option" data-v="${esc(s.n)}"><b>${esc(s.n)}</b><span class="small muted">${esc([s.d, s.g].filter(Boolean).join(' · '))}</span>${reg.load ? loadPill(s.n) : ''}</li>`).join('')
+      + (all.length > hits.length ? `<li class="pp-more small muted" aria-disabled="true">${all.length - hits.length}명 더 있습니다 — 더 입력해 좁혀 주세요</li>` : '')
+      + (!hits.length ? '<li class="pp-more small muted" aria-disabled="true">맞는 사람이 없습니다</li>' : '');
+    ul.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    const first = ul.querySelector('li[data-v]' + (String(q || '').trim() ? ':not(.pp-empty)' : '')); ppActive(inp, first || null);
+  }
+  function ppActive(inp, li) {
+    const ul = inp.parentNode.querySelector('.pp-list');
+    ul.querySelectorAll('li.on').forEach((x) => x.classList.remove('on'));
+    if (li) { li.classList.add('on'); li.id = li.id || 'ppo-' + Math.random().toString(36).slice(2, 8); inp.setAttribute('aria-activedescendant', li.id); const t = li.offsetTop, b = t + li.offsetHeight; if (t < ul.scrollTop) ul.scrollTop = t; else if (b > ul.scrollTop + ul.clientHeight) ul.scrollTop = b - ul.clientHeight; } else inp.removeAttribute('aria-activedescendant');
+  }
+  function ppClose(inp) { const ul = inp.parentNode && inp.parentNode.querySelector('.pp-list'); if (ul) ul.hidden = true; inp.setAttribute('aria-expanded', 'false'); }
+  function ppPick(inp, v) {
+    const reg = PP[inp.dataset.ppk]; if (!reg) return;
+    inp.value = v; inp.dataset.prev = v; ppClose(inp);
+    const h = inp.parentNode.querySelector('input[type="hidden"]'); if (h) h.value = v;
+    if (reg.act && APP.changes[reg.act]) {
+      APP.changes[reg.act]({ dataset: Object.assign({}, reg.data), value: v });
+      inp.dataset.picked = '1'; inp.blur(); rerender();
+    }
+  }
+  document.addEventListener('focusin', (e) => { const t = e.target; if (t && t.dataset && t.dataset.ppk) { t.select(); ppOpen(t, ''); } });
+  document.addEventListener('input', (e) => { const t = e.target; if (t && t.dataset && t.dataset.ppk) ppOpen(t, t.value); });
+  document.addEventListener('focusout', (e) => {
+    const t = e.target; if (!t || !t.dataset || !t.dataset.ppk) return;
+    if (t.dataset.picked) { delete t.dataset.picked; ppClose(t); return; }
+    const reg = PP[t.dataset.ppk]; ppClose(t); if (!reg) return;
+    const typed = t.value.trim();
+    if (typed === t.dataset.prev) return;
+    if (!typed) { ppPick(t, ''); return; }
+    const exact = reg.list.find((s) => s.n === typed) || (ppMatches(reg, typed).length === 1 ? ppMatches(reg, typed)[0] : null);
+    if (exact) ppPick(t, exact.n); else t.value = t.dataset.prev;
+  });
+  window.addEventListener('keydown', (e) => {
+    const t = e.target; if (!t || !t.dataset || !t.dataset.ppk) return;
+    const ul = t.parentNode.querySelector('.pp-list');
+    const opts = [...ul.querySelectorAll('li[data-v]')]; const cur = ul.querySelector('li.on'); const i = opts.indexOf(cur);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (ul.hidden) { ppOpen(t, ''); return; } const n = e.key === 'ArrowDown' ? Math.min(opts.length - 1, i + 1) : Math.max(0, i - 1); ppActive(t, opts[n] || null); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (!ul.hidden && cur) ppPick(t, cur.dataset.v); }
+    else if (e.key === 'Escape' && !ul.hidden) { e.preventDefault(); e.stopImmediatePropagation(); t.value = t.dataset.prev; ppClose(t); }
+  }, true);
+  document.addEventListener('mousedown', (e) => {
+    const t = e.target; if (!t || !t.closest) return;
+    const li = t.closest('.pp-list li[data-v]');
+    if (li) { e.preventDefault(); const inp = li.closest('.pp').querySelector('.pp-in'); ppPick(inp, li.dataset.v); return; }
+    if (t.closest('.pp-list')) { e.preventDefault(); return; }
+    const x = t.closest('[data-ppx]');
+    if (x) { e.preventDefault(); const inp = x.closest('.pp').querySelector('.pp-in'); ppPick(inp, ''); if (!PP[inp.dataset.ppk].act) { x.remove(); inp.focus(); } }
+  });
+
   /* 업무 부하(추정): 진행 중 지시 + 기한 경과 + 전사 지시 미완료 + 보내기 전 지시 후보 */
   const LOADCACHE = { key: '', map: {} };
   function loadOf(name) {
@@ -2004,33 +2081,10 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
     IDEA.send[x.id] = null; rerender();
   }
 
-  function workload(f) {
-    const people = staffList().filter((s) => (!f.dept || s.d === f.dept) && (!f.who || s.n === f.who));
-    if (f.who) {
-      const s = people[0] || { n: f.who, d: f.dept || '' }; const l = loadOf(s.n);
-      const goals = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === s.d);
-      return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>${esc(s.n)}님이 지금 하는 일</b>${loadPill(s.n)}</div>
-        <p class="small muted" style="margin:4px 0 8px">진행 중 지시 ${l.tasks.length}건 · 기한 경과 ${l.over}건 · 전사 지시 미완료 ${l.cwN}건 · 보내기 전 후보 ${l.ideas}건 ${badge('추정')}</p>
-        <ul class="id-doing">${l.tasks.map((d) => `<li><span class="pill ${statCls(d)}">${esc(d.status)}</span><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : ''}</span></li>`).join('') || '<li class="muted small">진행 중인 지시가 없습니다.</li>'}
-        ${goals.length ? `<li class="id-sub small muted">${esc(s.d)} 부서 목표 ${goals.length}개</li>${goals.slice(0, 8).map((d) => `<li><span class="dir-src ${d.src}">${esc(d.code || '')}</span>${esc(d.title)}<span class="small num muted">${d.pct}%</span></li>`).join('')}` : ''}</ul></div>`;
-    }
-    if (f.dept) {
-      const goals = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === f.dept);
-      const rows = people.map((s) => ({ s, l: loadOf(s.n) })).sort((a, b) => b.l.score - a.l.score);
-      const max = Math.max(4, ...rows.map((r) => r.l.score));
-      return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>${esc(f.dept)} 사람별 업무 부하</b><span class="small muted">누르면 그 사람으로 좁힙니다 ${badge('추정')}</span></div>
-        <div class="id-bars">${rows.map(({ s, l }) => `<button type="button" class="id-bar" data-act="idWho" data-v="${esc(s.n)}"><span class="n">${esc(s.n)}<small>${esc(s.g || '')}</small></span><span class="bar ${l.lv}"><i style="width:${Math.round(100 * l.score / max)}%"></i></span><span class="small num">${l.tasks.length}건${l.over ? ` · <span class="crit">경과 ${l.over}</span>` : ''}</span>${loadPill(s.n)}</button>`).join('') || '<p class="small muted">이 부서 명단이 없습니다.</p>'}</div>
-        ${goals.length ? `<p class="small muted" style="margin:10px 0 4px">부서가 이미 하고 있는 목표 ${goals.length}개</p><ul class="id-doing">${goals.map((d) => `<li><span class="dir-src ${d.src}">${esc(d.code || '')}</span><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(d.title)}</button><span class="small num muted">${d.pct}%</span></li>`).join('')}</ul>` : ''}</div>`;
-    }
-    const rows = deptsAll().map((dp) => { const ppl = staffList().filter((s) => s.d === dp); const n = ppl.reduce((a, s) => a + loadOf(s.n).tasks.length, 0); const hi = ppl.filter((s) => loadOf(s.n).lv === 'hi').length; const g = S.directives.filter((d) => isGoal(d) && isOpen(d) && d.org === dp).length; return { dp, ppl: ppl.length, n, hi, g, per: ppl.length ? n / ppl.length : n }; }).filter((r) => r.ppl || r.n || r.g).sort((a, b) => b.per - a.per);
-    const max = Math.max(1, ...rows.map((r) => r.per));
-    return `<div class="id-wl"><div class="row" style="justify-content:space-between"><b>부서별 업무 부하</b><span class="small muted">1인당 진행 중 지시 · 누르면 그 부서로 좁힙니다 ${badge('추정')}</span></div>
-      <div class="id-bars">${rows.map((r) => `<button type="button" class="id-bar" data-act="idDept" data-v="${esc(r.dp)}"><span class="n">${esc(r.dp)}<small>${r.ppl}명</small></span><span class="bar ${r.per >= 3 ? 'hi' : r.per >= 1.5 ? 'mid' : 'lo'}"><i style="width:${Math.round(100 * r.per / max)}%"></i></span><span class="small num">지시 ${r.n} · 목표 ${r.g}${r.hi ? ` · <span class="crit">과부하 ${r.hi}명</span>` : ''}</span></button>`).join('') || '<p class="small muted">명단이 아직 없습니다.</p>'}</div></div>`;
-  }
   const statCls = (d) => ({ '완료': 'st-done', '보고대기': 'st-wait', '보류': 'st-hold' }[d.status] || 'st-doing');
 
   function devPanel() {
-    const f = S.ui.idf = Object.assign({ dept: '', who: '', sort: 'recent', q: '', st: 'idea', load: true }, S.ui.idf || {});
+    const f = S.ui.idf = Object.assign({ dept: '', who: '', sort: 'recent', q: '', st: 'idea' }, S.ui.idf || {});
     const all = Object.values(ideasMap());
     let list = all.filter((x) => (!f.dept || x.dept === f.dept) && (!f.who || x.assignee === f.who) && (f.st === 'all' || (f.st === 'sent' ? x.status === 'sent' : x.status !== 'sent')) && (!f.q || [x.title, x.body, x.dept, x.assignee].join(' ').includes(f.q)));
     list = list.sort((a, b) => f.sort === 'dept' ? String(a.dept || '힣').localeCompare(String(b.dept || '힣'), 'ko') || String(a.assignee || '').localeCompare(String(b.assignee || ''), 'ko')
@@ -2039,25 +2093,23 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
           : String(b.updated || '').localeCompare(String(a.updated || '')));
     const who = staffList().filter((s) => !f.dept || s.d === f.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
     const nf = S.ui.idNew;
-    const nfWho = staffList().filter((s) => !nf || !nf.dept || s.d === nf.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
     const form = nf ? `<section class="panel"><h3>새 지시 후보</h3><form class="form" data-form="idNew">
         <label class="f wide">무엇을 시킬까요<input type="text" id="idn-title" name="title" required maxlength="120" value="${esc(nf.title || '')}" placeholder="예: 생전포차 점심 메뉴 시범 운영"></label>
         <label class="f">부서<select id="idn-dept" name="dept" data-act="idNewDept"><option value="">미정</option>${deptsAll().map((d) => `<option ${nf.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
-        <label class="f">담당자<select id="idn-who" name="who"><option value="">미정</option>${nfWho.map((s) => { const l = loadOf(s.n); return `<option value="${esc(s.n)}" ${nf.who === s.n ? 'selected' : ''}>${esc(s.n)}${nf.dept ? '' : ' · ' + esc(s.d)} — ${l.label} ${l.tasks.length}건</option>`; }).join('')}</select></label>
+        <label class="f">담당자${picker({ key: 'new', id: 'idn-who', name: 'who', list: staffList(), pri: nf.dept || '', value: nf.who || '', empty: '미정', load: true, label: '담당자' })}</label>
         <label class="f">기한<input type="date" id="idn-due" name="due" value="${esc(nf.due || '')}"></label>
         <label class="f wide">메모(업무 설명)<textarea id="idn-body" name="body" rows="2" placeholder="생각난 것을 짧게 적어 두면 나중에 AI로 다듬을 수 있습니다">${esc(nf.body || '')}</textarea></label>
         <div class="row wide"><button class="btn primary">후보로 등록</button><button type="button" class="btn sm" data-act="idNewToggle">취소</button><span class="small muted">등록만 해 두면 아무에게도 가지 않습니다.</span></div></form></section>` : '';
-    return `<section class="panel id-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시 후보</h3><p class="small muted" style="margin:2px 0 0">생각날 때 적어 두고, 카드로 다듬은 뒤 Asana·Slack으로 지시합니다. 맡기기 전에 그 사람의 업무 부하를 봅니다.</p></div>
+    return `<section class="panel id-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시 후보</h3><p class="small muted" style="margin:2px 0 0">생각날 때 적어 두고, 카드로 다듬은 뒤 Asana·Slack으로 지시합니다. 담당자를 찾을 때 사람마다 업무 부하(여유·보통·과부하)가 함께 보입니다.</p></div>
         <div class="row"><button type="button" class="btn sm id-dicebtn" data-act="idRecs">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
       <div class="form id-filters">
         <label class="f">부서<select id="idf-dept" data-act="idF" data-k="dept"><option value="">전체</option>${deptsAll().map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
-        <label class="f">담당자<select id="idf-who" data-act="idF" data-k="who"><option value="">전체</option>${who.map((s) => `<option value="${esc(s.n)}" ${f.who === s.n ? 'selected' : ''}>${esc(s.n)}${f.dept ? '' : ' · ' + esc(s.d)}</option>`).join('')}</select></label>
+        <label class="f">담당자${picker({ key: 'idf', id: 'idf-who', list: who, value: f.who, empty: '전체', act: 'idF', data: { k: 'who' }, load: true, label: '담당자 필터' })}</label>
         <label class="f">상태<select id="idf-st" data-act="idF" data-k="st">${[['idea', '보내기 전'], ['sent', '보낸 지시'], ['all', '전체']].map(([v, l]) => `<option value="${v}" ${f.st === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="f">정렬<select id="idf-sort" data-act="idF" data-k="sort">${[['recent', '최근 고친 순'], ['dept', '부서순'], ['who', '담당자순'], ['load', '부하 큰 사람 먼저']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="f">검색<input type="text" id="idf-q" data-act="idF" data-k="q" value="${esc(f.q)}" placeholder="제목·설명"></label>
       </div>
-      <div class="row small" style="justify-content:space-between;margin-top:8px"><label class="chip"><input type="checkbox" data-act="idLoadT" ${f.load ? 'checked' : ''}> 이미 하고 있는 일·업무 부하 보기</label>${f.dept || f.who || f.q || f.st !== 'idea' ? '<button type="button" class="dir-link" data-act="idFReset">조건 지우기</button>' : ''}</div>
-      ${f.load ? workload(f) : ''}
+      ${f.dept || f.who || f.q || f.st !== 'idea' ? '<p class="small" style="margin:8px 0 0"><button type="button" class="dir-link" data-act="idFReset">조건 지우기</button></p>' : ''}
     </section>
     ${form}
     <p class="small" style="margin:12px 2px 6px"><b class="num">${list.length}</b>건 / 후보 전체 ${all.length}건</p>
@@ -2073,7 +2125,6 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
     const enter = IDEA.shown !== x.id; IDEA.shown = x.id;
     queueMicrotask(() => { const b = document.querySelector('.dir-pane-body'); const v = IDEA.scroll[x.id]; if (b && v) b.scrollTop = v; });
     const wl = x.assignee ? loadOf(x.assignee) : null;
-    const pplDept = staffList().filter((s) => !x.dept || s.d === x.dept).sort((a, b) => a.n.localeCompare(b.n, 'ko'));
     const dice = (k) => `<button type="button" class="id-dice" data-act="idDice" data-id="${esc(x.id)}" data-k="${k}" title="AI 주사위: 새 제안 3개" aria-label="${esc(ID_LABEL[k])} AI 주사위">🎲</button>`;
     const sending = IDEA.send[x.id]; const fill = IDEA.fill[x.id] || {};
     const sent = x.sent || {};
@@ -2101,7 +2152,7 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
         <div class="id-head"><textarea class="id-title" id="id-title" rows="2" data-idk="title" data-id="${esc(x.id)}" aria-label="지시 제목">${esc(x.title)}</textarea>${dice('title')}<span class="id-saved small" aria-live="polite"></span></div>
         <div class="dir-fields">
           <div class="dir-f"><span class="k">부서</span><div class="v"><select class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="dept" aria-label="부서"><option value="">미정</option>${deptsAll().map((d) => `<option ${x.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div></div>
-          <div class="dir-f"><span class="k">담당자</span><div class="v"><select class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="assignee" aria-label="담당자"><option value="">미정</option>${pplDept.map((s) => { const l = loadOf(s.n); return `<option value="${esc(s.n)}" ${x.assignee === s.n ? 'selected' : ''}>${esc(s.n)}${x.dept ? '' : ' · ' + esc(s.d)} — ${l.label} ${l.tasks.length}건</option>`; }).join('')}${x.assignee && !pplDept.some((s) => s.n === x.assignee) ? `<option selected>${esc(x.assignee)}</option>` : ''}</select></div></div>
+          <div class="dir-f"><span class="k">담당자</span><div class="v">${picker({ key: 'as-' + x.id, cls: 'dir-inline', list: staffList(), pri: x.dept || '', value: x.assignee || '', empty: '미정', act: 'idSet', data: { id: x.id, k: 'assignee' }, load: true, label: '담당자' })}</div></div>
           <div class="dir-f"><span class="k">업무 부하</span><div class="v">${wl ? `${loadPill(x.assignee)} <span class="small muted">진행 중 ${wl.tasks.length} · 기한 경과 ${wl.over} · 전사 지시 ${wl.cwN} · 대기 후보 ${wl.ideas}</span>` : '<span class="small muted">담당자를 정하면 보입니다</span>'}</div></div>
           <div class="dir-f"><span class="k">기한</span><div class="v"><input type="date" class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="due" value="${esc(x.due || '')}" aria-label="기한"></div></div>
         </div>
@@ -2109,7 +2160,7 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
         <div class="id-cards">${ID_CARDS.map(([k, lab, hint]) => `<div class="id-card"><div class="h"><b>${lab}</b><span class="id-saved small" aria-live="polite"></span>${dice(k)}</div><textarea rows="3" data-idk="cards.${k}" data-id="${esc(x.id)}" placeholder="${esc(hint)}" aria-label="${esc(lab)}">${esc((x.cards || {})[k] || '')}</textarea></div>`).join('')}</div>
         <section class="dir-sec"><div class="id-sech"><h4>업무 설명</h4><span class="id-saved small" aria-live="polite"></span>${dice('body')}</div><textarea class="id-body" rows="5" data-idk="body" data-id="${esc(x.id)}" placeholder="담당자가 읽고 바로 시작할 수 있게">${esc(x.body || '')}</textarea></section>
         <section class="dir-sec"><div class="id-sech"><h4>Asana 하위 태스크로 등록할 것 <span class="num muted">${subs.length}</span></h4><span class="id-saved small" aria-live="polite"></span>${dice('subs')}</div>
-          <ul class="id-subs">${subs.map((s, i) => `<li><span class="dir-chk" aria-hidden="true"></span><input type="text" data-idk="sub.${i}.t" data-id="${esc(x.id)}" value="${esc(s.t || '')}" aria-label="하위 태스크 ${i + 1}"><select data-act="idSubWho" data-id="${esc(x.id)}" data-i="${i}" aria-label="하위 태스크 ${i + 1} 담당"><option value="">${esc(x.assignee || '담당')}와 같음</option>${pplDept.filter((p) => p.n !== x.assignee).map((p) => `<option ${s.who === p.n ? 'selected' : ''}>${esc(p.n)}</option>`).join('')}</select><button type="button" class="dir-iconbtn" data-act="idSubDel" data-id="${esc(x.id)}" data-i="${i}" aria-label="하위 태스크 ${i + 1} 지우기">×</button></li>`).join('')}</ul>
+          <ul class="id-subs">${subs.map((s, i) => `<li><span class="dir-chk" aria-hidden="true"></span><input type="text" data-idk="sub.${i}.t" data-id="${esc(x.id)}" value="${esc(s.t || '')}" aria-label="하위 태스크 ${i + 1}">${picker({ key: 'sub-' + x.id + '-' + i, list: staffList().filter((p) => p.n !== x.assignee), pri: x.dept || '', value: s.who || '', empty: (x.assignee || '담당') + '와 같음', act: 'idSubWho', data: { id: x.id, i: String(i) }, label: '하위 태스크 ' + (i + 1) + ' 담당' })}<button type="button" class="dir-iconbtn" data-act="idSubDel" data-id="${esc(x.id)}" data-i="${i}" aria-label="하위 태스크 ${i + 1} 지우기">×</button></li>`).join('')}</ul>
           <button type="button" class="dir-link" data-act="idSubAdd" data-id="${esc(x.id)}">+ 하위 태스크 추가</button></section>
       </div>
     </aside>`;
@@ -2142,26 +2193,23 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
   const idf = (patch) => { S.ui.idf = Object.assign({}, S.ui.idf || {}, patch); };
   APP.acts.dirMain = (el) => { S.ui.dirMain = el.dataset.v; S.ui.dirOpen = null; S.ui.idOpen = null; IDEA.modal = null; window.scrollTo(0, 0); };
   APP.acts.idNewToggle = () => { S.ui.idNew = S.ui.idNew ? null : { dept: (S.ui.idf || {}).dept || '', who: (S.ui.idf || {}).who || '' }; if (S.ui.idNew) focusLater('#idn-title'); };
-  APP.changes.idNewDept = (el) => { const keep = (id) => { const e = document.getElementById(id); return e ? e.value : ''; }; S.ui.idNew = { title: keep('idn-title'), body: keep('idn-body'), due: keep('idn-due'), dept: el.value, who: '' }; };
+  APP.changes.idNewDept = (el) => { const keep = (id) => { const e = document.getElementById(id); return e ? e.value : ''; }; const w = keep('idn-who'); const ws = staffOf(w); S.ui.idNew = { title: keep('idn-title'), body: keep('idn-body'), due: keep('idn-due'), dept: el.value, who: ws && ws.d === el.value ? w : '' }; };
   APP.forms.idNew = (fd) => {
     const g = (n) => (fd.get(n) || '').toString().trim();
     const who = g('who'); const st = staffOf(who);
     const id = 'i' + Date.now().toString(36);
-    ideaSave(id, { title: g('title'), dept: g('dept') || (st ? st.d : ''), assignee: who, due: /^\d{4}-\d{2}-\d{2}$/.test(g('due')) ? g('due') : '', body: g('body'), cards: {}, subs: [], status: 'idea' }, true).then(() => rerender());
+    ideaSave(id, { title: g('title'), dept: st ? st.d : g('dept'), assignee: who, due: /^\d{4}-\d{2}-\d{2}$/.test(g('due')) ? g('due') : '', body: g('body'), cards: {}, subs: [], status: 'idea' }, true).then(() => rerender());
     S.ui.idNew = null; S.ui.idOpen = id; toast('지시 후보를 등록했습니다 — 오른쪽 카드에서 다듬어 보세요');
   };
   APP.changes.idF = (el) => { const p = { [el.dataset.k]: el.value.trim() }; if (el.dataset.k === 'dept') p.who = ''; idf(p); };
-  APP.acts.idLoadT = (el) => { idf({ load: el.checked }); };
-  APP.acts.idFReset = () => { S.ui.idf = { load: (S.ui.idf || {}).load !== false }; };
-  APP.acts.idDept = (el) => { idf({ dept: el.dataset.v, who: '' }); };
-  APP.acts.idWho = (el) => { idf({ who: el.dataset.v }); };
+  APP.acts.idFReset = () => { S.ui.idf = {}; };
   APP.acts.idOpen = (el) => { if (S.ui.idOpen === el.dataset.id) { S.ui.idOpen = null; return; } S.ui.dirOpen = null; S.ui.idOpen = el.dataset.id; IDEA.confirm = null; IDEA.delAsk = null; focusLater('#id-dlg'); };
   APP.acts.idClose = () => { S.ui.idOpen = null; IDEA.confirm = null; IDEA.delAsk = null; };
   APP.changes.idSet = (el) => {
     const x = ideasMap()[el.dataset.id]; if (!x) return;
     const k = el.dataset.k; const v = el.value; const p = { [k]: k === 'due' && !/^\d{4}-\d{2}-\d{2}$/.test(v) ? '' : v };
     if (k === 'dept' && x.assignee && staffOf(x.assignee) && staffOf(x.assignee).d !== v) p.assignee = '';
-    if (k === 'assignee' && v && !x.dept && staffOf(v)) p.dept = staffOf(v).d;
+    if (k === 'assignee' && v && staffOf(v)) p.dept = staffOf(v).d;
     ideaSave(x.id, p);
   };
   APP.changes.idSubWho = (el) => { const x = ideasMap()[el.dataset.id]; if (x) ideaSave(x.id, setPath(x, 'sub.' + el.dataset.i + '.who', el.value)); };
@@ -2275,7 +2323,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       <div class="form mg-filters">
         <label class="f">기간<select id="mgf-period" data-act="mgF" data-k="period">${[['30', '최근 30일'], ['90', '최근 90일'], ['180', '최근 6개월'], ['all', '전체']].map(([v, l]) => `<option value="${v}" ${f.period === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="f">부서<select id="mgf-dept" data-act="mgF" data-k="dept"><option value="">전체</option>${depts.map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
-        <label class="f">담당자<select id="mgf-who" data-act="mgF" data-k="who"><option value="">전체</option>${names.slice().sort((a, b) => a.localeCompare(b, 'ko')).map((n) => `<option ${f.who === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <label class="f">담당자${picker({ key: 'mgf', id: 'mgf-who', list: names.map((n) => staffOf(n) || { n, d: (byDept.find((d) => d.assignee === n) || {}).org || '' }), value: f.who, empty: '전체', act: 'mgF', data: { k: 'who' }, load: true, label: '담당자 필터' })}</label>
         <label class="f">상태<select id="mgf-st" data-act="mgF" data-k="st"><option value="">전체</option>${[['open', '미완료'], ['alert', '경보(경과·무응답)'], ...STATUSES.map((s) => [s, s])].map(([v, l]) => `<option value="${esc(v)}" ${f.st === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
       </div>
       ${f.dept || f.who || f.st || f.period !== '90' ? '<p class="small" style="margin:6px 0 0"><button type="button" class="dir-link" data-act="mgFReset">조건 지우기</button></p>' : ''}
