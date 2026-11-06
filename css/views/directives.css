@@ -482,3 +482,4 @@ body.dir-vis-open { overflow: hidden; }
   .mg-list li { grid-template-columns: minmax(0, 1fr); }
 }
 .mg-flags { gap: 4px; margin-top: 2px; }
+.id-where { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--goldSoft); color: var(--ink); }

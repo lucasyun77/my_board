@@ -2121,9 +2121,10 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
     if (M.kind === 'recs') {
       const R = IDEA.recs;
       body = `<div class="dir-modal-h"><b>🎲 AI가 추천하는 지시 아이디어</b><button type="button" class="dir-iconbtn" data-act="idModalClose" aria-label="닫기">×</button></div>
+        <p class="small muted id-where">「후보로 등록」을 누르면 이 창은 그대로 두고, 뒤쪽 <b>지시 개발 탭의 「지시 후보」 목록</b>에 추가됩니다(아직 아무에게도 가지 않음). 여러 개를 골라 등록한 뒤 창을 닫고 목록에서 하나씩 다듬어 지시하시면 됩니다.</p>
         ${M.busy ? '<p class="small"><span class="dir-spin sm" aria-hidden="true"></span> 목표·진행 중 지시·부서별 부하를 보고 고르는 중…</p>' : ''}${M.err ? `<p class="small dir-err">${esc(M.err)}</p>` : ''}
         ${R && R.items ? `<ol class="id-recs">${R.items.map((r, i) => `<li><b>${esc(r.title)}</b><span class="small muted">${esc(r.dept || '부서 미정')}${r.who ? ' · ' + esc(r.who) + loadPill(staffOf(r.who) ? r.who : '') : ''}</span><p class="small" style="margin:4px 0">${esc(r.why)}</p>${r.first ? `<p class="small muted" style="margin:0">첫 주: ${esc(r.first)}</p>` : ''}
-          <div class="row" style="margin-top:6px"><button type="button" class="btn primary sm" data-act="idRecAdd" data-i="${i}">후보로 등록</button>${appLinks(recPrompt(r), ['claude'])}</div></li>`).join('')}</ol><p class="small muted">${esc(aiName(R.ai || 'claude'))} · ${esc(when(R.at))}</p>` : ''}
+          <div class="row" style="margin-top:6px">${r.added && ideasMap()[r.added] ? `<span class="pill st-done">✓ 지시 후보에 등록됨</span><button type="button" class="btn sm" data-act="idRecGo" data-id="${esc(r.added)}">열어서 다듬기</button>` : `<button type="button" class="btn primary sm" data-act="idRecAdd" data-i="${i}">후보로 등록</button>`}${appLinks(recPrompt(r), ['claude'])}</div></li>`).join('')}</ol><p class="small muted">${esc(aiName(R.ai || 'claude'))} · ${esc(when(R.at))}</p>` : ''}
         <div class="row dir-modal-foot"><button type="button" class="btn sm" data-act="idRecs" ${M.busy ? 'disabled' : ''}>다시 뽑기</button><span class="dir-pane-sp"></span>${appLinks('아이센스그룹(외식·여가 프랜차이즈 본사) 회장입니다. 지금 각 부서에 내리면 좋을 새 지시 아이디어를 같이 생각해 주세요.' + (R && R.items ? ' AI가 추천한 것: ' + R.items.map((r) => r.title).join(', ') : ''))}</div>`;
     } else {
       const x = ideasMap()[M.id];
@@ -2184,8 +2185,11 @@ ${loads || '(없음)'}`, { modelTier: 'quick', cache: false });
     const r = IDEA.recs && IDEA.recs.items[+el.dataset.i]; if (!r) return;
     const st = staffOf(r.who); const id = 'i' + Date.now().toString(36);
     ideaSave(id, { title: r.title, dept: deptsAll().includes(r.dept) ? r.dept : (st ? st.d : ''), assignee: st ? st.n : '', due: '', body: '', cards: { why: r.why || '' }, subs: r.first ? [{ t: r.first }] : [], status: 'idea', from: 'ai' }, true).then(() => rerender());
-    IDEA.modal = null; S.ui.idOpen = id; toast('AI 추천을 지시 후보로 등록했습니다');
+    r.added = id; if (LIVE.db) LIVE.db.doc('idearecs/latest').set(IDEA.recs).catch(() => {});
+    S.ui.idf = Object.assign({}, S.ui.idf || {}, { st: 'idea' });
+    toast(`「${r.title}」을 지시 후보 목록에 등록했습니다`);
   };
+  APP.acts.idRecGo = (el) => { if (!ideasMap()[el.dataset.id]) return; IDEA.modal = null; S.ui.dirOpen = null; S.ui.idOpen = el.dataset.id; focusLater('#id-dlg'); };
   APP.acts.idAskAsana = (el) => { IDEA.confirm = { id: el.dataset.id, kind: 'asana' }; IDEA.delAsk = null; };
   APP.acts.idAskSlack = (el) => { const x = ideasMap()[el.dataset.id]; if (!x) return; IDEA.confirm = { id: x.id, kind: 'slack', msg: slackDraft(x) }; IDEA.delAsk = null; focusLater('#id-slackmsg'); };
   APP.acts.idCancel = () => { IDEA.confirm = null; IDEA.delAsk = null; };
