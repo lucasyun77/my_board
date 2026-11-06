@@ -36,6 +36,15 @@
     '경영지원본부': { registered: true, delayed: 1 }, '벌툰사업부': { registered: true, delayed: 1 }, '블랙라벨사업부': { registered: true, delayed: 2 },
     '생전포차사업부': { registered: false, delayed: 1 }, 'AI전략실': { registered: true, delayed: 2 }, '마케팅실': { registered: true, delayed: 0 }
   };
+  // 최근 30일 처리된 결재 이력(Asana 완료 기록 연동 전 샘플) — 평균 처리일 계산용
+  S.opsWaitHist = S.opsWaitHist || [
+    { title: '10월 판촉물 제작 승인', from: '마케팅실', since: dayStr(-24), done_at: dayStr(-22) },
+    { title: '블랙라벨 협력사 계약 연장', from: '블랙라벨사업부', since: dayStr(-20), done_at: dayStr(-14) },
+    { title: '사내 AI 교육 외부 강사 섭외', from: 'AI전략실', since: dayStr(-15), done_at: dayStr(-14) },
+    { title: '벌툰 신규 가맹 상담 매뉴얼 개정', from: '벌툰사업부', since: dayStr(-12), done_at: dayStr(-8) },
+    { title: '분기 법인카드 한도 조정', from: '경영지원본부', since: dayStr(-9), done_at: dayStr(-7) }
+  ];
+  const SLA = 3; // 회장 결재 처리 기준(일)
   // 메뉴 연결 약속
   S.activity = S.activity || [];
   S.inbox = S.inbox || [];
@@ -66,21 +75,39 @@
   const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
   /* ---------- ① 회장 대기함 ---------- */
+  const sentFor = (wid) => S.inbox.find((x) => x.to === 'today' && x.kind === '결재 지연' && x.payload && x.payload.waitingId === wid && !x.done);
+  function waitStats() {
+    const hist = S.opsWaitHist.concat(S.waitingDone.filter((w) => w.done_at && w.since)).filter((w) => w.done_at >= dayStr(-30));
+    const spans = hist.map((w) => Math.max(0, days(w.since, w.done_at)));
+    const avg = spans.length ? spans.reduce((a, b) => a + b, 0) / spans.length : null;
+    const inSla = spans.filter((d) => d <= SLA).length;
+    return { n: spans.length, avg, rate: spans.length ? Math.round((100 * inSla) / spans.length) : null, over: S.waiting.filter((w) => days(w.since, S.today) > SLA) };
+  }
   function waitingBlock() {
     const wl = S.waiting.slice().sort((a, b) => a.since.localeCompare(b.since));
     const done = S.waitingDone.filter((x) => x.done_at === S.today);
+    const st = waitStats();
+    const unsent = st.over.filter((w) => !sentFor(w.id));
     const rows = wl.map((w) => {
       const d = days(w.since, S.today);
-      const lv = d >= 5 ? 'crit' : d >= 3 ? 'warn' : '';
+      const lv = d > SLA + 2 ? 'lv-crit' : d > SLA ? 'lv-warn' : '';
+      const sent = sentFor(w.id);
       return `<li class="ops-wait ${lv}">
         <div class="ops-wait-days num"><b>${d}</b><small>일째</small></div>
-        <div class="ops-wait-body"><div class="ops-title">${esc(w.title)}</div><div class="ops-meta">${esc(w.from)} · ${md(w.since)} 요청</div></div>
-        <button type="button" class="btn sm" data-act="opsWaitDone" data-id="${esc(w.id)}" aria-label="${esc(w.title)} 처리 완료">처리 완료</button>
+        <div class="ops-wait-body"><div class="ops-title">${esc(w.title)}</div><div class="ops-meta">${esc(w.from)} · ${md(w.since)} 요청${d > SLA ? ` · <span class="ops-bad">기준 ${d - SLA}일 초과</span>` : ''}</div></div>
+        <div class="ops-wait-acts ${d > SLA ? 'two' : ''}">${d > SLA ? (sent ? '<span class="pill st-wait">오늘 할 일로 보냄</span>' : `<button type="button" class="btn sm" data-act="opsSendToday" data-id="${esc(w.id)}">오늘 할 일로</button>`) : ''}
+        <button type="button" class="btn sm" data-act="opsWaitDone" data-id="${esc(w.id)}" aria-label="${esc(w.title)} 처리 완료">처리 완료</button></div>
       </li>`;
     }).join('');
     return `<section class="panel" aria-labelledby="h-ops-wait">
       <h3 id="h-ops-wait">회장 대기함 ${badge('측정')}<span class="ops-count">${wl.length}건</span></h3>
-      <p class="ops-note">Asana에서 회장 담당·미완료인 건을 오래 기다린 순으로 보여 줍니다.</p>
+      <div class="ops-sla">
+        <div class="${st.over.length ? 'bad' : ''}"><span>기준(${SLA}일) 초과</span><b class="num">${st.over.length}<small>건</small></b></div>
+        <div><span>평균 처리 ${badge('측정')}</span><b class="num">${st.avg == null ? '—' : st.avg.toFixed(1)}<small>일</small></b></div>
+        <div><span>기준 내 처리율</span><b class="num">${st.rate == null ? '—' : st.rate}<small>%</small></b></div>
+      </div>
+      <p class="ops-note">Asana 회장 담당·미완료 건을 오래 기다린 순으로 봅니다. ${SLA}일을 넘으면 경고합니다. 평균은 최근 30일 처리 ${st.n}건 기준(이력은 연동 전 샘플).</p>
+      ${unsent.length > 1 ? `<button type="button" class="btn sm ops-sendall" data-act="opsSendTodayAll">기준 초과 ${unsent.length}건 모두 오늘 할 일로 보내기</button>` : ''}
       ${wl.length ? `<ul class="ops-list">${rows}</ul>` : '<p class="ops-empty">기다리는 건이 없습니다. 모두 처리했습니다.</p>'}
       ${done.length ? `<details class="ops-done"><summary>오늘 처리한 건 ${done.length}건</summary><ul class="ops-list">${done.map((w) => `<li class="ops-wait done"><div class="ops-wait-body"><div class="ops-title">${esc(w.title)}</div><div class="ops-meta">${esc(w.from)} · ${days(w.since, S.today)}일 대기 후 처리</div></div><button type="button" class="btn sm" data-act="opsWaitUndo" data-id="${esc(w.id)}">되돌리기</button></li>`).join('')}</ul></details>` : ''}
     </section>`;
@@ -155,11 +182,35 @@
           <div class="ops-issue-foot"><span class="ops-meta">${esc(it.owner)} · 기한 ${md(it.due)} · 등록 ${md(it.opened)}</span>
             <span class="row"><select aria-label="${esc(it.title)} 상태" data-act="opsIssueStatus" data-id="${esc(it.id)}">${ISSUE_STATUS.map((s) => `<option ${s === it.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
             ${closed ? '' : `<button type="button" class="btn sm" data-act="opsIssueEdit" data-id="${esc(it.id)}">고치기</button>`}</span></div>
+          ${decisionBlock(it)}
           ${it.log.length ? `<details class="ops-log"><summary>기록 ${it.log.length}건</summary><ul class="ops-sub">${it.log.slice().reverse().map((l) => `<li><span class="num">${md(l.at)}</span> ${esc(l.text)}</li>`).join('')}</ul></details>` : ''}
         </li>`;
       }).join('') || '<li class="ops-empty">진행 중인 이슈·분쟁이 없습니다.</li>'}</ul>
       <details class="adder"><summary class="btn sm">＋ 이슈·분쟁 등록</summary>${issueForm(null)}</details>
     </section>`;
+  }
+
+  function decisionBlock(it) {
+    const o = ui(); const open = o.decOpen === it.id; const ds = it.decisions || [];
+    return `<details class="ops-dec" ${open || o.decShow === it.id ? 'open' : ''}><summary>결정 기록 ${ds.length}건</summary>
+      ${ds.length ? `<ol class="ops-dec-list">${ds.slice().reverse().map((d) => {
+        const asking = o.delDec === it.id + ':' + d.id;
+        const sent = S.inbox.find((x) => x.to === 'today' && x.payload && x.payload.decisionId === d.id);
+        return `<li><div class="ops-dec-h"><span class="num">${md(d.at)}</span> <b>${esc(d.decision)}</b></div>
+          ${d.reason ? `<div><span class="muted">근거</span> ${esc(d.reason)}</div>` : ''}
+          ${d.follow ? `<div><span class="muted">후속 조치</span> ${esc(d.follow)}${d.follow_due ? ` <span class="ops-meta">~${md(d.follow_due)}</span>` : ''}</div>` : ''}
+          <div class="row ops-dec-acts">${d.follow ? (sent ? '<span class="pill st-wait">오늘 할 일로 보냄</span>' : `<button type="button" class="btn sm" data-act="opsDecSend" data-id="${esc(it.id)}" data-k="${esc(d.id)}">후속 조치 → 오늘 할 일</button>`) : ''}
+          ${asking ? `<span class="ops-confirm">이 결정 기록을 지울까요? <button type="button" class="btn sm ops-danger" data-act="opsDecDel" data-id="${esc(it.id)}" data-k="${esc(d.id)}">지우기</button><button type="button" class="btn sm" data-act="opsDecDelAsk" data-v="">취소</button></span>` : `<button type="button" class="btn sm" data-act="opsDecDelAsk" data-v="${esc(it.id + ':' + d.id)}">지우기</button>`}</div></li>`;
+      }).join('')}</ol>` : '<p class="ops-meta" style="margin:6px 0">아직 결정 기록이 없습니다.</p>'}
+      ${open ? `<form class="form ops-form" data-form="opsDecision" data-id="${esc(it.id)}">
+          <label class="f wide">결정<input type="text" name="decision" required placeholder="예: 내용증명에 회신하고 합의 협상 시작"></label>
+          <label class="f wide">근거<input type="text" name="reason" placeholder="예: 소송 시 기간·비용 부담이 더 큼"></label>
+          <label class="f">후속 조치<input type="text" name="follow" placeholder="예: 합의안 초안 작성"></label>
+          <label class="f">후속 기한<input type="date" name="follow_due" value="${dayStr(7)}"></label>
+          <label class="f wide ops-check"><input type="checkbox" name="asNext" value="1" checked> 후속 조치를 이 건의 '다음 조치'로 바꾸기</label>
+          <div class="row"><button class="btn primary sm">결정 기록</button><button type="button" class="btn sm" data-act="opsDecForm" data-v="">취소</button></div>
+        </form>` : `<button type="button" class="btn sm" data-act="opsDecForm" data-v="${esc(it.id)}">＋ 결정 기록</button>`}
+    </details>`;
   }
 
   /* ---------- ⑤ 오늘 일정 ---------- */
@@ -281,6 +332,38 @@
   // 고른 값으로 화면을 다시 그릴 때(필터형 picker) — 공용 render를 부르기 위해 숨은 버튼 클릭을 흉내 낸다
   APP.rerenderOps = () => { const b = document.createElement('button'); b.type = 'button'; b.dataset.act = 'opsNoop'; b.hidden = true; document.body.appendChild(b); b.click(); b.remove(); };
   APP.acts.opsNoop = () => {};
+  const sendToday = (w) => {
+    if (sentFor(w.id)) return false;
+    const d = days(w.since, S.today);
+    S.inbox.push({ id: uid('ib'), at: S.today, from: 'ops', to: 'today', kind: '결재 지연', title: `결재 ${d}일째: ${w.title}`, payload: { waitingId: w.id, org: w.from, since: w.since, days: d }, done: false });
+    log('send-today', `결재 지연을 오늘 할 일로 보냄: ${w.title}`, w.id);
+    return true;
+  };
+  APP.acts.opsSendToday = (el) => { const w = S.waiting.find((x) => x.id === el.dataset.id); if (w && sendToday(w)) toast('오늘 할 일로 보냈습니다'); };
+  APP.acts.opsSendTodayAll = () => { const n = waitStats().over.filter(sendToday).length; toast(`${n}건을 오늘 할 일로 보냈습니다`); };
+  APP.acts.opsDecForm = (el) => { const o = ui(); o.decOpen = el.dataset.v || null; if (el.dataset.v) o.decShow = el.dataset.v; };
+  APP.acts.opsDecDelAsk = (el) => { ui().delDec = el.dataset.v || null; };
+  APP.acts.opsDecDel = (el) => {
+    const it = S.issues.find((x) => x.id === el.dataset.id); if (!it) return;
+    const d = it.decisions.find((x) => x.id === el.dataset.k); if (!d) return;
+    it.decisions = it.decisions.filter((x) => x !== d); ui().delDec = null; ui().decShow = it.id;
+    it.log.push({ at: S.today, text: `결정 기록 삭제: ${d.decision}` }); log('decision-del', `${it.title}: 결정 기록 삭제`, it.id); toast('결정 기록을 지웠습니다');
+  };
+  APP.acts.opsDecSend = (el) => {
+    const it = S.issues.find((x) => x.id === el.dataset.id); const d = it && it.decisions.find((x) => x.id === el.dataset.k); if (!d) return;
+    S.inbox.push({ id: uid('ib'), at: S.today, from: 'ops', to: 'today', kind: '후속 조치', title: `${d.follow} (${it.title.replace(/^\[예시\]\s*/, '')})`, payload: { issueId: it.id, decisionId: d.id, org: it.owner, due: d.follow_due || '' }, done: false });
+    ui().decShow = it.id; log('send-today', `후속 조치를 오늘 할 일로 보냄: ${d.follow}`, it.id); toast('후속 조치를 오늘 할 일로 보냈습니다');
+  };
+  APP.forms.opsDecision = (fd, form) => {
+    const g = (n) => (fd.get(n) || '').toString().trim();
+    const it = S.issues.find((x) => x.id === form.dataset.id); if (!it || !g('decision')) return;
+    const d = { id: uid('dc'), at: S.today, decision: g('decision'), reason: g('reason'), follow: g('follow'), follow_due: g('follow') ? g('follow_due') : '' };
+    it.decisions.push(d);
+    it.log.push({ at: S.today, text: `결정: ${d.decision}` });
+    if (d.follow && g('asNext') === '1') { it.next = d.follow; if (d.follow_due) it.due = d.follow_due; }
+    const o = ui(); o.decOpen = null; o.decShow = it.id;
+    log('decision', `${it.title}: ${d.decision}`, it.id); toast('결정을 기록했습니다');
+  };
 
   /* ---------- 화면 ---------- */
   const TABS_OPS = [['board', '상황판'], ['issues', '이슈·위험']];

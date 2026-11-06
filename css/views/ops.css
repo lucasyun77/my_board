@@ -21,15 +21,15 @@
 
 /* 대기함 */
 .ops-wait { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--paper2); border-left: 4px solid var(--line); }
-.ops-wait.warn { border-left-color: var(--gold); }
-.ops-wait.crit { border-left-color: var(--crit); }
+.ops-wait.lv-warn { border-left-color: var(--gold); }
+.ops-wait.lv-crit { border-left-color: var(--crit); }
 .ops-wait.done { grid-template-columns: minmax(0, 1fr) auto; opacity: .8; }
 .ops-wait.done .ops-title { text-decoration: line-through; }
 .ops-wait-days { text-align: center; line-height: 1.1; }
 .ops-wait-days b { display: block; font-size: 24px; font-weight: 900; }
 .ops-wait-days small { font-size: 12.5px; color: var(--sub); }
-.ops-wait.crit .ops-wait-days b { color: var(--crit); }
-.ops-wait.warn .ops-wait-days b { color: var(--warn); }
+.ops-wait.lv-crit .ops-wait-days b { color: var(--crit); }
+.ops-wait.lv-warn .ops-wait-days b { color: var(--warn); }
 .ops-done { margin-top: 12px; }
 .ops-done > summary { cursor: pointer; font-size: 14.5px; color: var(--sub); font-weight: 700; }
 
@@ -75,6 +75,29 @@
 .ops-cal.next { background: var(--goldSoft); }
 .ops-cal span:last-child { font-size: 15px; }
 
+
+/* 결재 처리 기준 */
+.ops-sla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.ops-sla > div { background: var(--paper2); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ops-sla span { font-size: 13px; color: var(--sub); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ops-sla b { font-size: 22px; font-weight: 900; }
+.ops-sla small { font-size: 13px; font-weight: 500; color: var(--sub); margin-left: 2px; }
+.ops-sla .bad b { color: var(--crit); }
+.ops-wait-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ops-wait-acts.two { grid-column: 2 / -1; justify-content: flex-start; }
+.ops-sendall { margin-top: 10px; }
+
+/* 결정 기록 */
+.ops-dec { background: var(--paper); border-radius: 12px; padding: 6px 10px; }
+.ops-dec > summary { cursor: pointer; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.ops-dec-list { margin: 8px 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.ops-dec-list > li { border-left: 3px solid var(--gold); padding: 4px 0 4px 10px; font-size: 15px; display: flex; flex-direction: column; gap: 3px; }
+.ops-dec-acts { margin-top: 4px; }
+.ops-dec .ops-form { margin: 8px 0 4px; }
+.ops-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-size: 14.5px !important; color: var(--ink) !important; }
+.ops-check input { width: auto; }
+.ops-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; color: var(--crit); font-weight: 700; }
+.ops-danger { border-color: var(--crit) !important; color: var(--crit); }
 
 /* 하위 탭·받은 항목 */
 .ops-tabs { align-self: flex-start; max-width: 100%; overflow-x: auto; }
@@ -132,7 +155,9 @@
 }
 @media (max-width: 480px) {
   .ops-wait { grid-template-columns: 44px minmax(0, 1fr); }
-  .ops-wait > .btn { grid-column: 1 / -1; justify-self: stretch; min-height: 40px; }
+  .ops-wait > .btn, .ops-wait-acts { grid-column: 1 / -1; justify-self: stretch; }
+  .ops-wait-acts .btn { flex: 1; min-height: 40px; }
+  .ops-sla b { font-size: 19px; }
   .ops-wait.done { grid-template-columns: minmax(0, 1fr); }
   .ops-dept-head .ops-meta { margin-left: 0; width: 100%; }
   .ops-count { margin-left: 0; }
