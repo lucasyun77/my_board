@@ -484,3 +484,8 @@ body.dir-vis-open { overflow: hidden; }
 .pp-list li.on, .pp-list li[data-v]:hover { background: var(--goldSoft); }
 .pp-list li.pp-empty { color: var(--sub); }
 .pp-list li.pp-more { cursor: default; }
+
+/* 칭찬 글쓰기 지침 */
+.pr-guide { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 12px; border: 1px dashed var(--gold); border-radius: 12px; background: var(--paper); }
+.pr-guide-ta { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.55; resize: vertical; }
+.dir-ack .btn.on { border-color: var(--gold); background: var(--goldSoft); }

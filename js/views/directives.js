@@ -243,6 +243,7 @@
       db.doc('live/people').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && v.map && typeof v.map === 'object') { LIVE.people = v.map; LIVE.staff = Array.isArray(v.staff) ? v.staff.filter((x) => x && x.n && x.d) : []; rebuild(); rerender(); } }, err);
       db.doc('live/goals').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items)) { LIVE.goals = v.items.filter((g) => g && g.id && g.t); LIVE.goalsAt = String(v.at || '').slice(0, 10); rebuild(); } }, err);
       db.doc('config/ai').onSnapshot((s) => { LIVE.cfg = s.exists ? s.data() : null; rerender(); }, err);
+      db.doc('config/praise').onSnapshot((s) => { LIVE.praiseCfg = s.exists ? s.data() : null; }, err);
       db.collection('progress').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.task_id) (m[v.task_id] = m[v.task_id] || []).push(Object.assign({}, v, { id: ds.id })); }); Object.values(m).forEach((a) => a.sort((x, y) => String(y.date || '').localeCompare(String(x.date || '')) || String(y.created || '').localeCompare(String(x.created || '')))); LIVE.prog = m; rerender(); }, err);
       db.collection('reports').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.task_id) (m[v.task_id] = m[v.task_id] || []).push(Object.assign({}, v, { id: ds.id })); }); Object.values(m).forEach((a) => a.sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')))); LIVE.reps = m; rerender(); }, err);
       db.doc('plans/' + new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)).onSnapshot((s) => { LIVE.plan = s.exists ? s.data() : null; rerender(); }, err);
@@ -1488,27 +1489,57 @@ ${ctx}`, { modelTier: 'default', cache: false });
   const PR = {}; const ACKBUSY = {};
   const isPendingAck = (d) => d.status === '완료' && !d.ack && (isAsana(d) || (!d.src && d.pendingAck));
   const isAcked = (d) => d.status === '완료' && !!d.ack;
-  const fallbackPraise = (d) => `${d.assignee && d.assignee !== '미지정' ? d.assignee + '님' : '여러분'}, "${d.title.replace(/^\[[^\]]+\]\s*/, '').replace(/\s+—\s+[^—]+$/, '')}" 마무리해 주셔서 고맙습니다. 끝까지 챙겨 준 덕분에 한 걸음 나아갔습니다. 수고 많으셨습니다.\n— 윤석범`;
+  /* 칭찬 초안 글쓰기 지침: 회장이 화면에서 고칠 수 있고(config/praise), 모든 초안에 같이 쓴다 */
+  const PRAISE_GUIDE_DEFAULT = `윤석범 회장이 Slack에서 직원에게 직접 툭 보내는 짧은 칭찬 메시지를 씁니다. 받는 사람이 "회장님이 직접 쓰셨구나" 하고 느껴야 합니다. AI가 쓴 티가 나면 안 됩니다.
 
-  async function draftPraise(d) {
-    if (PR[d.id]) return;
+[이렇게 씁니다]
+- 2~3문장, 100자 안팎. 짧고 담백하게.
+- "OO님," 처럼 이름으로 부르며 시작합니다. 직급을 알면 "OO 과장님,"도 좋습니다.
+- 그 사람이 실제로 한 일 하나를 콕 집어 말합니다. 업무 제목을 따옴표로 그대로 옮기지 말고, 말하듯이 풀어서 씁니다.
+- 그 일 덕분에 무엇이 좋아졌는지(매장·고객·팀·회사) 한마디 붙입니다.
+- 평소 회장이 말하는 것처럼 존댓말이되 딱딱하지 않게: "~해 줘서 고마워요", "~덕분에 한시름 놨습니다", "역시 OO님이네요", "수고했어요" 같은 말투.
+- 기록에 없는 일은 지어내지 않습니다. 자세한 내용을 모르면 끝낸 일만 자연스럽게 짚습니다.
+
+[쓰지 않습니다]
+- "노고에 깊이 감사드립니다", "귀하", "탁월한", "헌신", "진심으로 감사", "앞으로도 많은 활약 기대합니다", "덕분에 한 걸음 나아갔습니다" 같은 인사말 상투어
+- 과장된 칭찬, 느낌표 여러 개, 해시태그, 목록·제목·굵은 글씨, 영어 단어
+- 서명("— 윤석범"): 회장 본인 Slack 계정에서 보내므로 붙이지 않습니다
+- 이모지는 안 쓰거나 맨 끝에 하나만(👍 정도)`;
+  const praiseGuide = () => (LIVE.praiseCfg && LIVE.praiseCfg.guide) || S.dirPraiseGuide || PRAISE_GUIDE_DEFAULT;
+  const fallbackPraise = (d) => `${d.assignee && d.assignee !== '미지정' ? d.assignee + '님' : '여러분'}, ${d.title.replace(/^\[[^\]]+\]\s*/, '').replace(/\s+—\s+[^—]+$/, '').replace(/\s*\([^)]*\)/g, '').trim()} 마무리해 줘서 고마워요. 끝까지 챙겨 준 덕분에 한시름 놨습니다. 수고했어요.`;
+
+  async function draftPraise(d, manual) {
+    if (PR[d.id] && !manual) return;
     const saved = (LIVE.track[d.id] || {}).praise_draft;
-    if (saved) { PR[d.id] = { state: 'ok', text: saved, by: '저장된 초안' }; return; }
+    if (saved && !manual) { PR[d.id] = { state: 'ok', text: saved, by: '저장된 초안' }; return; }
     PR[d.id] = { state: 'loading' }; rerender();
-    let text = ''; let note = '';
+    let text = ''; let note = ''; let used = utilAi();
     try {
-      const sample = await getLLM(utilAi());
+      let sample = null;
+      if (manual) { const m = await manualLLM(utilAi()); sample = m.llm; used = m.used; } else sample = await getLLM(utilAi());
       if (sample) {
-        if (isAsana(d) && LIVE.mcp) await loadDetail(d);
+        if (isAsana(d) && LIVE.mcp) { try { await withTimeout(loadDetail(d), 15000); } catch (e) { /* 상세 없이 */ } }
         const det = isAsana(d) ? DET[d.asana_gid] : null;
         const notes = String((det && det.task && det.task.notes) || d.body || '').slice(0, 700);
         const cmts = ((det && det.stories) || []).filter((s) => s.type === 'comment' || s.resource_subtype === 'comment_added').slice(-5).map((s) => `- ${(s.created_by && s.created_by.name) || ''}: ${String(s.text || '').slice(0, 200)}`).join('\n');
-        const prompt = `아이센스그룹 윤석범 회장이 업무를 끝낸 직원에게 보내는 Slack 칭찬 메시지를 써 주세요.\n조건: 한국어 존댓말, 2~3문장(150자 안팎), 그 직원이 실제로 한 일을 구체적으로 짚어 고마움을 전할 것, 과장·아부 표현 금지, 이모지는 많아야 1개, 마지막 줄은 "— 윤석범". 메시지 본문만 출력하세요.\n\n직원: ${d.assignee} (${d.org})\n업무: ${d.title}\n설명: ${notes || '(없음)'}\n최근 댓글:\n${cmts || '(없음)'}\n결과물 링크: ${safeUrl(d.result_url) || '(없음)'}\n현황판 메모: ${d.memo || '(없음)'}`;
-        const r = await sample(prompt, { modelTier: 'quick' });
-        text = String((r && r.text) || '').trim();
-      } else note = `${aiName(utilAi())}를 지금 쓸 수 없어 기본 문구를 넣었습니다`;
+        const st = staffOf(d.assignee) || {};
+        const prompt = `${praiseGuide()}
+
+[이번 메시지 재료]
+받는 사람: ${d.assignee}${st.g ? ' ' + st.g : ''} (${d.org})
+끝낸 일: ${d.title}
+설명: ${notes || '(없음)'}
+최근 댓글:
+${cmts || '(없음)'}
+결과물 링크: ${safeUrl(d.result_url) || '(없음)'}
+현황판 메모: ${d.memo || '(없음)'}
+
+메시지 본문만 출력하세요. 설명·따옴표·제목 없이.`;
+        const r = await sample(prompt, { modelTier: 'quick', cache: false });
+        text = String((r && r.text) || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["“'`]+|["”'`]+$/g, '').trim();
+      } else note = `${aiName(utilAi())}를 지금 쓸 수 없어 기본 문구를 넣었습니다 · 「초안 다시 쓰기」를 누르면 Claude로 씁니다`;
     } catch (e) { note = e && e.code === 'not_granted' ? 'AI 사용이 허용되지 않아 기본 문구를 넣었습니다' : 'AI 초안 실패 — 기본 문구를 넣었습니다'; }
-    PR[d.id] = { state: 'ok', text: text || fallbackPraise(d), by: text ? `${aiName(utilAi())} 초안` : note || '기본 문구' };
+    PR[d.id] = { state: 'ok', text: text || fallbackPraise(d), by: text ? `${aiName(used)} 초안` : note || '기본 문구' };
     if (text && LIVE.db && d.src) writeTrack(d, { praise_draft: text });
     rerender();
   }
@@ -1575,14 +1606,31 @@ ${ctx}`, { modelTier: 'default', cache: false });
           <div class="row">${busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(busy)}</span>` : `
             ${noOne ? '' : `<button type="button" class="btn primary sm" data-act="ackSend" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>확인 · 칭찬 보내기</button>`}
             <button type="button" class="btn sm" data-act="ackOnly" data-id="${esc(d.id)}">${noOne ? '확인' : '보내지 않고 확인'}</button>
-            ${noOne ? '' : `<button type="button" class="btn sm" data-act="ackRedraft" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>초안 다시 쓰기</button>`}`}</div>
+            ${noOne ? '' : `<button type="button" class="btn sm ${S.ui.prGuide === d.id ? 'on' : ''}" data-act="ackRedraft" data-id="${esc(d.id)}" aria-expanded="${S.ui.prGuide === d.id}">초안 다시 쓰기</button>`}`}</div>
+          ${S.ui.prGuide === d.id && !noOne ? `<div class="pr-guide"><div class="row" style="justify-content:space-between"><b>AI에게 주는 글쓰기 지침</b><span class="small muted">고치면 저장되어 앞으로 모든 칭찬 초안에 쓰입니다</span></div>
+            <textarea id="prg-${esc(d.id)}" class="pr-guide-ta" rows="12" aria-label="칭찬 글쓰기 지침">${esc(S.ui.prGuideText != null ? S.ui.prGuideText : praiseGuide())}</textarea>
+            <div class="row"><button type="button" class="btn primary sm" data-act="prRun" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>${pr && pr.state === 'loading' ? '쓰는 중…' : '이 지침으로 초안 다시 쓰기'}</button><button type="button" class="btn sm" data-act="prReset">기본 지침으로 되돌리기</button><button type="button" class="dir-link" data-act="prClose">지침 닫기</button></div></div>` : ''}
         </div>`;
       }).join('')}</div></section>`;
   }
   const ackText = (el) => { const box = el.closest('.dir-ack'); const ta = box && box.querySelector('textarea'); return ta ? ta.value : ''; };
   APP.acts.ackSend = (el) => { const d = find(el.dataset.id); if (!d) return; const t = ackText(el); PR[d.id] = Object.assign({}, PR[d.id] || {}, { text: t, err: '' }); if (!d.src) { if (!LIVE.mcp) { ackDone(d, t, false).then(() => toast('목업이라 Slack은 보내지 않고 정리했습니다')); return; } } setTimeout(() => ackDone(d, t, true), 0); };
   APP.acts.ackOnly = (el) => { const d = find(el.dataset.id); if (d) setTimeout(() => ackDone(d, '', false), 0); };
-  APP.acts.ackRedraft = (el) => { const d = find(el.dataset.id); if (!d) return; delete PR[d.id]; if (LIVE.track[d.id]) LIVE.track[d.id].praise_draft = ''; setTimeout(() => draftPraise(d), 0); };
+  APP.acts.ackRedraft = (el) => { S.ui.prGuide = S.ui.prGuide === el.dataset.id ? null : el.dataset.id; S.ui.prGuideText = null; if (S.ui.prGuide) focusLater('#prg-' + CSS.escape(el.dataset.id)); };
+  APP.acts.prClose = () => { S.ui.prGuide = null; S.ui.prGuideText = null; };
+  APP.acts.prReset = () => { S.ui.prGuideText = PRAISE_GUIDE_DEFAULT; toast('기본 지침을 넣었습니다 — 「이 지침으로 초안 다시 쓰기」를 누르면 저장·적용됩니다'); };
+  document.addEventListener('input', (e) => { if (e.target && e.target.classList && e.target.classList.contains('pr-guide-ta')) S.ui.prGuideText = e.target.value; });
+  APP.acts.prRun = (el) => {
+    const d = find(el.dataset.id); if (!d) return;
+    const ta = document.getElementById('prg-' + d.id); const g = (ta ? ta.value : praiseGuide()).trim();
+    if (!g) { toast('지침이 비어 있습니다'); return; }
+    if (g !== praiseGuide()) {
+      if (LIVE.db) { LIVE.praiseCfg = { guide: g, at: new Date().toISOString() }; LIVE.db.doc('config/praise').set(LIVE.praiseCfg).then(() => toast('지침을 저장했습니다'), (e) => toast('지침 저장 실패(' + ((e && e.code) || '오류') + ') — 이번 초안에는 적용합니다')); } else { S.dirPraiseGuide = g; }
+    }
+    S.ui.prGuideText = null;
+    if (LIVE.track[d.id]) LIVE.track[d.id].praise_draft = '';
+    setTimeout(() => draftPraise(d, true), 0);
+  };
 
   /* ================= 전사 지시 (전 직원에게 같은 지시 → 개인별 Asana 하위 작업·진행 표시) ================= */
   const CW = { sending: null, confirm: null, delAsk: null, err: {}, busy: {} };
