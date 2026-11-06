@@ -551,3 +551,19 @@ body.dir-vis-open { overflow: hidden; }
 .mg-heat td.h3 { background: color-mix(in srgb, var(--crit) 55%, transparent); color: #fff; font-weight: 800; }
 .mg-heat td.past.h1, .mg-heat td.past.h2 { background: color-mix(in srgb, var(--crit) 30%, transparent); }
 @media (max-width: 720px) { .mg-blk > li { grid-template-columns: minmax(0, 1fr); } }
+
+/* P3 받은 항목 · 성과 평가 후보 · 주간 회고 */
+.dir-inbox { border: 1px solid var(--gold); }
+.dir-inlist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
+.dir-inlist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.dir-inlist li:last-child { border-bottom: 0; }
+.dir-inlist .t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dir-mini { padding: 3px 10px; font-size: 13.5px; align-self: flex-start; }
+.dir-donevalue { float: right; margin-left: 8px; }
+.mg-retrolist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 15px; }
+.mg-retrolist li .pill, .mg-retrolist li .btn { margin-left: 6px; }
+.mg-retrodone { margin-top: 8px; }
+.mg-retrodone summary { cursor: pointer; color: var(--goldInk); }
+.retro-ta { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; line-height: 1.55; resize: vertical; }
+.mg-retro .seg button[disabled] { opacity: .45; cursor: default; }
+@media (max-width: 720px) { .dir-inlist li { grid-template-columns: minmax(0, 1fr); } .dir-donevalue { float: none; display: block; margin: 0 0 6px; } }

@@ -250,6 +250,7 @@
       db.collection('ideas').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title != null) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); if (stableStr(m) === stableStr(LIVE.ideas || null)) return; LIVE.ideas = m; rerender(); }, err);
       db.doc('idearecs/latest').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items) && !(IDEA.recs && IDEA.recs.at > v.at)) { IDEA.recs = v; } }, err);
       db.collection('tpls').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.name) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.tpls = m; rerender(); }, err);
+      db.collection('retro').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.retro = m; }, err);
       db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
       db.doc('live/asana').onSnapshot((s) => {
@@ -554,7 +555,7 @@
         <button type="button" class="dir-iconbtn" data-act="dirClose" aria-label="패널 닫기" title="닫기 (Esc)">→|</button>
       </div>
       <div class="dir-pane-body">
-        ${done ? `<div class="dir-donebanner">이 작업은 완료되었습니다.${isPendingAck(d) ? ' 위쪽 「완료 알림」에서 확인하면 목록에서 정리되고 칭찬이 갑니다.' : d.ack && d.ack !== 'before' ? ' 확인 ' + esc(when(d.ack)) : ''}</div>` : ''}
+        ${done ? `<div class="dir-donebanner">${valueBtn(d, true) ? `<span class="dir-donevalue">${valueBtn(d, true)}</span>` : ''}이 작업은 완료되었습니다.${isPendingAck(d) ? ' 위쪽 「완료 알림」에서 확인하면 목록에서 정리되고 칭찬이 갑니다.' : d.ack && d.ack !== 'before' ? ' 확인 ' + esc(when(d.ack)) : ''}</div>` : ''}
         <div class="row small dir-pane-kind">${srcPill(d)}${alerts(d)}${det && det.state === 'loading' ? '<span class="muted">Asana에서 불러오는 중…</span>' : ''}</div>
         <h2 class="dir-pane-title" id="dlg-title">${esc(d.title)}</h2>
         ${S.ui.dirDelAsk === d.id ? `<div class="explain dir-delask" role="alert"><b>${isAsana(d) ? 'Asana에서 이 태스크를 삭제합니다.' : '목록에서 삭제합니다.'}</b> ${isAsana(d) ? '하위 작업도 함께 지워지고 되돌리기 어렵습니다.' : ''}<div class="row" style="margin-top:8px">${S.ui.dirDelBusy ? '<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>지우는 중…</span>' : `<button type="button" class="btn sm dir-dangerbtn" data-act="dirDel" data-id="${esc(d.id)}">삭제</button><button type="button" class="btn sm" data-act="dirCancelDel">취소</button>`}</div></div>` : ''}
@@ -632,11 +633,11 @@
     const main = S.ui.dirMain || 'task';
     const mainTabs = `<div class="dir-maintabs" role="tablist" aria-label="지시 메뉴">${[['task', '태스크 관리', '지금 돌아가는 일'], ['dev', '지시 개발', '시킬 일을 다듬기'], ['mgr', '지시 관리', '지시한 것의 성과']].map(([v, l, h]) => `<button type="button" role="tab" data-act="dirMain" data-v="${v}" aria-selected="${main === v}"><b>${l}</b><small>${h}</small></button>`).join('')}</div>`;
     if (main === 'dev') {
-      return `${mainTabs}<div class="view-head"><div><h2>지시 개발</h2><p>시킬 일을 후보로 모아 두고, 카드로 다듬어 Asana·Slack으로 지시합니다.</p></div></div>
+      return `${mainTabs}${inboxBox()}<div class="view-head"><div><h2>지시 개발</h2><p>시킬 일을 후보로 모아 두고, 카드로 다듬어 Asana·Slack으로 지시합니다.</p></div></div>
         ${devPanel()}${detailDialog()}${ideaPane()}${ideaModal()}`;
     }
     if (main === 'mgr') {
-      return `${mainTabs}<div class="view-head"><div><h2>지시 관리</h2><p>지시한 일의 진행과 사람별 이행 지표를 한눈에 봅니다.</p></div></div>
+      return `${mainTabs}${inboxBox()}<div class="view-head"><div><h2>지시 관리</h2><p>지시한 일의 진행과 사람별 이행 지표를 한눈에 봅니다.</p></div></div>
         ${syncBar()}${mgrPanel()}${detailDialog()}`;
     }
     const f = fullFilter();
@@ -652,7 +653,7 @@
     const body = mode === '칸반' ? kanbanView(list) : mode === '타임라인' ? timelineView(list) : listView(list);
     const tagCount = (id) => S.directives.filter((d) => d.tags.includes(id)).length;
 
-    return `${mainTabs}
+    return `${mainTabs}${inboxBox()}
       <div class="view-head"><div><h2>태스크 관리</h2><p>${S.liveMode ? 'Asana 지시와 전사·부서 목표를 한곳에서 챙깁니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.' : '회장 지시를 등록·추적합니다. 기한 경과와 3일 무응답은 경보로 띄웁니다.'}</p></div>
         <button type="button" class="btn primary" data-act="dirNewToggle" aria-expanded="${!!S.ui.dirNew}">+ 지시 등록</button></div>
 
@@ -1609,6 +1610,7 @@ ${cmts || '(없음)'}
           <div class="row">${busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(busy)}</span>` : `
             ${noOne ? '' : `<button type="button" class="btn primary sm" data-act="ackSend" data-id="${esc(d.id)}" ${pr && pr.state === 'loading' ? 'disabled' : ''}>확인 · 칭찬 보내기</button>`}
             <button type="button" class="btn sm" data-act="ackOnly" data-id="${esc(d.id)}">${noOne ? '확인' : '보내지 않고 확인'}</button>
+            ${valueBtn(d, true)}
             ${noOne ? '' : `<button type="button" class="btn sm ${S.ui.prGuide === d.id ? 'on' : ''}" data-act="ackRedraft" data-id="${esc(d.id)}" aria-expanded="${S.ui.prGuide === d.id}">초안 다시 쓰기</button>`}`}</div>
           ${S.ui.prGuide === d.id && !noOne ? `<div class="pr-guide"><div class="row" style="justify-content:space-between"><b>AI에게 주는 글쓰기 지침</b><span class="small muted">고치면 저장되어 앞으로 모든 칭찬 초안에 쓰입니다</span></div>
             <textarea id="prg-${esc(d.id)}" class="pr-guide-ta" rows="12" aria-label="칭찬 글쓰기 지침">${esc(S.ui.prGuideText != null ? S.ui.prGuideText : praiseGuide())}</textarea>
@@ -2506,6 +2508,104 @@ ${ctx}`, { modelTier: 'quick', cache: false });
   }
   APP.acts.mapT = () => { S.ui.mapOpen = !S.ui.mapOpen; };
 
+  /* ================= P3-1 완료 지시 → 성과 평가 후보로 보내기 (S.inbox to:'value') ================= */
+  const valueSent = (d) => S.inbox.find((i) => i.to === 'value' && i.from === 'directives' && i.payload && i.payload.directive_id === d.id);
+  function sendToValue(d) {
+    if (valueSent(d) || d.status !== '완료' || isGoal(d)) return;
+    const done = String(d.completed_at || d.updated_at || S.today).slice(0, 10);
+    S.inbox.unshift({ id: 'ib' + Date.now().toString(36), at: new Date().toISOString(), from: 'directives', to: 'value', kind: 'achievement_candidate', title: shortT(d), done: false,
+      payload: { directive_id: d.id, title: shortT(d), date: done, output_url: safeUrl(d.result_url) || '', source_url: safeUrl(d.source_url) || '', assignee: d.assignee, org: d.org, issued_at: d.issued_at, due_at: noDue(d) ? '' : d.due_at, on_time: noDue(d) ? null : done <= d.due_at, memo: d.memo || '' } });
+    logAct('value_candidate', `성과 평가 후보로 보냄 — ${d.assignee} · ${shortT(d)}`, d.id);
+    toast(`「${shortT(d)}」을 성과·레벨 메뉴의 평가 후보로 보냈습니다`);
+  }
+  const valueBtn = (d, sm) => (isGoal(d) || d.status !== '완료' ? '' : valueSent(d) ? `<span class="pill st-done small" title="${esc(when(valueSent(d).at))}">✓ 성과 평가 후보로 보냄</span>` : `<button type="button" class="btn sm${sm ? ' dir-mini' : ''}" data-act="toValue" data-id="${esc(d.id)}">성과 평가 후보로 보내기</button>`);
+  APP.acts.toValue = (el) => { const d = find(el.dataset.id); if (d) sendToValue(d); };
+
+  /* ================= P3-2 받은 항목 (S.inbox to:'directives') ================= */
+  const MENU_NAME = { ideabank: '아이디어뱅크', today: '오늘 할 일', ideas: '신사업', value: '성과·레벨', ops: '경영 현황', numbers: '내가 보는 숫자', ai: 'AI 사용', learn: '경영학습' };
+  function inboxBox() {
+    const items = S.inbox.filter((i) => i.to === 'directives' && !i.done);
+    if (!items.length) return '';
+    const txt = (i) => { const p = i.payload || {}; return String(p.body || p.summary || p.text || p.desc || '').trim(); };
+    return `<section class="panel dir-inbox" aria-labelledby="h-inbox"><div class="row" style="justify-content:space-between"><h3 id="h-inbox" style="margin:0">받은 항목 <span class="num">${items.length}</span>건</h3><span class="small muted">다른 메뉴에서 보낸 지시 초안입니다. 지시 후보로 만들면 지시 개발 탭에서 다듬어 보낼 수 있습니다.</span></div>
+      <ul class="dir-inlist">${items.map((i) => `<li><div class="t"><span class="small muted">${esc(MENU_NAME[i.from] || i.from || '다른 메뉴')}에서 · ${esc(when(i.at))}</span><b>${esc(i.title || '(제목 없음)')}</b>${txt(i) ? `<span class="small">${esc(txt(i).slice(0, 160))}${txt(i).length > 160 ? '…' : ''}</span>` : ''}</div>
+        <div class="row">${S.ui.inSkip === i.id ? `<span class="small">처리한 것으로 넘길까요?</span><button type="button" class="btn sm" data-act="inSkipGo" data-id="${esc(i.id)}">넘기기</button><button type="button" class="dir-link" data-act="inSkip" data-id="">취소</button>` : `<button type="button" class="btn primary sm" data-act="inToIdea" data-id="${esc(i.id)}">지시 후보로 만들기</button><button type="button" class="btn sm" data-act="inSkip" data-id="${esc(i.id)}">넘기기</button>`}</div></li>`).join('')}</ul></section>`;
+  }
+  APP.acts.inToIdea = (el) => {
+    const i = S.inbox.find((x) => x.id === el.dataset.id); if (!i) return;
+    const p = i.payload || {}; const st = staffOf(p.assignee || p.who || '');
+    const id = 'i' + Date.now().toString(36);
+    ideaSave(id, { title: String(i.title || p.title || '받은 지시 초안').slice(0, 120), dept: st ? st.d : (p.dept || ''), assignee: st ? st.n : '', due: /^\d{4}-\d{2}-\d{2}$/.test(p.due || '') ? p.due : '', body: String(p.body || p.summary || p.text || p.desc || '').slice(0, 2000), cards: Object.assign({}, p.cards || {}, p.why ? { why: String(p.why) } : {}), subs: Array.isArray(p.subs) ? p.subs.slice(0, 8).map((t) => ({ t: String(t.t || t) })) : [], status: 'idea', from: 'inbox:' + (i.from || '') }, true).then(() => rerender());
+    i.done = true; i.done_at = new Date().toISOString(); i.result = id;
+    logAct('inbox_to_idea', `받은 항목 「${i.title}」을 지시 후보로 만듦`, id);
+    S.ui.dirMain = 'dev'; S.ui.dirOpen = null; S.ui.idOpen = id; toast('지시 후보로 만들었습니다 — 오른쪽에서 다듬어 주세요');
+  };
+  APP.acts.inSkip = (el) => { S.ui.inSkip = el.dataset.id || null; };
+  APP.acts.inSkipGo = (el) => { const i = S.inbox.find((x) => x.id === el.dataset.id); S.ui.inSkip = null; if (!i) return; i.done = true; i.done_at = new Date().toISOString(); logAct('inbox_skip', `받은 항목 「${i.title}」 넘김`, i.id); toast('넘겼습니다'); };
+
+  /* ================= P3-3 주간 지시 회고 ================= */
+  const RETRO = { busy: false, err: '' };
+  const monOf = (t) => { const x = new Date(t + 'T00:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
+  const addD = (t, n) => { const x = new Date(t + 'T00:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+  const retroMemo = (w) => (LIVE.db ? ((LIVE.retro || {})[w] || {}).memo : ((S.dirRetro || {})[w] || {}).memo) || '';
+  function retroSave(w, memo) {
+    if (LIVE.db) { LIVE.retro = Object.assign({}, LIVE.retro || {}, { [w]: { memo, at: new Date().toISOString() } }); LIVE.db.doc('retro/' + w).set({ memo, at: new Date().toISOString() }).catch((e) => toast('회고 메모를 저장하지 못했습니다(' + ((e && e.code) || '오류') + ')')); }
+    else S.dirRetro = Object.assign({}, S.dirRetro || {}, { [w]: { memo, at: new Date().toISOString() } });
+  }
+  function retroStats(w) {
+    const end = addD(w, 6); const inW = (t) => { t = String(t || '').slice(0, 10); return t >= w && t <= end; };
+    const all = S.directives.filter(isOrder);
+    const made = all.filter((d) => inW(d.issued_at));
+    const done = all.filter((d) => d.status === '완료' && inW(d.completed_at || d.updated_at));
+    const onTime = done.filter((d) => !noDue(d) && String(d.completed_at || d.updated_at).slice(0, 10) <= d.due_at).length;
+    const acts = S.activity.filter((a) => a.menu === 'directives' && inW(a.at));
+    const ac = (t) => acts.filter((a) => a.type === t).length;
+    const blocked = all.filter(isOpen).map((d) => ({ d, rs: blockReasons(d) })).filter((x) => x.rs.length).sort((a, b) => b.rs.reduce((s, r) => s + r.w, 0) - a.rs.reduce((s, r) => s + r.w, 0)).slice(0, 3);
+    const ideasNew = Object.values(ideasMap()).filter((x) => inW(x.created)).length;
+    return { w, end, made, done, onTime, over: all.filter(isOverdue).length, praise: ac('praise_sent'), sentA: ac('directive_asana'), sentS: ac('directive_slack'), ideasNew, blocked };
+  }
+  function retroBase(st) {
+    return `잘된 점: 완료 ${st.done.length}건${st.done.length ? `(기한 안 ${st.onTime}건)` : ''}${st.praise ? `, 칭찬 ${st.praise}번 보냄` : ''}.
+아쉬운 점: ${st.blocked.length ? st.blocked.map((x) => `${x.d.assignee} — ${shortT(x.d)}(${x.rs[0].t})`).join(', ') : '크게 막힌 지시 없음'}${st.over ? `, 기한 지난 지시 ${st.over}건` : ''}.
+다음 주에 할 것: `;
+  }
+  async function retroAI(st) {
+    RETRO.busy = true; RETRO.err = ''; rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const r = await llm(`윤석범 회장의 한 주 지시 회고 메모를 회장 본인이 쓰는 것처럼 짧게 정리하세요. "잘된 점", "아쉬운 점", "다음 주에 할 것" 세 줄 머리에 각 1~3개 짧은 문장. 아래 기록에 있는 사실만 쓰고, 숫자를 지어내지 마세요. 연봉·임금은 다루지 않습니다. 한국어, 평어체 메모 말투.
+
+기간: ${st.w} ~ ${st.end}
+새 지시 ${st.made.length}건, 완료 ${st.done.length}건(기한 안 ${st.onTime}건), 지금 기한 지난 지시 ${st.over}건
+지시 후보 새로 ${st.ideasNew}건, Asana로 지시 ${st.sentA}건, Slack으로 지시 ${st.sentS}건, 완료 칭찬 ${st.praise}번
+완료한 지시: ${st.done.map((d) => `${d.assignee}·${shortT(d)}`).join(' / ') || '(없음)'}
+막힌 지시: ${st.blocked.map((x) => `${x.d.assignee}·${shortT(x.d)}(${x.rs.map((r) => r.t).join(', ')})`).join(' / ') || '(없음)'}`, { modelTier: 'quick', cache: false });
+      const t = String((r && r.text) || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      if (!t) throw { code: 'empty_completion' };
+      const cur = retroMemo(st.w).trim();
+      retroSave(st.w, cur ? cur + '\n\n' + t : t); RETRO.by = aiName(used) + ' 초안';
+    } catch (e) { RETRO.err = e && e.code === 'no_llm' ? '이 화면에서는 AI를 부를 수 없습니다. 「기록으로 채우기」로 숫자를 넣고 직접 적어 주세요.' : aiErr(e); }
+    RETRO.busy = false; rerender();
+  }
+  function retroPanel() {
+    const w = S.ui.retroW || monOf(S.today); const st = retroStats(w);
+    const cur = monOf(S.today); const memo = retroMemo(w);
+    const kp = (l, v, cls) => `<div><span class="small muted">${l}</span><b class="num ${cls || ''}">${v}</b></div>`;
+    return `<section class="panel mg-retro" aria-labelledby="h-retro"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 id="h-retro" style="margin:0">주간 지시 회고 ${badge('측정')}</h3><p class="small muted" style="margin:2px 0 0">${esc(md(w))} ~ ${esc(md(st.end))} · 이 현황판에서 한 일과 Asana 기록으로 셉니다.</p></div>
+      <div class="seg" role="group" aria-label="주 고르기"><button type="button" data-act="retroW" data-v="${addD(w, -7)}">← 이전 주</button><button type="button" data-act="retroW" data-v="${cur}" aria-pressed="${w === cur}">이번 주</button><button type="button" data-act="retroW" data-v="${addD(w, 7)}" ${w >= cur ? 'disabled' : ''}>다음 주 →</button></div></div>
+      <div class="cw-kpis mg-kpis">${kp('새 지시', st.made.length + '<small>건</small>')}${kp('완료', st.done.length + '<small>건</small>', 'ok')}${kp('기한 안 완료', st.done.length ? st.onTime + '<small>건</small>' : '—')}${kp('지금 기한 지남', st.over + '<small>건</small>', st.over ? 'crit' : '')}${kp('새 지시 후보', st.ideasNew + '<small>건</small>')}${kp('완료 칭찬', st.praise + '<small>번</small>')}</div>
+      ${st.blocked.length ? `<p class="small" style="margin:10px 0 4px"><b>가장 막힌 지시</b></p><ul class="mg-retrolist">${st.blocked.map((x) => `<li><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(x.d.id)}">${esc(shortT(x.d))}</button> <span class="small muted">${esc(x.d.assignee)} · ${esc(x.rs.map((r) => r.t).join(', '))}</span></li>`).join('')}</ul>` : ''}
+      ${st.done.length ? `<details class="mg-retrodone"><summary class="small">이 주에 끝난 지시 ${st.done.length}건</summary><ul class="mg-retrolist">${st.done.map((d) => `<li><button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button> <span class="small muted">${esc(d.assignee)}</span> ${valueBtn(d, true)}</li>`).join('')}</ul></details>` : ''}
+      <label class="f" style="margin-top:10px">회고 메모 <span class="small muted">${RETRO.by ? '· ' + esc(RETRO.by) + ' · ' : ''}칸을 벗어나면 저장됩니다</span><textarea class="retro-ta" data-w="${esc(w)}" rows="6" placeholder="잘된 점 / 아쉬운 점 / 다음 주에 할 것">${esc(memo)}</textarea></label>
+      ${RETRO.err ? `<p class="small dir-err" style="margin:4px 0 0">${esc(RETRO.err)}</p>` : ''}
+      <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="retroBase" data-w="${esc(w)}">기록으로 채우기</button><button type="button" class="btn sm" data-act="retroAI" data-w="${esc(w)}" ${RETRO.busy ? 'disabled' : ''}>${RETRO.busy ? 'AI가 정리하는 중…' : 'AI 회고 초안'}</button></div></section>`;
+  }
+  document.addEventListener('change', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('retro-ta')) { retroSave(t.dataset.w, t.value); logAct('retro_memo', `${t.dataset.w} 주 지시 회고 메모 저장`, t.dataset.w); } });
+  APP.acts.retroW = (el) => { S.ui.retroW = el.dataset.v; RETRO.err = ''; RETRO.by = ''; };
+  APP.acts.retroBase = (el) => { const w = el.dataset.w; const cur = retroMemo(w).trim(); retroSave(w, (cur ? cur + '\n\n' : '') + retroBase(retroStats(w))); RETRO.by = '기록으로 채움'; };
+  APP.acts.retroAI = (el) => { const st = retroStats(el.dataset.w); setTimeout(() => retroAI(st), 0); };
+
   /* ================= 지시 관리: 지시한 것들의 진행과 경영지표·직원 평가 ================= */
   const MGR = { eval: {} };
   const STEP = { '지시': 10, '진행': 50, '보고대기': 85, '완료': 100, '보류': 0 };
@@ -2589,6 +2689,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
       <div class="mg-graphs">${weekChart(list)}${statusBar(list)}</div>
     </section>
     ${f.who ? '' : blockPanel(list)}
+    ${f.who ? '' : retroPanel()}
     ${sel ? `<section class="panel mg-person"><div class="row" style="justify-content:space-between"><div class="dir-who">${avatar(sel.n, true)}<span><b>${esc(sel.n)}</b><small>${esc(sel.d)}${(staffOf(sel.n) || {}).g ? ' · ' + esc(staffOf(sel.n).g) : ''}</small></span></div><div class="row"><span class="mg-grade g${sel.s.grade}">${sel.s.grade}</span><span class="num">${sel.s.score == null ? '—' : sel.s.score + '점'}</span>${badge('추정')}<button type="button" class="dir-iconbtn" data-act="mgWho" data-v="" aria-label="사람 선택 해제">×</button></div></div>
       <div class="mg-meters">${[['성과(완료율)', sel.s.rate], ['성실도(기한 준수)', sel.s.ontime], ['응답성(최근 갱신)', sel.s.resp]].map(([l, v]) => `<div><span class="small">${l}</span><span class="bar"><i style="width:${v || 0}%"></i></span><b class="num small">${pctTxt(v)}</b></div>`).join('')}<div><span class="small">업무 부하</span>${loadPill(sel.n)}<span class="small muted">진행 중 ${sel.load.tasks.length} · 경과 ${sel.load.over}</span></div></div>
       ${sel.s.few ? '<p class="small muted" style="margin:6px 0 0">지시가 3건보다 적어 점수는 참고만 해 주세요.</p>' : ''}
@@ -2604,7 +2705,7 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
     ${cws.length && !f.who ? `<section class="panel"><h3 style="margin:0 0 6px">전사 지시 진행</h3><div class="dir-org">${cws.map((c) => { const st = cwStat(cwRows(c)); return `<button type="button" class="dir-org-row" data-act="mgCw" data-v="${esc(c.id)}"><span class="o">${esc(c.title)}</span><span class="bar"><i style="width:${st.pct}%"></i></span><span class="num p">${st.pct}%</span><span class="small muted m">완료 ${st.done}/${st.n}</span></button>`; }).join('')}</div></section>` : ''}
     <section class="panel"><h3 style="margin:0 0 6px">지시 목록 <span class="num muted">${list.length}</span></h3>
       <ul class="mg-list">${list.slice().sort((a, b) => (isOpen(b) - isOpen(a)) || a.due_at.localeCompare(b.due_at)).map((d) => `<li><div class="t"><button type="button" class="dir-title" data-act="dirOpen" data-id="${esc(d.id)}">${esc(shortT(d))}</button><span class="small muted">${esc(d.assignee)} · ${esc(d.org)} · 지시 ${esc(md(d.issued_at))}</span>${alerts(d) ? `<span class="row mg-flags">${alerts(d)}</span>` : ''}</div>
-        <div class="p"><span class="bar ${d.status === '완료' ? 'done' : isOverdue(d) ? 'over' : ''}"><i style="width:${STEP[d.status] ?? 10}%"></i></span><span class="small"><span class="pill ${statCls(d)}">${esc(d.status)}</span> <span class="num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : d.completed_at ? '완료 ' + esc(md(String(d.completed_at).slice(0, 10))) : ''}</span></span></div></li>`).join('') || '<li class="muted">조건에 맞는 지시가 없습니다.</li>'}</ul></section>`;
+        <div class="p"><span class="bar ${d.status === '완료' ? 'done' : isOverdue(d) ? 'over' : ''}"><i style="width:${STEP[d.status] ?? 10}%"></i></span><span class="small"><span class="pill ${statCls(d)}">${esc(d.status)}</span> <span class="num ${dueCls(d)}">${isOpen(d) ? dLabel(d) : d.completed_at ? '완료 ' + esc(md(String(d.completed_at).slice(0, 10))) : ''}</span></span>${valueBtn(d, true)}</div></li>`).join('') || '<li class="muted">조건에 맞는 지시가 없습니다.</li>'}</ul></section>`;
   }
   APP.changes.mgF = (el) => { const p = { [el.dataset.k]: el.value }; if (el.dataset.k === 'dept') p.who = ''; S.ui.mgf = Object.assign({}, S.ui.mgf || {}, p); };
   APP.acts.mgFReset = () => { S.ui.mgf = { sort: (S.ui.mgf || {}).sort || 'score' }; };
