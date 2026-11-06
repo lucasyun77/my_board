@@ -205,7 +205,7 @@
   const rerender = () => { const v = document.getElementById('view'); if (v && location.hash === '#ai') v.innerHTML = viewAI(); APP.save(); };
 
   /* ---------- 화면 ---------- */
-  function viewAI() {
+  function usageView() {
     const X = ensureExtra();
     const real = realOn() ? S.aiReal : null;
     const daily = real ? realDaily() : X.daily;
@@ -244,7 +244,7 @@
     const seg = `<div class="seg ai-seg" role="group" aria-label="기간 선택">${Object.entries(PERIODS).map(([k, p]) => `<button type="button" data-act="aiPeriod" data-v="${k}" aria-pressed="${k === period}">${p.label}</button>`).join('')}</div>`;
     const payload = JSON.stringify(samplePayload(daily[daily.length - 1]), null, 2);
 
-    return `<div class="view-head"><div><h2>AI 사용 모니터링</h2><p>보고 스킬 <code>ai-usage-report</code> v0.1이 매시 정각 수집해 <code>POST /api/ai-usage</code>로 보냅니다. 수집 경로가 없는 항목은 <b>미확인</b>으로 두고 숫자를 지어내지 않습니다.</p></div>${seg}</div>
+    return `<div class="ai-tabtop"><p class="small muted">보고 스킬 <code>ai-usage-report</code> v0.1이 매시 정각 수집해 <code>POST /api/ai-usage</code>로 보내는 구조입니다. 수집 경로가 없는 항목은 <b>미확인</b>으로 둡니다.</p>${seg}</div>
       ${realPanel}
       ${real ? '' : guide('watch', `오늘 수집 ${received.length}/17회 · 다음 ${nextTxt}`, '01시~07시에는 수집하지 않고 08시 보고에 묶어 보냅니다. 위 일·주·월 버튼으로 기간을 바꾸면 아래 숫자가 모두 함께 바뀝니다.')}
 
@@ -317,7 +317,134 @@
       </details>`;
   }
 
+
+  /* ======================================================================
+     관제탑(고도화): 공통 상태 · 받은 항목 · 활동 기록 · 탭
+     ====================================================================== */
+  S.activity = S.activity || []; S.inbox = S.inbox || [];
+  S.aiBudget = S.aiBudget || { limit_krw: null, warn_pct: 80, spike_pct: 50, history: [] };
+  S.aiAck = S.aiAck || {};
+  S.aiSkillLink = S.aiSkillLink || {};
+  const nowIso = () => new Date().toISOString();
+  const logAct = (type, text, ref) => { S.activity.push({ id: APP.uid('act'), at: nowIso(), menu: 'ai', type, text, ref: ref || null }); if (S.activity.length > 300) S.activity.splice(0, S.activity.length - 300); };
+  const TABS_AI = [['usage', '사용량'], ['budget', '예산·경보'], ['value', '효과'], ['guide', 'AI 추천']];
+
+  /* 표시 중인 일별 시계열(실데이터 있으면 실데이터, 없으면 목업) */
+  function series() {
+    const real = realOn() ? S.aiReal : null;
+    return { real, daily: real ? realDaily() : ensureExtra().daily };
+  }
+
+  /* ---------- P1: 예산·월말 예상·경보 ---------- */
+  function budgetCalc() {
+    const { real, daily } = series();
+    const last = daily[daily.length - 1];
+    const mk = last.date.slice(0, 7); const y = +mk.slice(0, 4); const m = +mk.slice(5, 7);
+    const dim = new Date(y, m, 0).getDate(); const dom = +last.date.slice(8, 10);
+    const mtd = sum(daily.filter((r) => r.date.startsWith(mk))).usd * RATE;
+    const last7 = daily.slice(-7); const avg7 = (sum(last7).usd * RATE) / Math.max(1, last7.length);
+    const proj = mtd + avg7 * (dim - dom);
+    const w7 = sum(daily.slice(-7)).usd * RATE; const p7 = sum(daily.slice(-14, -7)).usd * RATE;
+    const today = last.cost_usd * RATE; const prevDays = daily.slice(-8, -1); const avgPrev = (sum(prevDays).usd * RATE) / Math.max(1, prevDays.length);
+    const B = S.aiBudget; const limit = B.limit_krw;
+    return { real, daily, last, mk, m, dim, dom, mtd, avg7, proj, w7, p7, today, avgPrev, limit, B };
+  }
+  function budgetAlerts(c) {
+    const out = []; const { B, limit } = c;
+    if (limit) {
+      if (c.mtd >= limit) out.push({ id: `lim100-${c.mk}`, lv: 'crit', title: `이번 달 AI 비용이 한도를 넘었습니다`, text: `${won(c.mtd)}원 / 한도 ${won(limit)}원 (${Math.round(c.mtd / limit * 100)}%)` });
+      else if (c.mtd >= limit * B.warn_pct / 100) out.push({ id: `lim${B.warn_pct}-${c.mk}`, lv: 'warn', title: `이번 달 AI 비용이 한도의 ${B.warn_pct}%를 넘었습니다`, text: `${won(c.mtd)}원 / 한도 ${won(limit)}원 (${Math.round(c.mtd / limit * 100)}%)` });
+      if (c.mtd < limit && c.proj >= limit) out.push({ id: `proj-${c.mk}`, lv: 'warn', title: '이 추세면 월말에 한도를 넘습니다', text: `월말 예상 ${won(c.proj)}원 — 한도보다 ${won(c.proj - limit)}원 많음` });
+    }
+    if (c.p7 > 0 && (c.w7 / c.p7 - 1) * 100 >= B.spike_pct) out.push({ id: `wk-${c.last.date}`, lv: 'warn', title: `최근 7일 비용이 직전 7일보다 ${Math.round((c.w7 / c.p7 - 1) * 100)}% 늘었습니다`, text: `${won(c.p7)}원 → ${won(c.w7)}원 (기준 +${B.spike_pct}%)` });
+    if (c.avgPrev > 0 && c.today >= c.avgPrev * 2) out.push({ id: `day-${c.last.date}`, lv: 'warn', title: `오늘 비용이 최근 평균의 ${(c.today / c.avgPrev).toFixed(1)}배입니다`, text: `오늘 ${won(c.today)}원 · 직전 7일 하루 평균 ${won(c.avgPrev)}원` });
+    return out;
+  }
+  const alertRow = (a, compact) => `<li class="ai-alert ${a.lv}"><div><b>${esc(a.title)}</b><div class="small">${esc(a.text)}</div></div>${compact ? '' : `<div class="row"><button type="button" class="btn sm" data-act="aiAlertToday" data-id="${a.id}">오늘 할 일로 보내기</button><button type="button" class="btn sm" data-act="aiAck" data-id="${a.id}">확인함</button></div>`}</li>`;
+
+  function budgetView() {
+    const c = budgetCalc(); const { B, limit } = c;
+    const al = budgetAlerts(c); const open = al.filter((a) => !S.aiAck[a.id]); const done = al.filter((a) => S.aiAck[a.id]);
+    const scale = limit ? Math.max(limit, c.proj, c.mtd) : 1; const at = (v) => (v / scale * 100).toFixed(1); // 한도를 넘어도 막대 안에서 보이게 눈금을 늘림
+    const st = !limit ? ['미설정', ''] : c.mtd >= limit ? ['한도 초과', 'crit'] : c.mtd >= limit * B.warn_pct / 100 ? ['주의', 'warn'] : c.proj >= limit ? ['초과 예상', 'warn'] : ['정상', 'ok'];
+    const src = c.real ? badge('측정') : '<span class="ai-mock">목업</span>';
+    const wk = c.p7 > 0 ? `${c.w7 >= c.p7 ? '▲' : '▼'} ${Math.abs(Math.round((c.w7 / c.p7 - 1) * 100))}%` : '비교 불가(직전 7일 기록 없음)';
+    const edit = !limit || S.ui.aiBudgetEdit;
+    return `<section class="panel ai-budget"><h3>${c.m}월 Claude 비용 · 한도 ${src}<span class="ai-st ${st[1]}">${st[0]}</span></h3>
+        <div class="ai-bnums">
+          <div><div class="small muted">이번 달 누적 ${src}</div><div class="v num">${won(c.mtd)}<small>원</small></div><div class="small muted">${c.dom}일 지남 / ${c.dim}일</div></div>
+          <div><div class="small muted">월말 예상 ${badge('추정')}</div><div class="v num">${won(c.proj)}<small>원</small></div><div class="small muted">최근 7일 하루 평균 ${won(c.avg7)}원 × 남은 ${c.dim - c.dom}일 + 누적</div></div>
+          <div><div class="small muted">월 한도 ${badge('수기')}</div><div class="v num">${limit ? won(limit) + '<small>원</small>' : '—'}</div><div class="small muted">${limit ? `경보 ${B.warn_pct}% · 100%` : '아직 정하지 않음'}</div></div>
+        </div>
+        ${limit ? `<div class="ai-meter" role="img" aria-label="한도 대비 누적 ${Math.round(c.mtd / limit * 100)}%, 월말 예상 ${Math.round(c.proj / limit * 100)}%"><i class="fill ${st[1]}" style="width:${at(c.mtd)}%"></i><i class="proj" style="width:${at(c.proj)}%"></i><b class="mk" style="left:${at(limit * B.warn_pct / 100)}%"></b><b class="mk lim" style="left:calc(${at(limit)}% - 2px)"></b></div>
+          <div class="ai-meter-lb small muted"><span class="z">0</span>${at(limit) - at(limit * B.warn_pct / 100) >= 9 ? `<span class="c" style="left:${at(limit * B.warn_pct / 100)}%">${B.warn_pct}%</span>` : ''}<span class="c lim" style="left:${at(limit)}%">한도</span>${c.proj > limit && 100 - at(limit) >= 14 ? '<span class="e">월말 예상</span>' : ''}</div>
+          <p class="small muted ai-note">진한 막대 = 지금까지, 줄무늬 = 월말 예상(추정). 실데이터 기간이 짧으면 예상이 크게 흔들립니다.</p>` : '<p class="ai-cta">월 한도를 정하면 80%·100% 도달과 월말 초과 예상을 알려 드립니다.</p>'}
+        ${edit ? `<form class="form ai-bform" data-form="aiBudget">
+          <label class="f">월 한도(원)<input type="number" name="limit" min="1000" step="1000" inputmode="numeric" required value="${limit || ''}" placeholder="예: 300000"></label>
+          <label class="f">주의 경보(%)<input type="number" name="warn" min="30" max="99" value="${B.warn_pct}"></label>
+          <label class="f">급증 기준(직전 7일 대비 +%)<input type="number" name="spike" min="10" max="500" value="${B.spike_pct}"></label>
+          <div class="row"><button class="btn primary">저장</button>${limit ? '<button type="button" class="btn" data-act="aiBudgetEdit" data-v="0">취소</button>' : ''}</div></form>` : '<div class="row" style="margin-top:12px"><button type="button" class="btn" data-act="aiBudgetEdit" data-v="1">한도·경보 기준 바꾸기</button></div>'}
+      </section>
+      <div class="grid2 ai-top">
+        <section class="panel"><h3>이상 사용 경보 ${open.length ? `<span class="ai-cnt">${open.length}</span>` : ''}</h3>
+          ${open.length ? `<ul class="ai-alerts">${open.map((a) => alertRow(a)).join('')}</ul>` : '<p class="muted">지금 확인할 경보가 없습니다.</p>'}
+          ${done.length ? `<details class="ai-sess"><summary class="small">확인한 경보 ${done.length}개</summary><ul class="ai-alerts">${done.map((a) => alertRow(a, true)).join('')}</ul></details>` : ''}
+          <p class="small muted ai-note">기준: 한도 ${B.warn_pct}%·100% 도달, 월말 초과 예상, 최근 7일이 직전 7일보다 +${B.spike_pct}% 이상, 오늘이 최근 하루 평균의 2배 이상.</p>
+        </section>
+        <section class="panel"><h3>주간 비교 ${src}</h3>
+          <div class="ai-wk"><div><span class="small muted">직전 7일</span><b class="num">${won(c.p7)}원</b></div><div><span class="small muted">최근 7일</span><b class="num">${won(c.w7)}원</b></div><div><span class="small muted">변화</span><b class="num">${wk}</b></div></div>
+          <h4 class="ai-h4">AI별 한도</h4>
+          <ul class="ai-paths"><li><div class="row" style="justify-content:space-between"><b>Claude</b>${src}</div><div class="small">위 한도가 적용됩니다.</div></li>
+            <li><div class="row" style="justify-content:space-between"><b>ChatGPT</b>${badge('미확인')}</div><div class="small muted">비용 수집 경로가 없어 한도·경보를 걸 수 없습니다(관리자 키 확인 전).</div></li>
+            <li><div class="row" style="justify-content:space-between"><b>Gemini</b>${badge('미확인')}</div><div class="small muted">비용 수집 경로가 없어 한도·경보를 걸 수 없습니다(관리자 키 확인 전).</div></li></ul>
+          ${(B.history || []).length ? `<details class="ai-sess"><summary class="small">한도 변경 이력 ${B.history.length}건</summary><ul class="ai-hist small">${B.history.slice(-8).reverse().map((h) => `<li>${esc(h.at.slice(0, 16).replace('T', ' '))} · 한도 ${h.limit ? won(h.limit) + '원' : '—'} · 주의 ${h.warn}% · 급증 +${h.spike}%</li>`).join('')}</ul></details>` : ''}
+        </section>
+      </div>`;
+  }
+
+  /* 받은 항목(다른 메뉴가 ai로 보낸 것) */
+  function inboxBox() {
+    const items = S.inbox.filter((x) => x.to === 'ai' && !x.done);
+    if (!items.length) return '';
+    return `<section class="panel ai-inbox"><h3>받은 항목 <span class="ai-cnt">${items.length}</span></h3><ul class="ai-alerts">${items.map((x) => `<li class="ai-alert"><div><b>${esc(x.title || '(제목 없음)')}</b><div class="small muted">${esc(x.from || '')}에서 · ${esc(String(x.at || '').slice(0, 16).replace('T', ' '))}${x.kind ? ' · ' + esc(x.kind) : ''}</div></div><div class="row"><button type="button" class="btn sm" data-act="aiInboxDone" data-id="${esc(x.id)}">처리함</button></div></li>`).join('')}</ul></section>`;
+  }
+  /* 모든 탭 위에 보이는 경보 띠 */
+  function alertStrip() {
+    const open = budgetAlerts(budgetCalc()).filter((a) => !S.aiAck[a.id]);
+    if (!open.length || S.ui.aiTab === 'budget') return '';
+    return `<div class="ai-strip ${open.some((a) => a.lv === 'crit') ? 'crit' : ''}" role="status"><b>경보 ${open.length}건</b><span>${esc(open[0].title)}${open.length > 1 ? ` 외 ${open.length - 1}건` : ''}</span><button type="button" class="btn sm" data-act="aiTab" data-v="budget">확인하기</button></div>`;
+  }
+
+  function viewAI() {
+    const tab = TABS_AI.some((t) => t[0] === S.ui.aiTab) ? S.ui.aiTab : 'usage';
+    const body = tab === 'budget' ? budgetView() : tab === 'value' && typeof valueView === 'function' ? valueView() : tab === 'guide' && typeof guideView === 'function' ? guideView() : usageView();
+    return `<div class="view-head"><div><h2>AI 비용·효과 관제탑</h2><p>얼마 쓰는지보다, 쓴 만큼 무엇을 벌었는지 봅니다. 수집 경로가 없는 숫자는 <b>미확인</b>으로 두고 지어내지 않습니다.</p></div></div>
+      ${inboxBox()}${alertStrip()}
+      <div class="ai-tabs" role="tablist" aria-label="AI 관제탑 보기">${TABS_AI.map(([k, l]) => `<button type="button" role="tab" data-act="aiTab" data-v="${k}" aria-selected="${k === tab}">${l}</button>`).join('')}</div>
+      ${body}`;
+  }
+
   /* ---------- 동작 ---------- */
+
+  APP.acts.aiTab = (el) => { S.ui.aiTab = el.dataset.v; };
+  APP.acts.aiBudgetEdit = (el) => { S.ui.aiBudgetEdit = el.dataset.v === '1'; };
+  APP.forms.aiBudget = (fd) => {
+    const n = (k, d, lo, hi) => { const v = Math.round(+fd.get(k)); return Number.isFinite(v) && v >= lo && v <= hi ? v : d; };
+    const B = S.aiBudget; const lim = n('limit', B.limit_krw, 1000, 1e12);
+    B.limit_krw = lim; B.warn_pct = n('warn', B.warn_pct, 30, 99); B.spike_pct = n('spike', B.spike_pct, 10, 500);
+    (B.history = B.history || []).push({ at: nowIso(), limit: B.limit_krw, warn: B.warn_pct, spike: B.spike_pct });
+    S.ui.aiBudgetEdit = false; logAct('budget', `AI 월 한도 ${won(B.limit_krw)}원 · 주의 ${B.warn_pct}% · 급증 +${B.spike_pct}%로 설정`);
+    toast('한도·경보 기준을 저장했습니다');
+  };
+  const findAlert = (id) => budgetAlerts(budgetCalc()).find((a) => a.id === id);
+  APP.acts.aiAck = (el) => { const a = findAlert(el.dataset.id); S.aiAck[el.dataset.id] = nowIso(); logAct('alert_ack', `경보 확인: ${a ? a.title : el.dataset.id}`, el.dataset.id); };
+  APP.acts.aiAlertToday = (el) => {
+    const a = findAlert(el.dataset.id); if (!a) return;
+    if (S.inbox.some((x) => x.to === 'today' && x.payload && x.payload.alertId === a.id && !x.done)) { toast('이미 오늘 할 일로 보냈습니다'); return; }
+    S.inbox.push({ id: APP.uid('in'), at: nowIso(), from: 'ai', to: 'today', kind: 'AI 비용 경보', title: a.title, payload: { alertId: a.id, text: a.text }, done: false });
+    logAct('send', `경보를 오늘 할 일로 보냄: ${a.title}`, a.id); toast('오늘 할 일의 받은 항목으로 보냈습니다');
+  };
+  APP.acts.aiInboxDone = (el) => { const x = S.inbox.find((i) => i.id === el.dataset.id); if (!x) return; x.done = true; logAct('inbox_done', `받은 항목 처리: ${x.title}`, x.id); };
   APP.acts.aiPeriod = (el) => { S.ui.aiPeriod = el.dataset.v; S.ui.aiPick = null; };
   APP.acts.aiPick = (el) => { S.ui.aiPick = +el.dataset.v; };
   APP.acts.aiToggleMock = () => { S.ui.aiShowMock = !S.ui.aiShowMock; S.ui.aiPick = null; };
@@ -329,7 +456,7 @@
     const t0 = Date.now();
     scanToday().then((day) => {
       S.ui.aiScanState = { msg: `조사 완료(${Math.round((Date.now() - t0) / 1000)}초) — 오늘 ${won(day.turns)}턴 · 토큰 ${T(day.input_tokens + day.output_tokens)} · ${won(day.cost_usd * RATE)}원` };
-      S.ui.aiPeriod = 'day'; S.ui.aiPick = null; toast('오늘 Claude 사용량을 조사했습니다'); rerender();
+      S.ui.aiPeriod = 'day'; S.ui.aiPick = null; logAct('scan', `오늘 Claude 사용량 조사: ${won(day.turns)}턴 · ${won(day.cost_usd * RATE)}원`); toast('오늘 Claude 사용량을 조사했습니다'); rerender();
     }).catch((e) => {
       S.ui.aiScanState = { msg: e && e.code === 'no_mcp' ? '이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에 올린 현황판(아티팩트)에서 눌러 주세요.' : errText(e) + ' 기존 숫자는 그대로 둡니다.' };
       rerender();
