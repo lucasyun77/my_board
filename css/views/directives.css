@@ -500,3 +500,34 @@ body.dir-vis-open { overflow: hidden; }
 .id-count { margin: 14px 2px 6px; }
 .id-top .id-list { margin-top: 0; }
 @media (max-width: 720px) { .id-recf { grid-template-columns: minmax(0, 1fr); } }
+
+/* P1 지시 품질 점검기 */
+.dq-pill { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 13px; white-space: nowrap; background: var(--line); color: var(--ink); }
+.dq-pill.good { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.dq-pill.mid { background: var(--goldSoft); color: var(--goldInk); }
+.dq-pill.low { background: color-mix(in srgb, var(--crit) 14%, transparent); color: var(--crit); }
+.dq-box { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.dq-box > summary { display: flex; gap: 10px; align-items: center; padding: 8px 12px; cursor: pointer; list-style: none; }
+.dq-box > summary::-webkit-details-marker { display: none; }
+.dq-box > summary > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.dq-box > summary small { color: var(--sub); font-size: 13.5px; }
+.dq-score { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 800; font-size: 16px; background: var(--line); }
+.dq-box.good .dq-score { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.dq-box.mid .dq-score { background: var(--goldSoft); color: var(--goldInk); }
+.dq-box.low .dq-score { background: color-mix(in srgb, var(--crit) 15%, transparent); color: var(--crit); }
+.dq-box ul { list-style: none; margin: 0; padding: 0 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+.dq-box li { display: grid; grid-template-columns: 20px 90px minmax(0, 1fr); gap: 6px; align-items: baseline; font-size: 15px; }
+.dq-box li.ok > span:first-child { color: var(--ok); font-weight: 800; }
+.dq-box li.no > span:first-child { color: var(--crit); font-weight: 800; }
+.dq-box > p { padding: 0 12px 10px; }
+.dq-warn { color: var(--warn); }
+
+/* P1 지시 서식 모음 */
+.id-tplbox { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.id-tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.id-tpl { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); min-width: 0; }
+.id-tpl > .pill { align-self: flex-start; }
+.id-tpl .row { margin-top: 4px; gap: 6px; }
+.id-tplsave { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.id-tplsave input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--paper); color: var(--ink); font: inherit; }
+.btn.on { background: var(--goldSoft); }

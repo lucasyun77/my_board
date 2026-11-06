@@ -249,6 +249,7 @@
       db.doc('plans/' + new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)).onSnapshot((s) => { LIVE.plan = s.exists ? s.data() : null; rerender(); }, err);
       db.collection('ideas').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title != null) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); if (stableStr(m) === stableStr(LIVE.ideas || null)) return; LIVE.ideas = m; rerender(); }, err);
       db.doc('idearecs/latest').onSnapshot((s) => { const v = s.exists ? s.data() : null; if (v && Array.isArray(v.items) && !(IDEA.recs && IDEA.recs.at > v.at)) { IDEA.recs = v; } }, err);
+      db.collection('tpls').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.name) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.tpls = m; rerender(); }, err);
       db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
       db.doc('live/asana').onSnapshot((s) => {
@@ -513,6 +514,7 @@
       ${isGoal(d) ? fld('상태', statusSelect(d)) : ''}
       ${fld('우선순위', prioSelect(d))}
       ${fld('태그', `<span class="row">${d.tags.map(chip).join('') || '<span class="muted small">없음</span>'}</span>`)}
+      ${!isGoal(d) ? fld('지시 품질', (() => { const q = taskQ(d); return `${qPill(q)} <span class="small muted">${q.miss.length ? '빠진 것: ' + esc(q.miss.map((m) => m[1]).join(' · ')) : '빠진 것 없음'}</span> ${badge('추정')}`; })()) : ''}
       ${isGoal(d) ? `${fld('지표', esc(d.metric) || '<span class="muted">—</span>')}${fld('현재 → 목표', `${esc(d.cur) || '—'} → ${esc(d.target) || '—'}`)}${fld('진척', goalBar(d) || '—')}${fld('합의', `<span class="small">${d.agree}/4 단계 (회장·C레벨·본부·부서)</span>`)}${upGoal ? fld('상위 목표', `<button type="button" class="dir-link" data-act="dirOpen" data-id="${esc(upGoal.id)}">${esc(upGoal.code)} ${esc(upGoal.title)}</button>`) : ''}` : ''}
       ${fld(isGoal(d) ? '등록 기준일' : '만든 날', `<span class="num">${esc(d.issued_at)}</span>${t && t.created_by && t.created_by.name ? ` <span class="small muted">· ${esc(t.created_by.name)}</span>` : ''}`)}
       ${fld('결과물', linkOut(d.result_url, '결과물 열기'))}
@@ -1584,6 +1586,7 @@ ${cmts || '(없음)'}
     }
     const at = new Date().toISOString();
     d.ack = at; d.pendingAck = false;
+    logAct(send ? 'praise_sent' : 'ack', send ? `${d.assignee}님께 완료 칭찬 보냄 — ${shortT(d)}` : `완료 확인 — ${shortT(d)}`, d.id);
     if (d.src) await writeTrack(d, Object.assign({ ack: at, praise_sent: send ? text.trim() : '' }, slack ? { slack_id: slack.id, slack_label: slack.label } : {}), send ? 'Slack 칭찬 보냄 · 완료 확인' : '완료 확인(칭찬 안 보냄)');
     else addLog(d, send ? 'Slack 칭찬 보냄(목업) · 완료 확인' : '완료 확인');
     ACKBUSY[d.id] = null;
@@ -2139,6 +2142,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
           subOk = (((r2 && r2.payload) || {}).succeeded || []).length;
         } catch (e) { subOk = 0; }
       }
+      logAct('directive_asana', `「${x.title}」 Asana로 지시(${x.assignee || '미배정'})`, gid);
       toast(`Asana에 지시를 만들었습니다${subs.length ? ` · 하위 태스크 ${subOk}/${subs.length}개` : ''}${st && st.gid ? '' : ' (담당자 Asana 계정을 못 찾아 미배정)'}`);
       fetchAsana(true);
     } catch (e) { toast('Asana로 보내지 못했습니다 — ' + errText(e)); }
@@ -2154,7 +2158,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     try {
       const who = await findSlackId({ id: 'i' + x.id, assignee: x.assignee });
       if (!who) toast(`Slack에서 ${x.assignee}님을 찾지 못했습니다`);
-      else { await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: msg }); await ideaSave(x.id, { sent: Object.assign({}, (ideasMap()[x.id] || x).sent || {}, { slack_at: new Date().toISOString() }) }); toast(`${x.assignee}님께 Slack으로 지시를 보냈습니다`); }
+      else { await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: msg }); await ideaSave(x.id, { sent: Object.assign({}, (ideasMap()[x.id] || x).sent || {}, { slack_at: new Date().toISOString() }) }); logAct('directive_slack', `「${x.title}」 Slack으로 지시(${x.assignee})`, x.id); toast(`${x.assignee}님께 Slack으로 지시를 보냈습니다`); }
     } catch (e) { toast('Slack으로 보내지 못했습니다(' + ((e && e.code) || '오류') + ')'); }
     IDEA.send[x.id] = null; rerender();
   }
@@ -2179,8 +2183,9 @@ ${ctx}`, { modelTier: 'quick', cache: false });
         <label class="f wide">메모(업무 설명)<textarea id="idn-body" name="body" rows="2" placeholder="생각난 것을 짧게 적어 두면 나중에 AI로 다듬을 수 있습니다">${esc(nf.body || '')}</textarea></label>
         <div class="row wide"><button class="btn primary">후보로 등록</button><button type="button" class="btn sm" data-act="idNewToggle">취소</button><span class="small muted">등록만 해 두면 아무에게도 가지 않습니다.</span></div></form></div>` : '';
     return `<section class="panel id-top"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3 style="margin:0">지시 후보</h3><p class="small muted" style="margin:2px 0 0">생각날 때 적어 두고, 카드로 다듬은 뒤 Asana·Slack으로 지시합니다. 담당자를 찾을 때 사람마다 업무 부하(여유·보통·과부하)가 함께 보입니다.</p></div>
-        <div class="row"><button type="button" class="btn sm id-dicebtn ${S.ui.idRec ? 'on' : ''}" data-act="idRecs" aria-expanded="${!!S.ui.idRec}">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
+        <div class="row"><button type="button" class="btn sm id-dicebtn ${S.ui.idRec ? 'on' : ''}" data-act="idRecs" aria-expanded="${!!S.ui.idRec}">🎲 AI 추천 아이디어 5개</button><button type="button" class="btn sm ${S.ui.tplOpen ? 'on' : ''}" data-act="tplToggle" aria-expanded="${!!S.ui.tplOpen}">서식 모음</button><button type="button" class="btn primary sm" data-act="idNewToggle" aria-expanded="${!!nf}">+ 지시 후보 등록</button></div></div>
       ${recBox()}
+      ${tplBox()}
       ${form}
       <div class="form id-filters">
         <label class="f">부서<select id="idf-dept" data-act="idF" data-k="dept"><option value="">전체</option>${deptsAll().map((d) => `<option ${f.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
@@ -2192,7 +2197,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
       <p class="small id-count"><b class="num">${list.length}</b>건 / 후보 전체 ${all.length}건${f.dept || f.who || f.q || f.st !== 'idea' ? ' · <button type="button" class="dir-link" data-act="idFReset">조건 지우기</button>' : ''}</p>
     <div class="id-list">${list.map((x) => `<button type="button" class="id-row ${S.ui.idOpen === x.id ? 'on' : ''}" data-act="idOpen" data-id="${esc(x.id)}">
         <span class="t"><b>${esc(x.title)}</b><span class="small muted">${esc(x.dept || '부서 미정')} · ${esc(x.assignee || '담당 미정')}${x.due ? ' · 기한 ' + esc(md(x.due)) : ''}</span></span>
-        <span class="m">${x.assignee ? loadPill(x.assignee) : ''}<span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보냄' : '후보'}</span><span class="small muted num">카드 ${cardsFilled(x)}/8 · 하위 ${(x.subs || []).length}</span></span></button>`).join('') || '<p class="muted">조건에 맞는 지시 후보가 없습니다. 「+ 지시 후보 등록」이나 「AI 추천 아이디어」로 시작해 보세요.</p>'}</div>
+        <span class="m">${qPill(ideaQ(x))}${x.assignee ? loadPill(x.assignee) : ''}<span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보냄' : '후보'}</span><span class="small muted num">카드 ${cardsFilled(x)}/8 · 하위 ${(x.subs || []).length}</span></span></button>`).join('') || '<p class="muted">조건에 맞는 지시 후보가 없습니다. 「+ 지시 후보 등록」이나 「AI 추천 아이디어」로 시작해 보세요.</p>'}</div>
     </section>`;
   }
 
@@ -2209,7 +2214,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     const conf = IDEA.confirm && IDEA.confirm.id === x.id ? IDEA.confirm : null;
     const subs = x.subs || [];
     const confirmBox = !conf ? '' : conf.kind === 'asana'
-      ? `<div class="explain cw-confirm" role="alert"><b>Asana "[지시업무] ceo 윤석범"에 지시 1건${subs.filter((s) => String(s.t || '').trim()).length ? `과 하위 태스크 ${subs.filter((s) => String(s.t || '').trim()).length}개` : ''}를 만듭니다.</b> 담당 ${esc(x.assignee || '미정')}${staffOf(x.assignee) && staffOf(x.assignee).gid ? '에게 Asana 알림이 갑니다.' : ' — Asana 계정을 찾지 못해 미배정으로 만듭니다.'}${x.due ? '' : ' 기한이 비어 있습니다.'}${sent.asana_gid ? ' 이미 한 번 보냈습니다. 또 만들면 중복됩니다.' : ''}
+      ? `<div class="explain cw-confirm" role="alert"><b>Asana "[지시업무] ceo 윤석범"에 지시 1건${subs.filter((s) => String(s.t || '').trim()).length ? `과 하위 태스크 ${subs.filter((s) => String(s.t || '').trim()).length}개` : ''}를 만듭니다.</b> 담당 ${esc(x.assignee || '미정')}${staffOf(x.assignee) && staffOf(x.assignee).gid ? '에게 Asana 알림이 갑니다.' : ' — Asana 계정을 찾지 못해 미배정으로 만듭니다.'}${x.due ? '' : ' 기한이 비어 있습니다.'}${sent.asana_gid ? ' 이미 한 번 보냈습니다. 또 만들면 중복됩니다.' : ''}${ideaQ(x).miss.length ? `<br><span class="small dq-warn">지시 품질 ${ideaQ(x).score}점 — 빠진 것: ${esc(ideaQ(x).miss.map((m) => m[1]).join(', '))}. 그대로 보내도 되지만, 채우면 담당자가 덜 헤맵니다.</span>` : ''}
         <div class="row" style="margin-top:8px"><button type="button" class="btn primary sm" data-act="idAsanaGo" data-id="${esc(x.id)}">보내기</button><button type="button" class="btn sm" data-act="idCancel">취소</button></div></div>`
       : `<div class="explain cw-confirm" role="alert"><b>${esc(x.assignee)}님께 Slack 개인 메시지로 보냅니다.</b> 보내기 전에 고칠 수 있습니다.
         <textarea id="id-slackmsg" rows="8" class="id-msg">${esc(conf.msg)}</textarea>
@@ -2220,14 +2225,17 @@ ${ctx}`, { modelTier: 'quick', cache: false });
         <button type="button" class="btn sm" data-act="idAskSlack" data-id="${esc(x.id)}" ${LIVE.mcp && x.assignee ? '' : `disabled title="${x.assignee ? 'Slack에 연결된 보기에서만 보낼 수 있습니다' : '담당자를 먼저 정해 주세요'}"`}>${sent.slack_at ? 'Slack 다시 보내기' : 'Slack으로 지시'}</button>`}
         <span class="dir-pane-sp"></span>
         ${sent.asana_gid ? `<a class="dir-iconbtn" href="https://app.asana.com/0/${ASANA.project}/${esc(sent.asana_gid)}" target="_blank" rel="noopener noreferrer">Asana ↗</a>` : ''}
+        <button type="button" class="dir-iconbtn" data-act="tplAskSave" data-id="${esc(x.id)}" aria-expanded="${TPL.saveFor === x.id}">서식으로 저장</button>
         <button type="button" class="dir-iconbtn danger" data-act="idAskDel" data-id="${esc(x.id)}">삭제</button>
         <button type="button" class="dir-iconbtn" data-act="idClose" aria-label="패널 닫기" title="닫기 (Esc)">→|</button>
       </div>
       <div class="dir-pane-body">
+        ${TPL.saveFor === x.id ? `<div class="explain id-tplsave"><b>이 후보를 서식으로 저장</b><span class="small muted">담당자·기한은 빼고 제목·카드·설명·하위 태스크만 저장합니다.</span><div class="row"><input type="text" id="tpl-name" maxlength="40" placeholder="서식 이름(예: 상권 분석 요청)" aria-label="서식 이름"><button type="button" class="btn primary sm" data-act="tplSaveGo" data-id="${esc(x.id)}">저장</button><button type="button" class="btn sm" data-act="tplAskSave" data-id="${esc(x.id)}">취소</button></div></div>` : ''}
         ${confirmBox}
         ${IDEA.delAsk === x.id ? `<div class="explain dir-delask" role="alert"><b>이 지시 후보를 지웁니다.</b>${sent.asana_gid ? ' Asana에 이미 만든 지시는 그대로 남습니다.' : ''}<div class="row" style="margin-top:8px"><button type="button" class="btn sm dir-dangerbtn" data-act="idDel" data-id="${esc(x.id)}">삭제</button><button type="button" class="btn sm" data-act="idCancel">취소</button></div></div>` : ''}
         <div class="row small dir-pane-kind"><span class="pill ${x.status === 'sent' ? 'st-done' : 'st-hold'}">${x.status === 'sent' ? '보낸 지시' : '지시 후보'}</span>${sent.at ? `<span class="muted">Asana ${esc(when(sent.at))}</span>` : ''}${sent.slack_at ? `<span class="muted">Slack ${esc(when(sent.slack_at))}</span>` : ''}</div>
         <div class="id-head"><textarea class="id-title" id="id-title" rows="2" data-idk="title" data-id="${esc(x.id)}" aria-label="지시 제목">${esc(x.title)}</textarea>${dice('title')}<span class="id-saved small" aria-live="polite"></span></div>
+        ${qBox(ideaQ(x), ideaQ(x).score < 60)}
         <div class="dir-fields">
           <div class="dir-f"><span class="k">부서</span><div class="v"><select class="dir-inline" data-act="idSet" data-id="${esc(x.id)}" data-k="dept" aria-label="부서"><option value="">미정</option>${deptsAll().map((d) => `<option ${x.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div></div>
           <div class="dir-f"><span class="k">담당자</span><div class="v">${picker({ key: 'as-' + x.id, cls: 'dir-inline', list: staffList(), pri: x.dept || '', value: x.assignee || '', empty: '미정', act: 'idSet', data: { id: x.id, k: 'assignee' }, load: true, label: '담당자' })}</div></div>
@@ -2269,6 +2277,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     const who = g('who'); const st = staffOf(who);
     const id = 'i' + Date.now().toString(36);
     ideaSave(id, { title: g('title'), dept: st ? st.d : g('dept'), assignee: who, due: /^\d{4}-\d{2}-\d{2}$/.test(g('due')) ? g('due') : '', body: g('body'), cards: {}, subs: [], status: 'idea' }, true).then(() => rerender());
+    logAct('idea_new', `지시 후보 「${g('title')}」 등록`, id);
     S.ui.idNew = null; S.ui.idOpen = id; toast('지시 후보를 등록했습니다 — 오른쪽 카드에서 다듬어 보세요');
   };
   APP.changes.idF = (el) => { const p = { [el.dataset.k]: el.value.trim() }; if (el.dataset.k === 'dept') p.who = ''; idf(p); };
@@ -2305,6 +2314,7 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     const r = IDEA.recs && IDEA.recs.items[+el.dataset.i]; if (!r) return;
     const st = staffOf(r.who) || staffOf(IDEA.recs.who); const id = 'i' + Date.now().toString(36);
     ideaSave(id, { title: r.title, dept: st ? st.d : deptsAll().includes(r.dept) ? r.dept : (IDEA.recs.dept || ''), assignee: st ? st.n : '', due: '', body: '', cards: { why: r.why || '' }, subs: r.first ? [{ t: r.first }] : [], status: 'idea', from: 'ai' }, true).then(() => rerender());
+    logAct('idea_from_ai', `AI 추천 「${r.title}」을 지시 후보로 등록`, id);
     r.added = id; if (LIVE.db) LIVE.db.doc('idearecs/latest').set(IDEA.recs).catch(() => {});
     S.ui.idf = Object.assign({}, S.ui.idf || {}, { st: 'idea' });
     toast(`「${r.title}」을 지시 후보 목록에 등록했습니다`);
@@ -2320,6 +2330,91 @@ ${ctx}`, { modelTier: 'quick', cache: false });
     const id = el.dataset.id; IDEA.delAsk = null; S.ui.idOpen = null;
     if (LIVE.db) LIVE.db.doc('ideas/' + id).delete().then(() => toast('지시 후보를 지웠습니다')).catch((e) => toast('지우지 못했습니다(' + (e && e.code || '오류') + ')'));
     else { delete ideasMap()[id]; toast('지시 후보를 지웠습니다'); }
+  };
+
+  /* ================= 메뉴 연결 약속: 활동 기록·받은 항목 (공용 파일 수정 없이 S에 둠) ================= */
+  S.activity = S.activity || []; S.inbox = S.inbox || [];
+  function logAct(type, text, ref) {
+    S.activity.unshift({ id: 'ac' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: new Date().toISOString(), menu: 'directives', type, text: String(text).slice(0, 200), ref: ref || '' });
+    if (S.activity.length > 300) S.activity.length = 300;
+  }
+
+  /* ================= P1-1 지시 품질 점검기 ================= */
+  const Q_DONE = /(까지|완료|기준|목표|달성|확정|마감|\d+\s*(%|건|개|명|곳|점|회|원|시간|일))/;
+  const Q_OUT = /(보고서|보고|문서|표|시트|엑셀|슬라이드|PPT|발표|링크|페이지|체크리스트|목록|리스트|계획서|기획서|초안|영상|이미지|노션|대시보드|매뉴얼|한 장|1장|캡처|사진)/i;
+  const Q_ITEMS = [
+    ['who', '담당자', 25, '담당자를 정해 주세요.'],
+    ['due', '기한', 20, '언제까지인지 날짜를 넣어 주세요.'],
+    ['done', '완료 조건', 20, '무엇이 되면 끝인지 숫자나 상태로 적어 주세요(예: 30곳 점검 완료).'],
+    ['out', '산출물 형식', 15, '무엇으로 받을지 적어 주세요(예: 1장 보고서, 시트 링크).'],
+    ['why', '이유', 10, '왜 하는지 한 줄 적으면 담당자가 스스로 판단하기 쉽습니다.'],
+    ['title', '제목 구체성', 10, '제목을 "무엇을 + 어떻게"로 조금 더 구체적으로 써 주세요.']
+  ];
+  /* o: {title, who, due, done, out, why} — 글자만 보고 판단하므로 '추정' */
+  function quality(o) {
+    const t = String(o.title || '').replace(/^\[[^\]]+\]\s*/, '').replace(/\s+—\s+[^—]+$/, '').trim();
+    const ok = {
+      who: !!(o.who && o.who !== '미지정'), due: !!o.due,
+      done: Q_DONE.test(String(o.done || '')), out: Q_OUT.test(String(o.out || '')),
+      why: String(o.why || '').trim().length >= 8, title: t.length >= 10
+    };
+    const score = Q_ITEMS.reduce((a, [k, , w]) => a + (ok[k] ? w : 0), 0);
+    return { score, ok, miss: Q_ITEMS.filter(([k]) => !ok[k]), lv: score >= 80 ? 'good' : score >= 60 ? 'mid' : 'low', label: score >= 80 ? '좋음' : score >= 60 ? '보완' : '부족' };
+  }
+  const ideaQ = (x) => { const c = x.cards || {}; const subs = (x.subs || []).map((s) => s.t).join(' '); return quality({ title: x.title, who: x.assignee, due: x.due, done: [c.goal, c.result, x.body].join(' '), out: [c.result, x.body, subs].join(' '), why: c.why || '' }); };
+  const taskQ = (d) => { const det = isAsana(d) ? DET[d.asana_gid] : null; const notes = String((det && det.task && det.task.notes) || d.body || ''); const subs = det && det.task && Array.isArray(det.task.subtasks) ? det.task.subtasks.map((s) => s.name).join(' ') : ''; return quality({ title: d.title, who: d.assignee, due: noDue(d) ? '' : d.due_at, done: [d.title, notes, d.memo].join(' '), out: [d.title, notes, subs].join(' '), why: notes }); };
+  const qPill = (q) => `<span class="dq-pill ${q.lv}" title="지시 품질 ${q.score}점 — ${q.miss.length ? '빠진 것: ' + q.miss.map((m) => m[1]).join(', ') : '빠진 것 없음'}">품질 <b class="num">${q.score}</b></span>`;
+  function qBox(q, open) {
+    return `<details class="dq-box ${q.lv}" ${open ? 'open' : ''}><summary><span class="dq-score num">${q.score}</span><span><b>지시 품질 ${q.label}</b> ${badge('추정')}<small>${q.miss.length ? '빠진 것: ' + esc(q.miss.map((m) => m[1]).join(' · ')) : '담당·기한·완료 조건·산출물이 모두 들어 있습니다'}</small></span></summary>
+      <ul>${Q_ITEMS.map(([k, lab, w, hint]) => `<li class="${q.ok[k] ? 'ok' : 'no'}"><span aria-hidden="true">${q.ok[k] ? '✓' : '!'}</span><b>${lab}</b><span class="small muted">${q.ok[k] ? w + '점' : esc(hint)}</span></li>`).join('')}</ul>
+      <p class="small muted" style="margin:6px 0 0">글자를 보고 판단한 참고 점수입니다. 담당 25 · 기한 20 · 완료 조건 20 · 산출물 15 · 이유 10 · 제목 10.</p></details>`;
+  }
+
+  /* ================= P1-2 지시 서식 모음 (자주 쓰는 지시 틀) ================= */
+  const TPL_BASE = [
+    { id: 'tb-report', name: '현황 보고 요청', desc: '판단에 필요한 현황을 한 장으로 받기', title: '○○ 현황 1장 보고', body: '현황·문제·제안을 한 장에 정리해 보고해 주세요.', cards: { why: '판단에 필요한 현황을 한눈에 보고 바로 결정하기 위해', goal: '현황·문제·제안이 한 장에 정리되어 바로 결정할 수 있는 상태', result: '1장 보고서(현황 표 + 문제 3가지 + 제안 3가지)', process: '자료 모으기 → 초안 → 팀장 검토 → 회장 보고' }, subs: ['자료 모으기', '보고서 초안 쓰기', '팀장 검토 받기', '회장 보고'] },
+    { id: 'tb-check', name: '매장 점검', desc: '매장 운영 수준을 맞추는 점검', title: '○○ 매장 운영 점검', body: '정해진 점검표로 대상 매장을 점검하고 문제 항목의 조치 계획까지 정해 주세요.', cards: { why: '매장마다 다른 운영 수준을 맞추기 위해', goal: '대상 매장 전부 점검 완료, 문제 항목마다 조치 담당·기한 확정', result: '매장별 점검표(시트 링크)와 사진 증빙', process: '점검표 만들기 → 방문 점검 → 문제 정리 → 조치 계획 공유' }, subs: ['점검표 만들기', '매장 방문 점검', '문제 항목 정리', '조치 계획 공유'] },
+    { id: 'tb-plan', name: '신규 기획', desc: '실행 여부를 정할 기획안', title: '○○ 기획안 작성', body: '실행할지 결정할 수 있게 목적·대상·일정·위험을 담은 기획안을 만들어 주세요.', cards: { why: '새 기회를 빨리 검토해 실행 여부를 정하기 위해', goal: '실행 여부를 결정할 수 있는 기획안 확정', result: '기획서(목적·대상·예산 추정·일정·위험)', process: '조사 → 초안 → 관련 부서 의견 → 회장 보고' }, subs: ['시장·사례 조사', '기획서 초안', '관련 부서 의견 받기', '회장 보고'] },
+    { id: 'tb-data', name: '데이터 정리', desc: '흩어진 자료를 하나의 시트로', title: '○○ 자료 시트로 정리', body: '흩어진 자료를 최신 기준으로 하나의 시트에 정리하고 요약을 붙여 주세요.', cards: { why: '같은 숫자를 여러 곳에서 다르게 보지 않기 위해', goal: '빠진 값 없이 최신 기준으로 정리 완료', result: '정리된 시트 링크 + 요약 3줄', process: '원천 확인 → 정리 → 검증 → 공유' }, subs: ['원천 자료 확인', '시트로 정리', '숫자 검증', '공유와 요약'] },
+    { id: 'tb-edu', name: '교육·전파', desc: '새 방식을 모두에게 알리기', title: '○○ 교육 진행', body: '대상 인원이 새 방식을 이해하고 쓸 수 있게 교육해 주세요.', cards: { why: '새 방식을 모두가 같은 수준으로 쓰기 위해', goal: '대상 인원 전원 이수, 간단한 확인 문제로 이해도 확인', result: '교육 자료와 참석 명단', process: '자료 만들기 → 일정 공지 → 교육 → 이해도 확인' }, subs: ['교육 자료 만들기', '일정 공지', '교육 진행', '이해도 확인'] },
+    { id: 'tb-ai', name: 'AI 자동화 위임', desc: '반복 업무를 AI에 맡기기', title: '○○ 반복 업무 AI 자동화', body: '매주 반복하는 일을 골라 Claude 스킬이나 예약 작업으로 넘겨 주세요.', cards: { why: '반복 업무에 쓰는 시간을 줄이고 결과를 늘 같은 형식으로 받기 위해', goal: '고른 반복 업무가 사람 손 없이 매주 돌아가는 상태', result: '자동화 설정 화면 캡처와 사용 설명 1장', process: '반복 업무 목록 → 자동화할 것 고르기 → 만들기 → 1주 시범 운영', agent: '자료 모으기·정리·초안 쓰기는 AI 에이전트에게, 확인과 판단은 사람이' }, subs: ['반복 업무 목록 만들기', '자동화할 것 고르기', '스킬·예약 작업 만들기', '1주 시범 운영 후 보고'] }
+  ];
+  const TPL = { ask: null };
+  const tplList = () => TPL_BASE.concat(Object.values(LIVE.db ? (LIVE.tpls || {}) : (S.dirTpls || {})).sort((a, b) => String(b.created || '').localeCompare(String(a.created || ''))));
+  async function tplSave(t) {
+    if (LIVE.db) { LIVE.tpls = Object.assign({}, LIVE.tpls || {}, { [t.id]: t }); try { await LIVE.db.doc('tpls/' + t.id).set(t); return true; } catch (e) { toast('서식을 저장하지 못했습니다(' + ((e && e.code) || '오류') + ')'); return false; } }
+    S.dirTpls = Object.assign({}, S.dirTpls || {}, { [t.id]: t }); return true;
+  }
+  function tplBox() {
+    if (!S.ui.tplOpen) return '';
+    return `<div class="id-tplbox" role="region" aria-label="지시 서식 모음"><div class="row" style="justify-content:space-between"><b>지시 서식 모음</b><button type="button" class="dir-link" data-act="tplToggle">접기</button></div>
+      <p class="small muted" style="margin:4px 0 8px">서식을 고르면 카드·하위 태스크가 채워진 새 후보가 만들어집니다. 쓰던 후보는 오른쪽 패널의 「서식으로 저장」으로 여기에 모을 수 있습니다.</p>
+      <div class="id-tpls">${tplList().map((t) => `<div class="id-tpl"><b>${esc(t.name)}</b>${t.id.startsWith('tb-') ? '<span class="pill st-hold small">기본</span>' : '<span class="pill st-done small">내 서식</span>'}<span class="small muted">${esc(t.desc || t.title || '')}</span>
+        <div class="row">${TPL.ask === t.id ? `<span class="small">지울까요?</span><button type="button" class="btn sm dir-dangerbtn" data-act="tplDel" data-id="${esc(t.id)}">지우기</button><button type="button" class="btn sm" data-act="tplCancel">취소</button>` : `<button type="button" class="btn primary sm" data-act="tplUse" data-id="${esc(t.id)}">이 서식으로 새 후보</button>${t.id.startsWith('tb-') ? '' : `<button type="button" class="dir-link" data-act="tplAskDel" data-id="${esc(t.id)}">지우기</button>`}`}</div></div>`).join('')}</div></div>`;
+  }
+  APP.acts.tplToggle = () => { S.ui.tplOpen = !S.ui.tplOpen; TPL.ask = null; };
+  APP.acts.tplUse = (el) => {
+    const t = tplList().find((x) => x.id === el.dataset.id); if (!t) return;
+    const f = S.ui.idf || {}; const st = staffOf(f.who);
+    const id = 'i' + Date.now().toString(36);
+    ideaSave(id, { title: t.title, dept: st ? st.d : (f.dept || ''), assignee: st ? st.n : '', due: '', body: t.body || '', cards: Object.assign({}, t.cards || {}), subs: (t.subs || []).map((x) => ({ t: x })), status: 'idea', from: 'tpl:' + t.id }, true).then(() => rerender());
+    logAct('idea_from_tpl', `서식 「${t.name}」로 지시 후보 만듦`, id);
+    S.ui.dirOpen = null; S.ui.idOpen = id; toast(`「${t.name}」 서식으로 새 후보를 만들었습니다 — 제목의 ○○를 바꿔 주세요`); focusLater('#id-title');
+  };
+  APP.acts.tplAskDel = (el) => { TPL.ask = el.dataset.id; };
+  APP.acts.tplCancel = () => { TPL.ask = null; };
+  APP.acts.tplDel = (el) => {
+    const id = el.dataset.id; TPL.ask = null; if (id.startsWith('tb-')) return;
+    if (LIVE.db) { const m = Object.assign({}, LIVE.tpls || {}); delete m[id]; LIVE.tpls = m; LIVE.db.doc('tpls/' + id).delete().catch(() => toast('지우지 못했습니다')); } else { const m = Object.assign({}, S.dirTpls || {}); delete m[id]; S.dirTpls = m; }
+    toast('서식을 지웠습니다');
+  };
+  APP.acts.tplAskSave = (el) => { TPL.saveFor = TPL.saveFor === el.dataset.id ? null : el.dataset.id; focusLater('#tpl-name'); };
+  APP.acts.tplSaveGo = (el) => {
+    const x = ideasMap()[el.dataset.id]; const inp = document.getElementById('tpl-name'); const name = (inp ? inp.value : '').trim();
+    if (!x) return; if (!name) { toast('서식 이름을 적어 주세요'); return; }
+    const t = { id: 'tu' + Date.now().toString(36), name: name.slice(0, 40), desc: String(x.title || '').slice(0, 60), title: x.title, body: x.body || '', cards: Object.assign({}, x.cards || {}), subs: (x.subs || []).map((s) => s.t).filter(Boolean), created: new Date().toISOString() };
+    TPL.saveFor = null;
+    tplSave(t).then((ok) => { if (ok) { toast(`「${t.name}」 서식으로 저장했습니다 — 지시 후보 위 「서식 모음」에서 쓸 수 있습니다`); logAct('tpl_save', `지시 서식 「${t.name}」 저장`, t.id); rerender(); } });
   };
 
   /* ================= 지시 관리: 지시한 것들의 진행과 경영지표·직원 평가 ================= */
