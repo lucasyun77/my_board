@@ -4,7 +4,7 @@
    할 일 등록·시간 측정·완료 입력은 '오늘 할 일' 메뉴 담당. 이 메뉴는 평가 이후(협상 → 확정 → 적립 → 레벨업)만 다룹니다. */
 (function () {
   'use strict';
-  const { S, LEVEL_COST, F_TYPES, esc, won, kwon, md, badge, uid, toast, evaluate, dayStr, guide } = window.APP;
+  const { S, LEVEL_COST, F_TYPES, L_TABLE, esc, won, kwon, md, badge, uid, toast, evaluate, dayStr, guide } = window.APP;
 
   const N_MAX = 1.3;
   const NEGO_MAX = 3;
@@ -185,8 +185,34 @@
       <label class="f">요청 N
         <select name="inc">${opts.map((x, i) => `<option value="${x}" ${i === Math.min(1, opts.length - 1) ? 'selected' : ''}>N ${(a.N + x).toFixed(2)} (+${x.toFixed(2)}) → ${kwon(vOf(a, a.N + x))}천원</option>`).join('')}</select></label>
       <div><button class="btn">협상 요청</button></div>
+      ${coachBox(a)}
     </form>`;
   }
+
+  /* ---------- 협상 코치(목업 AI): 약한 근거를 짚고, 쓰는 중인 문장을 바로 심사해 봄 ---------- */
+  const aiBadge = () => '<span class="b val-ai" title="목업 AI: 실서비스에서는 Claude가 판단">목업 AI</span>';
+  function coachTips(a) {
+    const tips = [];
+    const last = a.negotiations[a.negotiations.length - 1];
+    if (last && last.verdict !== '수용') { const m = /부족: ([^.]+)\./.exec(last.claude_reply); if (m) tips.push(`지난 ${last.round}차는 <b>${esc(m[1])}</b> 근거가 부족해 ${last.verdict}되었습니다. 이번에는 그 부분부터 채우세요.`); }
+    if (a.L <= 2) tips.push(`적용 범위가 좁습니다(영향 ${a.headcount}명, L ${a.L.toFixed(1)}). 다른 부서·매장에서 다시 쓸 계획이 있으면 <b>인원·매장 수</b>로 적으세요.`);
+    if ((+a.saved_hours || 0) <= 1 && !(+a.monthly_revenue) && !(+a.monthly_cost)) tips.push(`효과가 1인 월 ${a.saved_hours || 0}시간 절감뿐입니다. 전후 비교한 <b>실측 시간·로그</b>를 붙이면 수용 가능성이 높아집니다.`);
+    if (a.actual_minutes != null && a.est_minutes && a.actual_minutes > a.est_minutes) tips.push('예상보다 오래 걸렸지만 감점은 없습니다(S 1.00). 걸린 시간은 협상 근거가 되지 않습니다.');
+    if (!a.by_agent) tips.push('직접 수행이라 A는 1.0입니다. A는 협상으로 바뀌지 않으니, 다음 비슷한 일은 에이전트에 맡기면 1.2배가 됩니다.');
+    if (!tips.length) tips.push('계수가 고르게 잡혀 있습니다. 숫자 하나와 증빙 자료 이름만 붙여도 근거로 충분합니다.');
+    return tips.slice(0, 3);
+  }
+  function coachLive(msg) {
+    const t = (msg || '').trim();
+    const checks = [['수치', /\d/.test(t)], ['증빙', /실측|측정|로그|증빙|데이터|자료|기록/.test(t)], ['적용 범위', /명|인원|가맹|매장|재사용|확산|부서|본사/.test(t)], ['20자 이상', t.length >= 20]];
+    const guess = t ? judge(t, 0.1).verdict : null;
+    return `<ul class="val-checks">${checks.map(([k, ok]) => `<li class="${ok ? 'ok' : ''}"><span aria-hidden="true">${ok ? '✓' : '·'}</span>${k}<span class="val-sr">${ok ? ' 충족' : ' 부족'}</span></li>`).join('')}</ul>
+      <span class="small">${guess ? `지금 보내면 <span class="val-vd ${verdictCls[guess]}">${guess}</span> 예상` : '근거를 쓰면 바로 심사해 봅니다.'}</span>`;
+  }
+  const coachBox = (a) => `<details class="wide val-coach" ${a.negotiations.length ? 'open' : ''}><summary>협상 코치 ${aiBadge()}</summary>
+      <ul class="val-tips">${coachTips(a).map((t) => `<li>${t}</li>`).join('')}</ul>
+      <div class="val-live" data-coach-live aria-live="polite">${coachLive('')}</div>
+    </details>`;
 
   function item(a) {
     const u = ui();
@@ -291,7 +317,66 @@
         ${acts.length ? `<ul class="val-acts">${acts.map((a) => `<li><span class="small muted num">${md(a.at.slice(0, 10))} ${a.at.slice(11, 16)}</span> ${esc(a.text)}</li>`).join('')}</ul>` : '<p class="small muted">이 메뉴에서 협상·확정·레벨업을 하면 여기에 남습니다.</p>'}</section>`;
   }
 
-  const SUBTABS = [['list', '평가·확정'], ['game', '업적·기록']];
+  /* ---------- 가치 분석: 어디에 시간을 쓰면 가치가 큰가 ---------- */
+  const hoursOf = (a) => Math.max(1, a.actual_minutes ?? a.est_minutes ?? 60) / 60;
+  const L_LABEL = (a) => (L_TABLE.find((r) => (a.headcount || 1) <= r[0]) || L_TABLE[L_TABLE.length - 1])[2];
+  const DIMS = [
+    ['type', '산출물 형태', (a) => (F_TYPES[a.output_type] || ['기타'])[0], Object.values(F_TYPES).map((v) => v[0])],
+    ['reach', '영향 인원', L_LABEL, L_TABLE.map((r) => r[2])],
+    ['agent', '수행 방식', (a) => (a.by_agent ? '에이전트 수행' : '직접 수행'), ['에이전트 수행', '직접 수행']]
+  ];
+  const METRICS = [['perHour', '시간당 가치'], ['sum', '합계'], ['avg', '건당 평균']];
+  function groupBy(list, dim) {
+    const d = DIMS.find((x) => x[0] === dim);
+    return d[3].map((name) => {
+      const g = list.filter((a) => d[2](a) === name);
+      const sum = g.reduce((s, a) => s + a.value_won, 0); const hrs = g.reduce((s, a) => s + hoursOf(a), 0);
+      return { name, n: g.length, sum, avg: g.length ? sum / g.length : 0, perHour: hrs ? sum / hrs : 0, hrs };
+    }).filter((r) => r.n);
+  }
+  function recommend(list) {
+    const out = [];
+    DIMS.forEach(([dim, label]) => {
+      const rows = groupBy(list, dim).sort((a, b) => b.perHour - a.perHour);
+      if (rows.length < 2) return;
+      const top = rows[0]; const low = rows[rows.length - 1];
+      const x = low.perHour ? top.perHour / low.perHour : 0;
+      out.push(`<b>${label}</b> · ${esc(top.name)} 쪽이 시간당 <b class="num">${kwon(top.perHour)}천원</b>으로 ${esc(low.name)}(${kwon(low.perHour)}천원)의 <b class="num">${x >= 10 ? Math.round(x) : x.toFixed(1)}배</b>입니다.`);
+    });
+    const agent = list.filter((a) => a.by_agent); const share = list.length ? agent.reduce((s, a) => s + a.value_won, 0) / Math.max(1, list.reduce((s, a) => s + a.value_won, 0)) : 0;
+    if (list.length) out.push(`<b>에이전트 비중</b> · 가치의 <b class="num">${Math.round(share * 100)}%</b>가 에이전트 수행 건에서 나왔습니다. ${share < 0.5 ? '반복 작업은 에이전트에 맡겨 A 1.2를 받으세요.' : '지금 방식을 유지하세요.'}`);
+    out.push('<b>공식으로 본 지렛대</b> · 같은 1시간이라도 영향 인원을 9명 → 10명 이상으로 넓히면 L이 2.0 → 4.0(2배), 문서를 AI+코드로 만들면 F가 1.0 → 2.0(2배)이 됩니다.');
+    return out;
+  }
+  function analysisPanel() {
+    const u = ui(); const scope = u.aScope || 'done'; const metric = u.aMetric || 'perHour';
+    const list = S.achievements.filter((a) => (scope === 'done' ? isDone(a) : true));
+    const fmt = (r) => (metric === 'perHour' ? `${kwon(r.perHour)}천원/시간` : metric === 'sum' ? `${kwon(r.sum)}천원` : `${kwon(r.avg)}천원`);
+    const agentSum = list.filter((a) => a.by_agent).reduce((s, a) => s + a.value_won, 0); const all = list.reduce((s, a) => s + a.value_won, 0);
+    const hrs = list.reduce((s, a) => s + hoursOf(a), 0);
+    return `<section class="panel" aria-labelledby="h-van"><div class="val-lhead"><h3 id="h-van">가치 분석 ${badge('추정')}</h3>
+        <span class="seg" role="group" aria-label="분석 범위">${[['done', '확정만'], ['all', '평가 전체']].map(([k, l]) => `<button type="button" data-act="vAn" data-k="aScope" data-v="${k}" aria-pressed="${scope === k}">${l}</button>`).join('')}</span></div>
+      <div class="val-antiles">
+        <div class="val-stat"><div class="small muted">분석 대상 ${badge('측정')}</div><div class="val-mid num">${list.length}<small>건</small></div></div>
+        <div class="val-stat"><div class="small muted">들인 시간 ${badge(list.some((a) => a.actual_minutes == null) ? '추정' : '측정')}</div><div class="val-mid num">${hrs.toFixed(1)}<small>시간</small></div></div>
+        <div class="val-stat"><div class="small muted">시간당 가치 ${badge('추정')}</div><div class="val-mid num">${kwon(hrs ? all / hrs : 0)}<small>천원</small></div></div>
+        <div class="val-stat"><div class="small muted">에이전트 비중 ${badge('추정')}</div><div class="val-mid num">${all ? Math.round(100 * agentSum / all) : 0}<small>%</small></div></div>
+      </div>
+      <div class="val-filters"><span class="seg" role="group" aria-label="막대 기준">${METRICS.map(([k, l]) => `<button type="button" data-act="vAn" data-k="aMetric" data-v="${k}" aria-pressed="${metric === k}">${l}</button>`).join('')}</span>
+        <span class="small muted">시간은 실제 T(없으면 예상 E) 기준 · 자세한 수치는 아래 '표로 보기'</span></div>
+      ${list.length ? `<div class="val-angrid">${DIMS.map(([dim, label]) => { const rows = groupBy(list, dim); const max = Math.max(1, ...rows.map((r) => r[metric])); return `<figure class="val-chart"><figcaption>${label}별 ${METRICS.find((m) => m[0] === metric)[1]}</figcaption>
+          ${rows.map((r) => `<div class="val-brow" tabindex="0" title="${esc(r.name)} · ${r.n}건 · 합계 ${kwon(r.sum)}천원 · 건당 ${kwon(r.avg)}천원 · ${r.hrs.toFixed(1)}시간 · 시간당 ${kwon(r.perHour)}천원"><span class="val-blabel">${esc(r.name)} <span class="muted">${r.n}건</span></span><span class="val-btrack"><i style="width:${Math.max(2, 100 * r[metric] / max)}%"></i></span><span class="val-bval num">${fmt(r)}</span></div>`).join('')}
+        </figure>`; }).join('')}</div>
+      <details class="val-hist"><summary>표로 보기</summary><div class="tbl-wrap"><table><thead><tr><th>구분</th><th>항목</th><th class="r">건수</th><th class="r">합계</th><th class="r">건당</th><th class="r">시간</th><th class="r">시간당</th></tr></thead><tbody>
+        ${DIMS.map(([dim, label]) => groupBy(list, dim).map((r) => `<tr><td>${label}</td><td>${esc(r.name)}</td><td class="r num">${r.n}</td><td class="r num">${kwon(r.sum)}</td><td class="r num">${kwon(r.avg)}</td><td class="r num">${r.hrs.toFixed(1)}</td><td class="r num">${kwon(r.perHour)}</td></tr>`).join('')).join('')}
+      </tbody></table></div><p class="small muted">단위: 천원·시간</p></details>` : guide('folder', '분석할 평가 건이 없습니다', '평가 건을 확정하면 산출물 형태·영향 인원·수행 방식별로 가치를 비교해 드립니다.')}
+    </section>
+    <section class="panel val-reco" aria-labelledby="h-vreco"><h3 id="h-vreco">어디에 시간을 쓰면 가치가 큰가 ${aiBadge()}</h3>
+      ${list.length ? `<ul class="val-tips">${recommend(list).map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
+      <p class="small muted">표본 ${list.length}건으로 낸 참고용 의견입니다. 건수가 쌓이면 더 정확해집니다. 공식과 계수는 바꾸지 않습니다.</p></section>`;
+  }
+
+  const SUBTABS = [['list', '평가·확정'], ['game', '업적·기록'], ['analysis', '가치 분석']];
   function viewValue() {
     const u = ui();
     if (!SUBTABS.some((t) => t[0] === u.tab)) u.tab = 'list';
@@ -300,7 +385,7 @@
         <button type="button" class="btn sm" data-act="tab" data-v="rules">보상 기준 보기 →</button></div>
       ${inboxPanel()}${levelPanel()}
       <div class="seg val-tabs" role="tablist" aria-label="성과·레벨 보기">${SUBTABS.map(([k, l]) => `<button type="button" role="tab" data-act="vTab" data-v="${k}" aria-selected="${u.tab === k}" aria-pressed="${u.tab === k}">${l}${k === 'list' && pend ? ` <span class="val-cnt">${pend}</span>` : ''}${k === 'game' ? ` <span class="val-cnt">${badgeState().filter((b) => b.got).length}</span>` : ''}</button>`).join('')}</div>
-      ${u.tab === 'game' ? gamePanel() : periodPanel() + listPanel()}`;
+      ${u.tab === 'game' ? gamePanel() : u.tab === 'analysis' ? analysisPanel() : periodPanel() + listPanel()}`;
   }
 
   /* ---------- 동작 ---------- */
@@ -346,6 +431,7 @@
   };
 
   APP.acts.vTab = (el) => { ui().tab = el.dataset.v; };
+  APP.acts.vAn = (el) => { ui()[el.dataset.k] = el.dataset.v; };
   APP.acts.vInOpen = (el) => { const u = ui(); u.evalOpen = el.dataset.id || null; u.skip = null; };
   APP.acts.vInAskSkip = (el) => { ui().skip = el.dataset.id || null; };
   APP.acts.vInSkip = (el) => {
@@ -368,6 +454,11 @@
     const form = e.target.closest && e.target.closest('form[data-form="vEvalNew"]'); if (!form) return;
     const x = S.inbox.find((y) => y.id === form.dataset.id); const box = form.querySelector('[data-preview]');
     if (x && box) box.innerHTML = previewHtml(evalInput(new FormData(form), x, false));
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.name !== 'msg') return;
+    const form = e.target.closest('form[data-form="vNego"]'); const box = form && form.querySelector('[data-coach-live]');
+    if (box) box.innerHTML = coachLive(e.target.value);
   });
 
   APP.views.value = viewValue;

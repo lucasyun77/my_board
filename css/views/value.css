@@ -114,3 +114,28 @@
   .val-inrow > .row { width: 100%; }
   .val-inrow > .row .btn { flex: 1 1 auto; }
 }
+
+/* ===== P2: 가치 분석·협상 코치 ===== */
+.b.val-ai { color: var(--info); background: transparent; border: 1.5px solid var(--info); padding: 1px 7px; }
+.val-coach { background: var(--paper); border-radius: 12px; padding: 4px 12px 10px; border: 1.5px solid var(--line); }
+.val-coach > summary { cursor: pointer; font-size: 15px; font-weight: 700; padding: 6px 0; display: flex; gap: 8px; align-items: center; }
+.val-coach > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.val-tips { margin: 4px 0 8px; padding-left: 18px; font-size: 15px; display: grid; gap: 6px; line-height: 1.55; }
+.val-live { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding-top: 8px; border-top: 1px dashed var(--line); }
+.val-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.val-checks li { font-size: 13.5px; padding: 3px 10px; border-radius: 999px; background: var(--paper2); color: var(--sub); display: inline-flex; gap: 4px; }
+.val-checks li.ok { background: rgba(46,139,87,.14); color: var(--ok); font-weight: 700; }
+
+.val-antiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.val-angrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
+.val-chart { margin: 0; padding: 12px; border-radius: 14px; background: var(--paper2); min-width: 0; display: grid; gap: 8px; align-content: start; }
+.val-chart figcaption { font-weight: 700; font-size: 15px; }
+.val-brow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 4px; margin: -4px; border-radius: 8px; }
+.val-brow:hover, .val-brow:focus-visible { background: var(--paper); outline: none; box-shadow: 0 0 0 2px var(--gold); }
+.val-blabel { grid-column: 1 / -1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.val-btrack { display: flex; align-items: center; height: 14px; }
+.val-btrack i { display: block; height: 12px; border-radius: 0 4px 4px 0; background: repeating-linear-gradient(135deg, var(--gold) 0 5px, var(--goldSoft) 5px 8px); }
+.val-bval { font-size: 14px; font-weight: 700; color: var(--ink); text-align: right; white-space: nowrap; }
+.val-reco { border-left: 4px solid var(--info); }
+@media (max-width: 1100px) { .val-angrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .val-antiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
