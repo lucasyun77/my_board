@@ -589,3 +589,4 @@ body.dir-vis-open { overflow: hidden; }
 .id-recrun .small { flex: 1; min-width: 200px; }
 .id-recday { margin: 12px 0 6px; }
 @media (max-width: 720px) { .id-recf, .id-infocols { grid-template-columns: minmax(0, 1fr); } }
+.pp-list li.pp-me b { color: var(--goldInk); }

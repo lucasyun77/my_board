@@ -1881,12 +1881,21 @@ ${cmts || '(없음)'}
     return IDEA.local;
   }
   /* 사람 명단: Asana 직원 명단이 있으면 그것, 없으면 지시 담당자에서 */
+  /* 회장 본인도 담당자로 고를 수 있게 맨 앞에 둔다(아사나에는 'me'로 배정) */
+  const ME_STAFF = { n: '윤석범', d: '회장', g: '', p: '본인', gid: 'me', me: true };
+  let STAFF_C = { src: null, n: -1, list: [] };
   function staffList() {
-    if (LIVE.staff && LIVE.staff.length) return LIVE.staff.filter((s) => !s.leave);
-    const m = new Map(); S.directives.filter((d) => !isGoal(d) && d.assignee && d.assignee !== '미지정').forEach((d) => { if (!m.has(d.assignee)) m.set(d.assignee, { n: d.assignee, d: d.org || '미지정', g: '', p: '', gid: '' }); });
-    return [...m.values()];
+    const src = LIVE.staff && LIVE.staff.length ? LIVE.staff : null;
+    if (src && STAFF_C.src === src) return STAFF_C.list;
+    let base;
+    if (src) base = src.filter((s) => !s.leave);
+    else { const m = new Map(); S.directives.filter((d) => !isGoal(d) && d.assignee && d.assignee !== '미지정').forEach((d) => { if (!m.has(d.assignee)) m.set(d.assignee, { n: d.assignee, d: d.org || '미지정', g: '', p: '', gid: '' }); }); base = [...m.values()]; }
+    const me = base.find((s) => s.n === ME_STAFF.n);
+    const list = [Object.assign({}, ME_STAFF, me ? { gid: me.gid || 'me' } : {}, { d: '회장', me: true })].concat(base.filter((s) => s.n !== ME_STAFF.n));
+    if (src) STAFF_C = { src, list };
+    return list;
   }
-  const deptsAll = () => [...new Set(staffList().map((s) => s.d).concat(S.directives.filter(isGoal).map((d) => d.org)).filter((x) => x && x !== '미지정' && x !== '회장'))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const deptsAll = () => [...new Set(staffList().map((s) => s.d).concat(S.directives.filter(isGoal).map((d) => d.org)).filter((x) => x && x !== '미지정'))].sort((a, b) => (b === '회장') - (a === '회장') || a.localeCompare(b, 'ko'));
   const staffOf = (n) => staffList().find((s) => s.n === n);
   /* ---------- 사람 고르기: 입력해서 찾는 칸 (이름·부서·직급·초성, ↑↓·Enter·Esc) ---------- */
   const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
@@ -1906,7 +1915,7 @@ ${cmts || '(없음)'}
       if (onlyCho) { const c = cho(s.n); return [s, c.startsWith(q) ? 1 : c.includes(q) ? 2 : cho(hay).includes(q) ? 3 : -1]; }
       return [s, n.startsWith(q) ? 1 : n.includes(q) ? 2 : hay.includes(q) ? 3 : -1];
     }).filter((x) => x[1] >= 0);
-    scored.sort((a, b) => a[1] - b[1] || (reg.pri ? (b[0].d === reg.pri) - (a[0].d === reg.pri) : 0) || a[0].n.localeCompare(b[0].n, 'ko'));
+    scored.sort((a, b) => a[1] - b[1] || (!q ? (b[0].me ? 1 : 0) - (a[0].me ? 1 : 0) : 0) || (reg.pri ? (b[0].d === reg.pri) - (a[0].d === reg.pri) : 0) || a[0].n.localeCompare(b[0].n, 'ko'));
     return scored.map((x) => x[0]);
   }
   function ppOpen(inp, q) {
@@ -1914,7 +1923,7 @@ ${cmts || '(없음)'}
     const ul = inp.parentNode.querySelector('.pp-list');
     const all = ppMatches(reg, q); const hits = all.slice(0, 60);
     ul.innerHTML = (reg.empty && !String(q || '').trim() ? `<li role="option" data-v="" class="pp-empty">${esc(reg.empty)}</li>` : '')
-      + hits.map((s) => `<li role="option" data-v="${esc(s.n)}"><b>${esc(s.n)}</b><span class="small muted">${esc([s.d, s.g].filter(Boolean).join(' · '))}</span>${reg.load ? loadPill(s.n) : ''}</li>`).join('')
+      + hits.map((s) => `<li role="option" data-v="${esc(s.n)}"${s.me ? ' class="pp-me"' : ''}><b>${esc(s.n)}${s.me ? ' <small>(나)</small>' : ''}</b><span class="small muted">${esc([s.d, s.g].filter(Boolean).join(' · '))}</span>${reg.load ? loadPill(s.n) : ''}</li>`).join('')
       + (all.length > hits.length ? `<li class="pp-more small muted" aria-disabled="true">${all.length - hits.length}명 더 있습니다 — 더 입력해 좁혀 주세요</li>` : '')
       + (!hits.length ? '<li class="pp-more small muted" aria-disabled="true">맞는 사람이 없습니다</li>' : '');
     ul.hidden = false; inp.setAttribute('aria-expanded', 'true');
@@ -2246,7 +2255,7 @@ ${found.join('\n\n').slice(0, 9000)}`, { modelTier: 'quick', cache: false });
     IDEA.send[x.id] = 'asana'; IDEA.confirm = null; rerender();
     try {
       const notes = [String(x.body || '').trim(), '', ...ID_CARDS.filter(([k]) => String((x.cards || {})[k] || '').trim()).map(([k, lab]) => `■ ${lab}\n${String(x.cards[k]).trim()}`), '', '회장 현황판 「지시 개발」에서 보낸 지시입니다. 진행하면서 댓글로 결과를 남기고, 끝나면 완료로 표시해 주세요.'].join('\n').replace(/\n{3,}/g, '\n\n').trim();
-      const task = { name: `[업무지시] ${x.title} — ${x.assignee}${st && st.g ? ' ' + st.g : ''}`, project_id: ASANA.project, section_id: ASANA.sec['진행'], notes };
+      const task = { name: st && st.me ? `[회장 할일] ${x.title}` : `[업무지시] ${x.title} — ${x.assignee}${st && st.g ? ' ' + st.g : ''}`, project_id: ASANA.project, section_id: ASANA.sec['진행'], notes };
       if (st && st.gid) task.assignee = st.gid;
       if (/^\d{4}-\d{2}-\d{2}$/.test(x.due || '')) task.due_on = x.due;
       const r = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { default_project: ASANA.project, tasks: [task] });
