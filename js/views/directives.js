@@ -254,6 +254,7 @@
       db.collection('memos').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.key && Array.isArray(v.items)) m[v.key] = v; }); LIVE.memos = m; rerender(); }, err);
       db.collection('profiles').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.key && v.text) m[v.key] = v; }); LIVE.profiles = m; rerender(); }, err);
       db.collection('tpls').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.name) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.tpls = m; rerender(); }, err);
+      db.collection('ogoals').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title != null) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); if (stableStr(m) === stableStr(LIVE.ogoals || null)) return; LIVE.ogoals = m; rerender(); }, err);
       db.collection('retro').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.retro = m; }, err);
       db.collection('cw').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { const v = ds.data() || {}; if (v.title) m[ds.id] = Object.assign({}, v, { id: ds.id }); }); LIVE.cw = m; rerender(); }, err);
       db.collection('track').onSnapshot((snap) => { const m = {}; snap.docs.forEach((ds) => { m[ds.id] = ds.data() || {}; }); LIVE.track = m; rebuild(); }, err);
@@ -2948,6 +2949,341 @@ ${list.slice(0, 25).map((d) => `- ${shortT(d)} | ${d.status} | 지시 ${d.issued
   APP.acts.mgWho = (el) => { S.ui.mgf = Object.assign({}, S.ui.mgf || {}, { who: (S.ui.mgf || {}).who === el.dataset.v ? '' : el.dataset.v }); if (el.dataset.v) setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0); };
   APP.acts.mgEval = (el) => { const n = el.dataset.v; const f = S.ui.mgf || {}; const since = f.period === 'all' || !f.period ? '' : dayStr(-(+f.period)); const l = S.directives.filter(isOrder).filter((d) => d.assignee === n && (!since || d.issued_at >= since || isOpen(d))); setTimeout(() => personEval(n, personStats(l), l), 0); };
   APP.acts.mgCw = (el) => { S.ui.dirMain = 'task'; S.ui.dirTab = 'cw'; cwUi({ sel: el.dataset.v }); window.scrollTo(0, 0); };
+
+  /* ================= 새 「지시 관리」 메뉴 (orders): 조직도 → ① 정보 → ② 목표 후보·목표 리스트 → 메신저·아사나로 지시 =================
+     목표는 ogoals/<아이디>에 저장(회장만 읽기). 상태: cand(후보) → list(리스트). */
+  const OG = { busy: {}, err: {}, chat: {}, send: {}, proj: { list: null, busy: false, err: '' } };
+  const ogAll = () => Object.values(LIVE.db ? (LIVE.ogoals || {}) : (S.dirOgoals || {}));
+  const ogOf = (id) => (LIVE.db ? (LIVE.ogoals || {})[id] : (S.dirOgoals || {})[id]) || null;
+  async function ogSave(id, patch, create) {
+    const now = new Date().toISOString();
+    const cur = ogOf(id) || {};
+    const next = create ? Object.assign({ id, created: now }, patch, { updated: now }) : Object.assign({}, cur, patch, { updated: now });
+    if (LIVE.db) { LIVE.ogoals = Object.assign({}, LIVE.ogoals || {}, { [id]: next }); try { await LIVE.db.doc('ogoals/' + id).set(next); return true; } catch (e) { toast('저장하지 못했습니다(' + ((e && e.code) || '오류') + ')'); return false; } }
+    S.dirOgoals = Object.assign({}, S.dirOgoals || {}, { [id]: next }); return true;
+  }
+  function ogDel(id) {
+    if (LIVE.db) { const m = Object.assign({}, LIVE.ogoals || {}); delete m[id]; LIVE.ogoals = m; LIVE.db.doc('ogoals/' + id).delete().catch(() => toast('지우지 못했습니다')); }
+    else { const m = Object.assign({}, S.dirOgoals || {}); delete m[id]; S.dirOgoals = m; }
+  }
+  const ogUi = () => (S.ui.og = Object.assign({ sel: null, open: null, act: null, del: null, tq: '' }, S.ui.og || {}));
+  const ogFor = (sel) => ogAll().filter((g) => (sel.kind === 'p' ? g.who === sel.name : g.scope === 'd' && g.dept === sel.name)).sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')));
+  /* 시간 기준 계획 진척: 만든 날 → 기한 사이 지난 비율 */
+  const ogPlan = (g) => { const due = Date.parse(g.due || ''); const st = Date.parse(g.listed_at || g.created || ''); if (!due || !st || due <= st) return null; return Math.max(0, Math.min(100, Math.round(100 * (Date.now() - st) / (due - st)))); };
+  const ogPct = (g) => Math.max(0, Math.min(100, +((g.progress || {}).pct) || 0));
+  const ogBehind = (g) => { const p = ogPlan(g); return p != null && ogPct(g) < p - 15; };
+  function personStage(n) {
+    const gs = ogAll().filter((g) => g.who === n);
+    if (gs.some((g) => g.status === 'list')) return gs.some((g) => g.status === 'list' && ogBehind(g)) ? ['뒤처짐', 's0'] : ['관리 중', 's2'];
+    if (gs.length) return ['후보 ' + gs.length, 's1'];
+    if (!staffInfo(n) && !profileOf('p:' + n)) return ['정보 부족', 's0'];
+    return ['목표 없음', 's0'];
+  }
+  const ogUpText = (dept) => S.directives.filter((d) => isGoal(d) && d.org === dept && isOpen(d)).slice(0, 8).map((d) => `- ${d.code || ''} ${d.title} (진척 ${d.pct}%)`).join('\n');
+  const goalLines = (g) => [`목표: ${g.title}`, g.metric ? `지표: ${g.metric}` : '', g.cur || g.target ? `지금 → 목표: ${g.cur || '측정 필요'} → ${g.target || '—'}` : '', g.due ? `기한: ${g.due}` : '', g.up ? `상위 목표: ${g.up}` : '', g.why ? `왜: ${g.why}` : ''].filter(Boolean);
+
+  /* ① 인공지능으로 목표 후보 만들기 (근거 있는 정보만으로) */
+  async function ogGen(sel) {
+    const key = sel.kind + ':' + sel.name; if (OG.busy[key]) return;
+    OG.busy[key] = '정보를 모으는 중…'; OG.err[key] = ''; rerender();
+    try {
+      const { llm, used } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const st = sel.kind === 'p' ? staffOf(sel.name) : null;
+      const dept = sel.kind === 'p' ? (st ? st.d : '') : sel.name;
+      const tasks = S.directives.filter((d) => !isGoal(d) && isOpen(d) && (sel.kind === 'p' ? d.assignee === sel.name : d.org === sel.name)).slice(0, 12).map((d) => `- ${shortT(d)} (${d.status}${noDue(d) ? '' : ', 기한 ' + d.due_at})`).join('\n');
+      const prof = profileOf(sel.kind + ':' + sel.name);
+      const memos = memosOf(recKey(sel.kind === 'd' ? sel.name : dept, sel.kind === 'p' ? sel.name : '')).map((m) => '- ' + String(m.text).replace(/\n+/g, ' ').slice(0, 300)).join('\n');
+      const have = ogFor(sel).map((g) => g.title).join(', ');
+      const info = sel.kind === 'p' ? staffInfoText(sel.name) : staffList().filter((s) => s.d === sel.name && staffInfo(s.n)).slice(0, 8).map((s) => staffInfoText(s.n, true)).join('\n\n');
+      OG.busy[key] = '인공지능이 목표 후보를 만드는 중… (10~40초)'; rerender();
+      const v = await llm.json(`아이센스그룹 윤석범 회장이 ${sel.kind === 'p' ? `${sel.name}${st && st.g ? ' ' + st.g : ''}님(${dept})` : `${sel.name} 부서`}에게 맡길 목표 후보 3개를 만드세요.
+규칙:
+- 아래 근거(직무 정보·지금 하는 일·상위 목표·회장 메모)에서만 출발하세요. 근거 없는 목표는 만들지 마세요.
+- 목표마다 숫자로 잴 수 있는 지표와 목표 값, 기한(YYYY-MM-DD)을 넣으세요. 지금 값을 모르면 cur에 "측정 필요"라고 쓰세요.
+- 상위 목표(부서 목표·전사 목표) 중 이어지는 것이 있으면 up에 적으세요.
+- why에는 "왜 이 사람(부서)에게"를 근거와 함께 한두 문장으로.
+- subs는 이 목표를 이루는 하위 작업 3~5개(각 30자 이내).
+- 연봉·임금·인사 처우는 다루지 마세요. 영어를 쓰지 말고 한국어로만.${have ? `\n- 이미 있는 목표와 겹치지 않게: ${have}` : ''}
+JSON 배열만 출력: [{"title":"","metric":"","cur":"","target":"","due":"","up":"","why":"","subs":["",""]}, ...]
+
+[직무 정보]
+${info || '(부서현황판 정보 없음)'}
+[최근 정보 요약]
+${prof ? String(prof.text).slice(0, 2000) : '(아직 모으지 않음)'}
+[지금 하는 일]
+${tasks || '(없음)'}
+[상위 목표]
+${ogUpText(dept) || '(없음)'}
+[회장 메모]
+${memos || '(없음)'}`, { modelTier: 'default', cache: false });
+      const arr = (Array.isArray(v) ? v : v && Array.isArray(v.items) ? v.items : []).filter((o) => o && o.title).slice(0, 5);
+      if (!arr.length) throw { code: 'empty_completion' };
+      for (const o of arr) {
+        const id = 'og' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+        await ogSave(id, { scope: sel.kind, who: sel.kind === 'p' ? sel.name : '', dept, title: String(o.title).slice(0, 100), metric: String(o.metric || '').slice(0, 120), cur: String(o.cur || '측정 필요').slice(0, 60), target: String(o.target || '').slice(0, 60), due: /^\d{4}-\d{2}-\d{2}$/.test(o.due || '') ? o.due : '', up: String(o.up || '').slice(0, 120), why: String(o.why || '').slice(0, 400), subs: (Array.isArray(o.subs) ? o.subs : []).slice(0, 8).map((s) => String(s).slice(0, 60)), status: 'cand', from: 'ai', ai: used, chat: [] }, true);
+      }
+      logAct('goal_gen', `${sel.kind === 'p' ? sel.name + '님' : sel.name} 목표 후보 ${arr.length}개 만듦`, key);
+      toast(`목표 후보 ${arr.length}개를 만들었습니다 — 눌러서 고치고 보내세요`);
+    } catch (e) { OG.err[key] = aiErr(e); }
+    OG.busy[key] = null; rerender();
+  }
+
+  /* 메신저로 지시: 받은 사람이 클로드에 붙여 넣고 "아사나에 등록해 줘"라고 하면 바로 등록되게 쓴다 */
+  function ogMsg(g) {
+    const who = g.who || g.dept;
+    return `[회장 지시 · 목표] ${who}${g.who ? '님' : ''}, 아래 목표를 맡아 주세요.
+${goalLines(g).map((l) => '■ ' + l).join('\n')}${(g.subs || []).length ? '\n■ 하위 작업\n' + g.subs.map((s) => '  - ' + s).join('\n') : ''}
+
+👉 아사나 등록: 이 메시지 전체를 클로드에 붙여 넣고 "아사나에 목표로 등록해 줘"라고 하면 됩니다.
+〔아사나 등록 정보〕 프로젝트: [목표] ${who} / 작업 이름: [목표] ${g.title} / 담당: ${who} / 기한: ${g.due || '없음'} / 하위 작업: ${(g.subs || []).join(' · ') || '없음'}`;
+  }
+  async function ogSendMsg(g, msg) {
+    if (!LIVE.mcp) { toast('슬랙에 연결된 화면에서만 보낼 수 있습니다'); return; }
+    if (!g.who) { toast('부서 목표는 사람을 정해야 메신저로 보낼 수 있습니다'); return; }
+    OG.send[g.id] = '슬랙으로 보내는 중…'; rerender();
+    try {
+      const who = await findSlackId({ id: 'og' + g.id, assignee: g.who });
+      if (!who) toast(`슬랙에서 ${g.who}님을 찾지 못했습니다`);
+      else { await LIVE.mcp.callTool('Slack', 'slack_send_message', { channel_id: who.id, message: msg }); await ogSave(g.id, { sent: Object.assign({}, g.sent || {}, { msg_at: new Date().toISOString() }) }); logAct('goal_msg', `${g.who}님께 목표 「${g.title}」 메신저로 지시`, g.id); toast(`${g.who}님께 슬랙으로 보냈습니다`); ogUi().act = null; }
+    } catch (e) { toast('슬랙으로 보내지 못했습니다(' + ((e && e.code) || '오류') + ')'); }
+    OG.send[g.id] = null; rerender();
+  }
+  /* 아사나 프로젝트 목록 (최대 500개) */
+  async function ogProjects() {
+    if (OG.proj.busy || OG.proj.list || !LIVE.mcp) return;
+    OG.proj.busy = true; OG.proj.err = ''; rerender();
+    try {
+      let all = []; let offset = '';
+      for (let i = 0; i < 5; i++) {
+        const r = await LIVE.mcp.callTool(ASANA.server, 'get_projects', Object.assign({ limit: 100 }, offset ? { offset } : {}), { cache: { staleTime: 600000 } });
+        const p = (r && r.payload) || {}; const data = Array.isArray(p.data) ? p.data : Array.isArray(p) ? p : [];
+        all = all.concat(data.filter((x) => x && x.gid && x.name).map((x) => ({ gid: String(x.gid), name: String(x.name) })));
+        offset = p.next_page && p.next_page.offset; if (!offset) break;
+      }
+      OG.proj.list = all;
+    } catch (e) { OG.proj.err = errText(e); }
+    OG.proj.busy = false; rerender();
+  }
+  async function ogSendAsana(g, f) {
+    if (!LIVE.mcp) { toast('아사나에 연결된 화면에서만 보낼 수 있습니다'); return; }
+    OG.send[g.id] = '아사나에 만드는 중…'; rerender();
+    try {
+      const st = staffOf(f.who);
+      const notes = goalLines(g).join('\n') + '\n\n회장 현황판 「지시 관리」에서 보낸 목표입니다. 진행하면서 댓글로 결과를 남겨 주세요.';
+      const task = { name: `[목표] ${g.title}`, notes };
+      if (f.project) task.project_id = f.project; else task.workspace = undefined;
+      if (st && st.gid) task.assignee = st.gid; else if (!f.project) task.assignee = 'me';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(f.due || '')) task.due_on = f.due;
+      Object.keys(task).forEach((k) => task[k] === undefined && delete task[k]);
+      const args = f.project ? { default_project: f.project, tasks: [task] } : { default_assignee: task.assignee || 'me', tasks: [task] };
+      const r = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', args);
+      const p = (r && r.payload) || {}; const gid = gidOf((p.succeeded || [])[0]);
+      if (!gid) throw { code: 'tool_error', message: JSON.stringify((p.failed || [])[0] || p).slice(0, 160) };
+      const subs = (g.subs || []).filter((s) => String(s).trim()); let ok = 0;
+      if (subs.length) { try { const r2 = await LIVE.mcp.callTool(ASANA.server, 'create_tasks', { tasks: subs.map((s) => { const t = { name: s, parent: gid }; if (task.assignee) t.assignee = task.assignee; if (task.due_on) t.due_on = task.due_on; return t; }) }); ok = (((r2 && r2.payload) || {}).succeeded || []).length; } catch (e) { ok = 0; } }
+      const proj = (OG.proj.list || []).find((x) => x.gid === f.project);
+      await ogSave(g.id, { who: f.who || g.who, due: f.due || g.due, sent: Object.assign({}, g.sent || {}, { asana_gid: gid, asana_at: new Date().toISOString(), project: proj ? proj.name : (f.project ? f.project : '내 작업') }) });
+      logAct('goal_asana', `목표 「${g.title}」 아사나로 보냄(${f.who || '나'})`, gid);
+      toast(`아사나에 목표를 만들었습니다${subs.length ? ` · 하위 작업 ${ok}/${subs.length}개` : ''}`); ogUi().act = null;
+    } catch (e) { toast('아사나로 보내지 못했습니다 — ' + errText(e)); }
+    OG.send[g.id] = null; rerender();
+  }
+  /* 사이드패널 왼쪽 채팅: 인공지능과 대화해 목표 내용을 고친다 */
+  async function ogChat(g, text) {
+    if (OG.chat[g.id]) return;
+    const hist = (g.chat || []).concat([{ role: 'user', text, at: new Date().toISOString() }]);
+    await ogSave(g.id, { chat: hist }); OG.chat[g.id] = true; rerender();
+    try {
+      const { llm } = await manualLLM(utilAi());
+      if (!llm) throw { code: 'no_llm' };
+      const fields = { title: g.title, metric: g.metric, cur: g.cur, target: g.target, due: g.due, up: g.up, why: g.why, subs: g.subs || [] };
+      const v = await llm.json(`아이센스그룹 회장이 목표 카드를 고치고 있습니다. 회장의 요청대로 고친 필드만 돌려주세요. 바꾸지 않는 필드는 넣지 마세요. 기한은 YYYY-MM-DD. 영어를 쓰지 말고 한국어로만. 연봉·임금은 다루지 않습니다.
+지금 목표 카드: ${JSON.stringify(fields)}
+대상: ${g.who ? g.who + '님' : g.dept}
+지금까지 대화:
+${hist.slice(-8).map((m) => (m.role === 'user' ? '회장: ' : '인공지능: ') + m.text).join('\n')}
+JSON 하나만 출력: {"patch":{"title":"…"}, "reply":"무엇을 어떻게 고쳤는지 한두 문장"}`, { modelTier: 'quick', cache: false });
+      const patch = {}; const P = (v && v.patch) || {};
+      ['title', 'metric', 'cur', 'target', 'up', 'why'].forEach((k) => { if (typeof P[k] === 'string' && P[k].trim()) patch[k] = P[k].slice(0, 400); });
+      if (/^\d{4}-\d{2}-\d{2}$/.test(P.due || '')) patch.due = P.due;
+      if (Array.isArray(P.subs)) patch.subs = P.subs.slice(0, 8).map((s) => String(s).slice(0, 60));
+      const changed = Object.keys(patch).map((k) => ({ title: '제목', metric: '지표', cur: '지금 값', target: '목표 값', due: '기한', up: '상위 목표', why: '왜', subs: '하위 작업' }[k]));
+      const reply = String((v && v.reply) || (changed.length ? '고쳤습니다.' : '바꿀 곳을 찾지 못했습니다.')).slice(0, 400) + (changed.length ? `\n(바뀐 칸: ${changed.join(', ')})` : '');
+      await ogSave(g.id, Object.assign(patch, { chat: hist.concat([{ role: 'ai', text: reply, at: new Date().toISOString() }]) }));
+    } catch (e) { await ogSave(g.id, { chat: hist.concat([{ role: 'ai', text: aiErr(e), at: new Date().toISOString(), err: true }]) }); }
+    OG.chat[g.id] = false; rerender();
+  }
+
+  /* ---------- 화면 ---------- */
+  function ogCard(g) {
+    const ui = ogUi(); const sent = g.sent || {};
+    const pct = ogPct(g); const plan = ogPlan(g); const behind = ogBehind(g);
+    return `<div class="og-card ${ui.open === g.id ? 'on' : ''} ${g.status === 'list' && behind ? 'behind' : ''}">
+      <button type="button" class="og-cardmain" data-act="ogOpen" data-id="${esc(g.id)}"><b>${esc(g.title)}</b>
+        ${g.up ? `<span class="og-up">↑ ${esc(g.up)}</span>` : ''}
+        <span class="small muted">${esc([g.metric, g.target ? '목표 ' + g.target : '', g.due ? '기한 ' + md(g.due) : '기한 없음'].filter(Boolean).join(' · '))}</span>
+        ${g.status === 'list' ? `<span class="og-prog"><span class="bar ${behind ? 'c' : ''}"><i style="width:${pct}%"></i>${plan != null ? `<s style="left:${plan}%"></s>` : ''}</span><span class="small">진척 ${pct}%${plan != null ? ` · 계획 ${plan}%` : ''}${behind ? ' · <b class="dir-crit">뒤처짐</b>' : ''}</span></span>` : ''}
+        <span class="og-badges">${g.from === 'ai' ? '<span class="pill st-hold small">인공지능 제안</span>' : ''}${sent.msg_at ? `<span class="pill st-done small">메신저 ${esc(md(sent.msg_at.slice(0, 10)))}</span>` : ''}${sent.asana_gid ? `<span class="pill st-done small">아사나 등록</span>` : ''}</span></button>
+      <div class="og-acts"><button type="button" class="btn sm" data-act="ogAct" data-id="${esc(g.id)}" data-v="msg">메신저로 지시</button><button type="button" class="btn sm" data-act="ogAct" data-id="${esc(g.id)}" data-v="asana">아사나로 보내기</button>${g.status === 'cand' ? `<button type="button" class="btn primary sm og-tolist" data-act="ogToList" data-id="${esc(g.id)}">리스트로 보내기 →</button>` : behind ? `<button type="button" class="btn sm og-need" data-act="ogNeed" data-id="${esc(g.id)}">필요한 지시</button>` : ''}</div>
+    </div>`;
+  }
+  function ogInfo(sel) {
+    const key = sel.kind + ':' + sel.name; const pf = profileOf(key); const P = PROF[key] || {};
+    const si = sel.kind === 'p' ? staffInfo(sel.name) : null;
+    const st = sel.kind === 'p' ? staffOf(sel.name) : null;
+    const tasks = S.directives.filter((d) => !isGoal(d) && isOpen(d) && (sel.kind === 'p' ? d.assignee === sel.name : d.org === sel.name));
+    const dept = sel.kind === 'p' ? (st ? st.d : '') : sel.name;
+    const ups = S.directives.filter((d) => isGoal(d) && d.org === dept && isOpen(d));
+    const kv = (lab, src, body) => `<div class="og-kv">${src ? `<span class="og-src">${src}</span>` : ''}<b>${lab}</b><div class="small">${body}</div></div>`;
+    return `<section class="panel og-info"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><span class="og-step">1</span><b>직무 정보</b> <span class="small muted">인공지능이 이것을 읽고 목표 후보를 만듭니다</span></div>
+        <div class="row"><button type="button" class="btn sm" data-act="profCollect" data-kind="${sel.kind}" data-v="${esc(sel.name)}" ${P.busy ? 'disabled' : ''}>${P.busy ? esc(P.stage || '모으는 중…') : '↻ 최근 정보 모아오기'}</button>${pf ? `<span class="small muted">${esc(when(pf.at))} 모음</span>` : ''}</div></div>
+      ${si || sel.kind === 'd' ? '' : '<p class="small dir-warn" style="margin:8px 0 0">부서현황판에 이 사람의 개인 현황판 정보가 없습니다. 최근 정보 모아오기(아사나·슬랙)로 보충해 주세요.</p>'}
+      <div class="og-kvs">
+        ${si && si.rnr ? kv(`맡은 일 ${(si.rnr.resp || []).length}가지`, '알앤알', esc((si.rnr.resp || []).map((r) => `${r.area} ${r.w}%`).join(' · ')) + (si.rnr.job ? `<br><span class="muted">${esc(si.rnr.job)}</span>` : '')) : ''}
+        ${kv(`지금 하는 일 ${tasks.length}건`, '아사나', esc(tasks.slice(0, 4).map((d) => shortT(d)).join(' · ') || '없음') + (tasks.filter(isOverdue).length ? ` · <span class="dir-crit">기한 지남 ${tasks.filter(isOverdue).length}</span>` : ''))}
+        ${si && si.story && si.story.length ? kv(`나의 스토리 ${si.story.length}편`, '나의 스토리', esc(si.story[0].title || String(si.story[0].text).slice(0, 80))) : ''}
+        ${kv('이어질 상위 목표', '목표', esc(ups.slice(0, 3).map((d) => `${d.code || ''} ${d.title}`).join(' · ') || '부서 목표 없음'))}
+        ${si && si.goals && si.goals.length ? kv(`부서현황판 목표 ${si.goals.length}개`, '부서현황판', esc(si.goals.slice(0, 3).map((x) => x.name).join(' · '))) : ''}
+        ${sel.kind === 'p' ? kv('업무 부하', '', `${loadPill(sel.name)} 진행 중 ${loadOf(sel.name).tasks.length}건${si && si.routines ? ` · 루틴 ${si.routines.length}개` : ''}`) : kv('인원', '', `${staffList().filter((s) => s.d === sel.name).length}명`)}
+      </div>
+      ${pf ? `<details class="og-pf"><summary class="small">최근 정보 요약 보기</summary><div class="dir-repdoc">${mdHtml(pf.text)}</div></details>` : ''}
+      ${si ? `<p class="small muted" style="margin:8px 0 0">⛔ 알앤알·나의 스토리·부서현황판 목표는 ${esc(md(String(si.at).slice(0, 10)))}에 옮겨 온 사본입니다. 연결 도구가 생기기 전에는 새로 쓴 내용이 들어오지 않습니다.</p>` : ''}
+    </section>`;
+  }
+  function ogTarget(sel) {
+    const key = sel.kind + ':' + sel.name; const gs = ogFor(sel);
+    const cand = gs.filter((g) => g.status !== 'list'); const list = gs.filter((g) => g.status === 'list');
+    const st = sel.kind === 'p' ? staffOf(sel.name) : null;
+    const members = sel.kind === 'd' ? staffList().filter((s) => s.d === sel.name) : [];
+    return `<div class="og-head"><div>${sel.kind === 'p' ? avatar(sel.name, true) : ''}<h2>${esc(sel.name)}${sel.kind === 'p' && st && st.g ? ` <small>${esc(st.g)}</small>` : ''}</h2><span class="small muted">${sel.kind === 'p' ? esc(st ? st.d : '') : '부서'}</span></div></div>
+      ${ogInfo(sel)}
+      ${members.length ? `<section class="panel"><b>부서원</b> <span class="small muted">누르면 그 사람으로</span><div class="id-pchips" style="margin-top:8px">${members.map((s) => { const [lab, cls] = personStage(s.n); return `<button type="button" class="id-pchip" data-act="ogSel" data-kind="p" data-v="${esc(s.n)}">${esc(s.n)}${s.g ? `<small>${esc(s.g)}</small>` : ''}<span class="st ${cls}">${esc(lab)}</span></button>`; }).join('')}</div></section>` : ''}
+      <div class="og-cols">
+        <section class="panel og-col"><div class="row" style="justify-content:space-between"><div><span class="og-step">2</span><b>목표 후보</b> <span class="num muted">${cand.length}</span></div>
+            <div class="row">${OG.busy[key] ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(OG.busy[key])}</span>` : `<button type="button" class="btn primary sm" data-act="ogGen" data-kind="${sel.kind}" data-v="${esc(sel.name)}">${cand.length ? '후보 더 만들기' : '인공지능으로 후보 3개 만들기'}</button>`}<button type="button" class="btn sm" data-act="ogNew" data-kind="${sel.kind}" data-v="${esc(sel.name)}">+ 직접 추가</button></div></div>
+          ${OG.err[key] ? `<p class="small dir-err">${esc(OG.err[key])}</p>` : ''}
+          <p class="small muted" style="margin:6px 0 8px">후보를 누르면 오른쪽 패널에서 고칠 수 있습니다. 확정되면 「리스트로 보내기」.</p>
+          <div class="og-list">${cand.map(ogCard).join('') || '<p class="small muted">아직 후보가 없습니다. 위 단추로 만들거나 직접 추가하세요.</p>'}</div></section>
+        <section class="panel og-col"><div><span class="og-step">3</span><b>목표 리스트</b> <span class="num muted">${list.length}</span> <span class="small muted">후보에서 보낸 목표가 쌓이고, 진척을 관리합니다</span></div>
+          <div class="og-list" style="margin-top:8px">${list.map(ogCard).join('') || '<p class="small muted">아직 리스트에 보낸 목표가 없습니다.</p>'}</div></section>
+      </div>`;
+  }
+  function ogOverview() {
+    const all = ogAll(); const ppl = staffList();
+    const rows = deptsAll().map((dp) => { const ms = ppl.filter((s) => s.d === dp); const gs = all.filter((g) => g.dept === dp); const listed = gs.filter((g) => g.status === 'list'); return { dp, n: ms.length, info: ms.filter((s) => staffInfo(s.n) || profileOf('p:' + s.n)).length, cand: gs.filter((g) => g.status !== 'list').length, list: listed.length, withGoal: ms.filter((s) => listed.some((g) => g.who === s.n)).length, behind: listed.filter(ogBehind).length, avg: listed.length ? Math.round(listed.reduce((a, g) => a + ogPct(g), 0) / listed.length) : null }; }).filter((r) => r.n);
+    const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
+    return `<section class="panel"><div class="row" style="justify-content:space-between"><b style="font-size:17px">전사 진행 현황</b><span class="small muted">${ppl.length}명 ${badge('측정')}</span></div>
+      <div class="og-steps"><div><b>① 정보</b><span class="small">${sum('info')}명 있음 · ${ppl.length - sum('info')}명 부족</span></div><div><b>② 목표 후보</b><span class="small">${sum('cand')}개</span></div><div><b>③ 목표 리스트</b><span class="small">${sum('list')}개 · 목표 있는 사람 ${sum('withGoal')}명</span></div><div><b>뒤처진 목표</b><span class="small">${sum('behind')}개</span></div></div>
+      <div class="tbl-wrap"><table class="dir-tbl og-tbl"><thead><tr><th>부서</th><th>인원</th><th>정보</th><th>후보</th><th>리스트</th><th>목표 있는 사람</th><th>평균 진척</th><th>뒤처짐</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><button type="button" class="dir-link" data-act="ogSel" data-kind="d" data-v="${esc(r.dp)}">${esc(r.dp)}</button></td><td class="num">${r.n}</td><td class="num ${r.info ? '' : 'dir-crit'}">${r.info}/${r.n}</td><td class="num">${r.cand}</td><td class="num">${r.list}</td><td class="num">${r.withGoal}/${r.n}</td><td class="num">${r.avg == null ? '—' : r.avg + '%'}</td><td class="num ${r.behind ? 'dir-crit' : ''}">${r.behind}</td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted" style="margin:8px 0 0">왼쪽 조직도나 표의 부서 이름을 누르면 그 부서·사람의 정보와 목표가 열립니다.</p></section>`;
+  }
+  function ogTree(sel) {
+    const ui = ogUi(); const q = ui.tq.trim(); const ppl = staffList();
+    const qm = (s) => !q || [s.n, s.d, s.g].join(' ').includes(q) || cho(s.n).includes(q);
+    const depts = deptsAll().filter((dp) => !q || dp.includes(q) || ppl.some((s) => s.d === dp && qm(s)));
+    return `<aside class="panel og-tree" aria-label="조직도"><input type="text" id="og-tq" class="og-tq" placeholder="부서·이름·초성 찾기" value="${esc(ui.tq)}" data-ogq="1" aria-label="조직도에서 찾기">
+      <button type="button" class="og-dep ${!sel ? 'on' : ''}" data-act="ogSel" data-kind="" data-v="">전체 현황</button>
+      <button type="button" class="og-per me ${sel && sel.kind === 'p' && sel.name === ME_STAFF.n ? 'on' : ''}" data-act="ogSel" data-kind="p" data-v="${ME_STAFF.n}">⭐ 나(윤석범) <span class="st ${personStage(ME_STAFF.n)[1]}">${personStage(ME_STAFF.n)[0]}</span></button>
+      ${depts.filter((dp) => dp !== '회장').map((dp) => { const ms = ppl.filter((s) => s.d === dp && qm(s)); const open = q || (sel && (sel.name === dp || (sel.kind === 'p' && (staffOf(sel.name) || {}).d === dp))); const gl = ogAll().filter((g) => g.dept === dp && g.status === 'list'); return `<button type="button" class="og-dep ${sel && sel.kind === 'd' && sel.name === dp ? 'on' : ''}" data-act="ogSel" data-kind="d" data-v="${esc(dp)}"><span>${open ? '▾' : '▸'} ${esc(dp)}</span><span class="st ${gl.length ? 's2' : 's0'}">목표 ${new Set(gl.map((g) => g.who)).size}/${ppl.filter((s) => s.d === dp).length}</span></button>${open ? ms.map((s) => { const [lab, cls] = personStage(s.n); return `<button type="button" class="og-per ${sel && sel.kind === 'p' && sel.name === s.n ? 'on' : ''}" data-act="ogSel" data-kind="p" data-v="${esc(s.n)}">${esc(s.n)}${s.g ? ` <small>${esc(s.g)}</small>` : ''}<span class="st ${cls}">${esc(lab)}</span></button>`; }).join('') : ''}`; }).join('')}
+    </aside>`;
+  }
+  function ogPane() {
+    const ui = ogUi(); const g = ui.open && ogOf(ui.open); if (!g) return '';
+    const sent = g.sent || {}; const act = ui.act; const busy = OG.send[g.id];
+    const fld = (k, lab, ph, ta) => `<label class="og-f"><span>${lab}</span>${ta ? `<textarea rows="3" data-ogk="${k}" data-id="${esc(g.id)}" placeholder="${esc(ph || '')}">${esc(g[k] || '')}</textarea>` : `<input type="text" data-ogk="${k}" data-id="${esc(g.id)}" value="${esc(g[k] || '')}" placeholder="${esc(ph || '')}">`}</label>`;
+    let actBox = '';
+    if (act === 'msg') {
+      actBox = `<div class="og-actbox" role="region" aria-label="메신저로 지시"><b>메신저로 지시 — ${esc(g.who ? g.who + '님께 슬랙 개인 메시지' : '사람을 먼저 정해 주세요')}</b>
+        <span class="small muted">받은 사람이 이 메시지를 클로드에 붙여 넣고 "아사나에 목표로 등록해 줘"라고 하면 바로 등록되게 썼습니다. 보내기 전에 고칠 수 있습니다.</span>
+        <textarea id="og-msg" rows="10">${esc((OG.msgDraft && OG.msgDraft[g.id]) || ogMsg(g))}</textarea>
+        <div class="row">${busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(busy)}</span>` : `<button type="button" class="btn primary sm" data-act="ogMsgGo" data-id="${esc(g.id)}" ${g.who && LIVE.mcp ? '' : 'disabled'}>슬랙으로 보내기</button><button type="button" class="btn sm" data-act="ogCopyMsg" data-id="${esc(g.id)}">글 복사</button><button type="button" class="dir-link" data-act="ogAct" data-id="${esc(g.id)}" data-v="">닫기</button>`}</div>
+        ${LIVE.mcp ? '' : '<p class="small dir-warn" style="margin:0">슬랙에 연결된 화면(클로드 웹에서 연 현황판)에서만 보낼 수 있습니다. 「글 복사」로 직접 붙여 넣으셔도 됩니다.</p>'}</div>`;
+    } else if (act === 'asana') {
+      const f = OG.af = Object.assign({ id: g.id, who: g.who || '', due: g.due || '', project: '' }, OG.af && OG.af.id === g.id ? OG.af : {});
+      const list = OG.proj.list || [];
+      if (!f.project && list.length && f.who) { const m = list.find((p) => /^\[목표\]/.test(p.name) && p.name.includes(f.who)); if (m) f.project = m.gid; }
+      const projOpts = list.filter((p) => /^\[(목표|업무|지시업무)\]/.test(p.name)).sort((a, b) => (b.name.includes(f.who || '@@') ? 1 : 0) - (a.name.includes(f.who || '@@') ? 1 : 0) || a.name.localeCompare(b.name, 'ko'));
+      actBox = `<div class="og-actbox" role="region" aria-label="아사나로 보내기"><b>아사나로 보내기</b><span class="small muted">「[목표] ${esc(g.title)}」 작업과 하위 작업 ${(g.subs || []).length}개를 만듭니다. 담당자에게 아사나 알림이 갑니다.</span>
+        <label class="og-f"><span>프로젝트</span>${OG.proj.busy ? '<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>프로젝트 목록을 불러오는 중…</span>' : `<select id="og-proj" data-act="ogAf" data-k="project"><option value="">프로젝트 없이 담당자 「내 작업」에만</option>${projOpts.map((p) => `<option value="${esc(p.gid)}" ${f.project === p.gid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`}</label>
+        ${OG.proj.err ? `<p class="small dir-err" style="margin:0">${esc(OG.proj.err)}</p>` : ''}
+        <label class="og-f"><span>담당자</span>${picker({ key: 'og-aw', list: staffList(), value: f.who, empty: '나(윤석범)', act: 'ogAf', data: { k: 'who' }, load: true, label: '아사나 담당자' })}</label>
+        <label class="og-f"><span>기한</span><input type="date" id="og-adue" data-act="ogAf" data-k="due" value="${esc(f.due)}"></label>
+        ${sent.asana_gid ? '<p class="small dir-warn" style="margin:0">이미 아사나로 보낸 적이 있습니다. 또 만들면 중복됩니다.</p>' : ''}
+        <div class="row">${busy ? `<span class="small"><span class="dir-spin sm" aria-hidden="true"></span>${esc(busy)}</span>` : `<button type="button" class="btn primary sm" data-act="ogAsanaGo" data-id="${esc(g.id)}" ${LIVE.mcp ? '' : 'disabled'}>확인하고 아사나에 등록</button><button type="button" class="dir-link" data-act="ogAct" data-id="${esc(g.id)}" data-v="">닫기</button>`}</div></div>`;
+    }
+    const chat = g.chat || [];
+    return `<aside class="dir-pane og-pane" role="dialog" aria-label="목표 고치기" id="og-dlg" tabindex="-1">
+      <div class="dir-pane-bar"><b class="id-panetitle">${g.status === 'list' ? '목표 리스트' : '목표 후보'} · ${esc(g.who || g.dept)}</b><span class="dir-pane-sp"></span>
+        ${sent.asana_gid ? `<a class="dir-iconbtn" href="https://app.asana.com/0/0/${esc(sent.asana_gid)}" target="_blank" rel="noopener noreferrer">아사나에서 열기 ↗</a>` : ''}
+        ${ui.del === g.id ? `<span class="small">지울까요?</span><button type="button" class="btn sm dir-dangerbtn" data-act="ogDelGo" data-id="${esc(g.id)}">지우기</button><button type="button" class="btn sm" data-act="ogDel" data-id="">취소</button>` : `<button type="button" class="dir-iconbtn danger" data-act="ogDel" data-id="${esc(g.id)}">삭제</button>`}
+        <button type="button" class="dir-iconbtn" data-act="ogClose">닫기 →|</button></div>
+      <div class="og-panebody">
+        <section class="og-chat" aria-label="인공지능과 대화로 고치기"><b>인공지능과 고치기</b><span class="small muted">"기한을 12월 15일로", "지표를 매출 기준으로 바꿔" 처럼 말하면 오른쪽 내용이 바뀝니다.</span>
+          <div class="og-msgs">${chat.length ? chat.map((m) => `<div class="og-m ${m.role === 'user' ? 'u' : 'a'}${m.err ? ' err' : ''}"><b>${m.role === 'user' ? '회장님' : '인공지능'}</b><p>${esc(m.text)}</p></div>`).join('') : '<p class="small muted">아직 대화가 없습니다.</p>'}${OG.chat[g.id] ? '<div class="og-m a"><span class="dir-spin sm" aria-hidden="true"></span> 고치는 중…</div>' : ''}</div>
+          <div class="og-chatin"><textarea id="og-chatin" rows="3" placeholder="어떻게 고칠까요?" aria-label="인공지능에게 고칠 내용 말하기">${esc(OG.chatDraft || '')}</textarea><button type="button" class="btn primary sm" data-act="ogChatGo" data-id="${esc(g.id)}" ${OG.chat[g.id] ? 'disabled' : ''}>보내기</button></div></section>
+        <section class="og-detail">
+          ${actBox}
+          <div class="row og-panebtns"><button type="button" class="btn sm ${act === 'msg' ? 'on' : ''}" data-act="ogAct" data-id="${esc(g.id)}" data-v="msg">메신저로 지시</button><button type="button" class="btn sm ${act === 'asana' ? 'on' : ''}" data-act="ogAct" data-id="${esc(g.id)}" data-v="asana">아사나로 보내기</button>${g.status !== 'list' ? `<button type="button" class="btn primary sm" data-act="ogToList" data-id="${esc(g.id)}">리스트로 보내기 →</button>` : `<button type="button" class="btn sm" data-act="ogToCand" data-id="${esc(g.id)}">후보로 되돌리기</button>`}</div>
+          <label class="og-f"><span>목표</span><textarea rows="2" class="og-title" data-ogk="title" data-id="${esc(g.id)}">${esc(g.title)}</textarea></label>
+          <div class="og-f"><span>담당</span>${picker({ key: 'og-who-' + g.id, list: staffList(), pri: g.dept || '', value: g.who || '', empty: g.scope === 'd' ? '부서 전체' : '미정', act: 'ogSet', data: { id: g.id, k: 'who' }, load: true, label: '목표 담당' })}</div>
+          <div class="og-grid">${fld('metric', '지표', '무엇으로 재나')}${fld('due', '기한', 'YYYY-MM-DD')}${fld('cur', '지금 값', '측정 필요')}${fld('target', '목표 값', '예: 95%')}</div>
+          ${fld('up', '상위 목표', '이어지는 부서·전사 목표')}
+          ${fld('why', '왜 이 사람(부서)에게', '근거', true)}
+          <div class="og-f"><span>하위 작업</span><textarea rows="4" data-ogk="subs" data-id="${esc(g.id)}" placeholder="한 줄에 하나씩">${esc((g.subs || []).join('\n'))}</textarea></div>
+          ${g.status === 'list' ? `<div class="og-grid"><label class="og-f"><span>진척(%)</span><input type="number" min="0" max="100" data-ogk="pct" data-id="${esc(g.id)}" value="${ogPct(g)}"></label><div class="og-f"><span>계획</span><div class="small">${ogPlan(g) == null ? '기한을 넣으면 계산됩니다' : ogPlan(g) + '% (리스트에 넣은 날부터 기한까지 지난 비율)'}</div></div></div>${fld('note', '진행 메모', '확인한 내용', true)}` : ''}
+          <p class="small muted" style="margin:6px 0 0">칸을 고치고 다른 곳을 누르면 저장됩니다. ${g.from === 'ai' ? `인공지능(${esc(aiName(g.ai || 'claude'))})이 제안한 목표입니다.` : ''}</p>
+        </section>
+      </div>
+    </aside>`;
+  }
+  function viewOrders() {
+    normalize();
+    const ui = ogUi(); const sel = ui.sel;
+    document.body.classList.toggle('dir-lock', !!(ui.open && ogOf(ui.open)));
+    if (LIVE.state === 'loading' && !S.liveMode) return `<div class="view-head"><div><h2>지시 관리</h2><p>직원 정보와 목표를 불러오고 있습니다.</p></div></div><div class="panel dir-loading" role="status"><span class="dir-spin" aria-hidden="true"></span><b>불러오는 중…</b></div>`;
+    return `<div class="view-head"><div><h2>지시 관리</h2><p>부서·직원마다 정보를 모아 목표를 만들고, 목표를 관리하면서 필요한 지시를 내립니다.</p></div></div>
+      <div class="og-wrap">${ogTree(sel)}<div class="og-main">${sel ? ogTarget(sel) : ogOverview()}</div></div>${ogPane()}`;
+  }
+  APP.views.orders = viewOrders;
+  APP.acts.ogSel = (el) => { const k = el.dataset.kind; const v = el.dataset.v; const ui = ogUi(); ui.sel = k ? { kind: k, name: v } : null; ui.open = null; ui.act = null; window.scrollTo(0, 0); };
+  APP.acts.ogGen = (el) => { const sel = { kind: el.dataset.kind, name: el.dataset.v }; setTimeout(() => ogGen(sel), 0); };
+  APP.acts.ogNew = (el) => { const kind = el.dataset.kind; const name = el.dataset.v; const st = kind === 'p' ? staffOf(name) : null; const id = 'og' + Date.now().toString(36); ogSave(id, { scope: kind, who: kind === 'p' ? name : '', dept: kind === 'p' ? (st ? st.d : '') : name, title: '새 목표', metric: '', cur: '측정 필요', target: '', due: '', up: '', why: '', subs: [], status: 'cand', from: 'manual', chat: [] }, true).then(() => rerender()); const ui = ogUi(); ui.open = id; ui.act = null; focusLater('#og-dlg .og-title'); };
+  APP.acts.ogOpen = (el) => { const ui = ogUi(); if (ui.open === el.dataset.id) { ui.open = null; ui.act = null; return; } ui.open = el.dataset.id; ui.act = null; ui.del = null; S.ui.dirOpen = null; };
+  APP.acts.ogClose = () => { const ui = ogUi(); ui.open = null; ui.act = null; ui.del = null; };
+  APP.acts.ogAct = (el) => { const ui = ogUi(); ui.open = el.dataset.id; ui.act = el.dataset.v || null; OG.af = null; if (ui.act === 'asana') setTimeout(ogProjects, 0); };
+  APP.acts.ogToList = (el) => { const g = ogOf(el.dataset.id); if (!g) return; ogSave(g.id, { status: 'list', listed_at: new Date().toISOString(), progress: g.progress || { pct: 0 } }); logAct('goal_list', `목표 「${g.title}」을 리스트로 보냄`, g.id); toast('목표 리스트로 보냈습니다'); };
+  APP.acts.ogToCand = (el) => { const g = ogOf(el.dataset.id); if (g) ogSave(g.id, { status: 'cand' }); };
+  APP.acts.ogDel = (el) => { ogUi().del = el.dataset.id || null; };
+  APP.acts.ogDelGo = (el) => { const ui = ogUi(); ogDel(el.dataset.id); ui.open = null; ui.del = null; toast('목표를 지웠습니다'); };
+  APP.acts.ogNeed = (el) => { const g = ogOf(el.dataset.id); if (!g) return; const ui = ogUi(); ui.open = g.id; ui.act = 'msg'; OG.msgDraft = Object.assign({}, OG.msgDraft || {}, { [g.id]: `[회장 확인] ${g.who || g.dept}${g.who ? '님' : ''}, 「${g.title}」 진척이 계획보다 늦어 보여요(진척 ${ogPct(g)}% · 계획 ${ogPlan(g)}%). 지금 무엇이 걸리는지, 도울 일이 있는지 오늘 안에 짧게 알려 줄래요?` }); };
+  APP.acts.ogCopyMsg = () => { const t = document.getElementById('og-msg'); const v = t ? t.value : ''; try { navigator.clipboard.writeText(v).then(() => toast('글을 복사했습니다'), () => { if (t) t.select(); toast('글을 선택했습니다 — 복사 단축키로 복사하세요'); }); } catch (e) { if (t) t.select(); } };
+  APP.acts.ogMsgGo = (el) => { const g = ogOf(el.dataset.id); const t = document.getElementById('og-msg'); const msg = (t ? t.value : '').trim(); if (!g || !msg) return; if (OG.msgDraft) delete OG.msgDraft[g.id]; setTimeout(() => ogSendMsg(g, msg), 0); };
+  APP.changes.ogAf = (el) => { OG.af = Object.assign({}, OG.af || {}, { [el.dataset.k]: el.value }); };
+  APP.acts.ogAsanaGo = (el) => { const g = ogOf(el.dataset.id); if (!g) return; const f = Object.assign({}, OG.af || {}); setTimeout(() => ogSendAsana(g, f), 0); };
+  APP.changes.ogSet = (el) => { const g = ogOf(el.dataset.id); if (!g) return; const p = { [el.dataset.k]: el.value }; if (el.dataset.k === 'who' && el.value && staffOf(el.value)) p.dept = staffOf(el.value).d; ogSave(g.id, p); };
+  APP.acts.ogChatGo = (el) => { const g = ogOf(el.dataset.id); const t = document.getElementById('og-chatin'); const text = (t ? t.value : '').trim(); if (!g || !text) return; OG.chatDraft = ''; setTimeout(() => ogChat(g, text), 0); };
+  document.addEventListener('input', (e) => { const t = e.target; if (!t) return; if (t.id === 'og-chatin') OG.chatDraft = t.value; else if (t.id === 'og-msg') { const id = ogUi().open; if (id) OG.msgDraft = Object.assign({}, OG.msgDraft || {}, { [id]: t.value }); } else if (t.dataset && t.dataset.ogq) { ogUi().tq = t.value; clearTimeout(OG.tqT); OG.tqT = setTimeout(() => { const pos = t.selectionStart; rerender(); setTimeout(() => { const n = document.getElementById('og-tq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (er) { /* */ } } }, 0); }, 250); } });
+  document.addEventListener('change', (e) => {
+    const t = e.target; if (!t || !t.dataset || !t.dataset.ogk) return; const g = ogOf(t.dataset.id); if (!g) return;
+    const k = t.dataset.ogk; let v = t.value;
+    if (k === 'subs') v = v.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 12);
+    if (k === 'pct') { ogSave(g.id, { progress: { pct: Math.max(0, Math.min(100, Math.round(+v || 0))), at: new Date().toISOString() } }).then(() => rerender()); return; }
+    if (k === 'due' && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('기한은 2026-12-31 처럼 적어 주세요'); return; }
+    ogSave(g.id, { [k]: k === 'title' ? (v.trim() || g.title) : v }).then(() => { if (k === 'title' || k === 'due') rerender(); });
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ogUi().open && !document.body.classList.contains('dir-vis-open') && !(e.target && e.target.dataset && e.target.dataset.ppk)) { ogUi().open = null; ogUi().act = null; rerender(); } });
+
+  /* 목표 패널 밖을 누르면 닫는다 — 다른 목표 카드를 누르면 그 목표로 바뀐다 */
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted || !ogUi().open || !document.querySelector('.og-pane')) return;
+    const t = e.target;
+    if (!t || !t.closest || !document.contains(t)) return;
+    if (t.closest('.og-pane') || t.closest('.og-card') || t.closest('[data-act="ogNew"]') || t.closest('.toast') || t.closest('.pp-list')) return;
+    const ui = ogUi(); ui.open = null; ui.act = null; ui.del = null; rerender();
+  }, true);
+  window.addEventListener('hashchange', () => { const ui = ogUi(); ui.open = null; ui.act = null; ui.del = null; });
 
   /* 상세 창: Esc·바깥 누르면 닫기, 다른 메뉴로 가면 정리 */
   const closeDlg = () => { const b = document.querySelector('.dir-pane-bar [data-act="dirClose"]'); if (b) b.click(); };
