@@ -567,3 +567,25 @@ body.dir-vis-open { overflow: hidden; }
 .retro-ta { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; line-height: 1.55; resize: vertical; }
 .mg-retro .seg button[disabled] { opacity: .45; cursor: default; }
 @media (max-width: 720px) { .dir-inlist li { grid-template-columns: minmax(0, 1fr); } .dir-donevalue { float: none; display: block; margin: 0 0 6px; } }
+
+/* 추천: 부서·사람 정보보기, 새로 뽑기·지난 추천 모음 */
+.id-recf { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.id-infobtns { gap: 6px; margin-top: 8px; }
+.id-info { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); display: flex; flex-direction: column; gap: 8px; }
+.id-infoname { font-size: 17px; }
+.id-infokpi { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 15px; color: var(--sub); }
+.id-infokpi b { color: var(--ink); margin-left: 2px; }
+.id-pchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.id-pchip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14.5px; cursor: pointer; }
+.id-pchip:hover { border-color: var(--gold); }
+.id-pchip small { color: var(--sub); font-size: 12.5px; }
+.id-infocols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.id-infocols p { margin: 0 0 4px; }
+.id-infol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; font-size: 15px; }
+.id-prof { padding: 10px 12px; border: 1px dashed var(--gold); border-radius: 12px; background: var(--bg); }
+.id-prof .dir-repdoc { padding: 0; }
+.id-rectabs { margin-top: 12px; }
+.id-recrun { gap: 10px; margin-top: 10px; align-items: center; }
+.id-recrun .small { flex: 1; min-width: 200px; }
+.id-recday { margin: 12px 0 6px; }
+@media (max-width: 720px) { .id-recf, .id-infocols { grid-template-columns: minmax(0, 1fr); } }
