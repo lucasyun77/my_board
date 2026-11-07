@@ -2,7 +2,9 @@
    날짜는 오늘 기준 상대값(D(n))으로 만들어 언제 열어도 화면이 살아 있게 한다. */
 (function () {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const D = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  // 한국 시간(브라우저 현지 시간) 기준 날짜. toISOString()은 UTC라 오전 9시 전후로 하루가 어긋나서 쓰지 않는다.
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const D = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return ymd(d); };
   const T = (n, h = 9) => { const d = new Date(today); d.setDate(d.getDate() + n); d.setHours(h, 0, 0, 0); return d.toISOString(); };
 
   const ORGS = ['경영지원본부', '벌툰사업부', '블랙라벨사업부', '생전포차사업부', 'AI전략실', '마케팅실'];
@@ -141,5 +143,5 @@
     { version: 'v1.0', effective_from: D(0), reason: '최초 기준(인계문서 V01 §5-2 기본값)' }
   ];
 
-  window.MOCK = { today: D(0), D, ORGS, tags, directives, ideas, dailyTasks, achievements, wallet, usage, providers, features, topSkills, waiting, depts, issues, calendar, SUBJECTS, questions, attempts, xp, rewardRules };
+  window.MOCK = { today: D(0), D, ymd, ORGS, tags, directives, ideas, dailyTasks, achievements, wallet, usage, providers, features, topSkills, waiting, depts, issues, calendar, SUBJECTS, questions, attempts, xp, rewardRules };
 })();

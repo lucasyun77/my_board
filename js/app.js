@@ -28,7 +28,16 @@
   const chip = (id) => { const t = tagById(id); return t ? `<span class="chip"><span class="dot" style="background:${esc(t.color)}"></span>${esc(t.name)}</span>` : ''; };
   const uid = (p) => p + Math.random().toString(36).slice(2, 8);
   const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
+  /* 알림: 여러 개가 겹치지 않고 아래에서 위로 쌓인다(최대 4개) */
+  function toast(msg) {
+    let box = document.getElementById('toastStack');
+    if (!box) { box = document.createElement('div'); box.id = 'toastStack'; box.className = 'toast-stack'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; box.appendChild(t);
+    while (box.children.length > 4) box.firstChild.remove();
+    setTimeout(() => t.remove(), 2600);
+  }
+  /* ISO 시각 → 현지(한국) 날짜 YYYY-MM-DD */
+  const localDay = (iso) => { const d = new Date(iso); return isNaN(d) ? String(iso || '').slice(0, 10) : MOCK.ymd(d); };
 
   /* ---------- 계산 ---------- */
   const isOpen = (d) => !['완료', '보류'].includes(d.status);
@@ -66,7 +75,7 @@
     const stale = S.directives.filter((d) => isStale(d) && !isOverdue(d));
     const todayVal = sumConfirmed(S.today);
     const yVal = S.achievements.filter((a) => a.status === '확정' && a.confirmed_at === dayStr(-1)).reduce((s, a) => s + a.value_won, 0);
-    const recentAttempts = S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).length;
+    const recentAttempts = S.attempts.filter((a) => localDay(a.at) >= dayStr(-6)).length;
     const bt = S.ui.briefTab || '일';
     const brief = {
       '일': [
@@ -143,7 +152,7 @@
     const half = Math.floor(n / 2);
     const since = dayStr(-6);
     const uniq = (arr) => [...new Set(arr)];
-    const recent = uniq(S.attempts.filter((a) => a.at.slice(0, 10) >= since).map((a) => a.question_id));
+    const recent = uniq(S.attempts.filter((a) => localDay(a.at) >= since).map((a) => a.question_id));
     const all = uniq(S.attempts.map((a) => a.question_id));
     const pickR = shuffle(recent).slice(0, half);
     const pickA = shuffle(all.filter((id) => !pickR.includes(id))).slice(0, n - pickR.length);
@@ -152,7 +161,7 @@
     return shuffle(set);
   }
   /* 메뉴 파일(js/views/*.js)에 공용 도구를 넘긴다 */
-  window.APP = { clone, S, save, RATE, HOUR_VALUE, LEVEL_COST, STATUSES, STAGES, F_TYPES, L_TABLE, $, esc, won, kwon, days, md, BADGE, badge, tagById, chip, uid, shuffle, toast, isOpen, isOverdue, isStale, Lof, Sof, evaluate, sumConfirmed, dayStr, guide, currentFilter, applyFilter, prioPill, statPill, statusSelect, qById, reviewSet, views: {}, acts: {}, forms: {}, changes: {} };
+  window.APP = { localDay, clone, S, save, RATE, HOUR_VALUE, LEVEL_COST, STATUSES, STAGES, F_TYPES, L_TABLE, $, esc, won, kwon, days, md, BADGE, badge, tagById, chip, uid, shuffle, toast, isOpen, isOverdue, isStale, Lof, Sof, evaluate, sumConfirmed, dayStr, guide, currentFilter, applyFilter, prioPill, statPill, statusSelect, qById, reviewSet, views: {}, acts: {}, forms: {}, changes: {} };
 
 
   /* ---------- ② 신사업 ---------- */
@@ -164,7 +173,7 @@
     const due = S.directives.filter((d) => isOpen(d) && d.due_at <= S.today);
     const stages = ['아이디어', '검증', 'PoC', '론칭'].map((st) => [st, S.ideas.filter((i) => i.stage === st).length]);
     const u = S.usage[S.usage.length - 1];
-    const recent = S.attempts.filter((a) => a.at.slice(0, 10) >= dayStr(-6)).length;
+    const recent = S.attempts.filter((a) => localDay(a.at) >= dayStr(-6)).length;
     const card = (tab, title, body) => `<section class="panel"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3>${title}</h3><button type="button" class="btn sm" data-act="tab" data-v="${tab}">열기 →</button></div>${body}</section>`;
     return `<div class="grid2">
       ${card('today', '오늘 할 일', `<div class="small muted">내 할 일 ${doneT}/${tasks.length} 완료 · 오늘까지 기한 지시 ${due.length}건</div><ul style="margin:8px 0 0;padding-left:18px">${[...due.map((d) => `<li>${esc(d.title)} <span class="small muted">${esc(d.org)}</span></li>`), ...tasks.filter((t) => !t.done).map((t) => `<li>${esc(t.title)} <span class="small muted">내 할 일</span></li>`)].slice(0, 4).join('') || '<li class="muted">남은 일이 없습니다.</li>'}</ul>`)}
