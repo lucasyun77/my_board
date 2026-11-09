@@ -1,4 +1,4 @@
-# 회장 개인현황판 — Claude Code 인계 문서 (V14 · 2026-11-07)
+# 회장 개인현황판 — Claude Code 인계 문서 (V15 · 2026-11-09)
 
 > **Claude Code에게**: 이 문서는 아이센스그룹 윤석범 회장 개인현황판 구축 작업의 단일 기준 문서다. 착수 전 끝까지 읽고, §8 "결정 필요 사항" 중 미결 항목은 회장님께 먼저 확인한다. 작업 중 결정된 사항은 이 문서 맨 아래 **변경 이력**에 기록하고 버전을 올린다.
 
@@ -137,3 +137,7 @@ V01과 동일. 목업의 `js/data.js` 필드명은 V01 데이터 모델을 따�
 - V12 (2026-11-02): 회장님이 주신 이미지 적용 — 메인 머리말 배경(`assets/hero-bg.webp`, 세피아 종이·구름·달·다리 위 기차), 프로필(`assets/profile.webp`)을 로고·머리말·각 메뉴 안내에 사용. 기존 SVG 캐릭터는 쓰지 않음. 공유용 한 파일 빌드에서 글꼴 주소가 깨지던 문제(`\&`) 수정.
 - V13 (2026-11-04): 회장님 지시로 하위 세션 브랜치 일괄 합치기(AI 사용·오늘 할 일·지시 관리 추가분, 오늘 할 일 충돌은 화면 안 2단계 삭제 확인 유지로 정리). 사이드 메뉴에 "내가 보는 숫자"(numbers) 신설 — 뼈대만 만들고 담당 하위 세션에 넘김. 저장소 CLAUDE.md(커밋은 회장님께 묻고 한 번에) 반영.
 - V14 (2026-11-07 04시): 밤샘 고도화(docs/UPGRADE_PLAN.md) 9개 메뉴 P1~P3 결과를 main에 일괄 합침 — 오늘 할 일(하루 작전판)·내가 보는 숫자(계기판)·지시 관리(품질 점검·병목·회고)·신사업(관문·가설·린 캔버스)·성과·레벨(업적·가치 분석·월간 리포트)·경영학습(간격 반복·사례·주간 리포트)·AI 사용(예산·효과 배수·추천)·경영 현황(위험표·결재 기준·주간 회의)·아이디어뱅크/보상 기준(평가·채택·보정 시뮬레이션). 메뉴 연결 약속 S.inbox·S.activity 도입. 공용 정리: 날짜를 현지(한국) 기준으로(data.js D·app.js localDay), 알림 쌓기(toast-stack).
+- V15 (2026-11-09): 지시 관리 작업 갈래 합침 — 새 「지시 관리」(orders: 사람·부서별 정보·목표 후보·목표 관리·지시 4칸, 아사나 사업·묶음 고르기), 기존 메뉴는 「이전 지시 관리」로 이름만 바꿈. 회장님 결정(1번)으로 **화면을 둘로 나눔**:
+  - 공개 현황판: https://claude.ai/artifact/2FGAdCYh5vyp2kJ5KQd5Kj — `dist/my_board.html`을 그대로 게시, 실데이터 기능(capabilities) 선언 없음 → 예시 데이터로만 동작.
+  - 회장 전용 현황판(공유 금지): https://claude.ai/artifact/UQGn9JJSppy3LmFEMB7pMQ — 같은 빌드에서 `<title>`만 「회장 전용 현황판」으로 바꾼 사본을 게시. 선언: `db`(rules `[{path:"", read:"owner", write:"owner"}]`), `user`, `sample`, `mcp` 서버 3개 — Slack[slack_send_message, slack_search_public, slack_search_users], Asana[add_comment, create_tasks, delete_task, get_project, get_projects, get_task, get_task_stories, search_tasks, update_tasks], Claude Code Remote[list_sessions, list_events]. 사내 AI(`host:isens-ai`)는 회장님 컴퓨터에만 있는 연결이라 미선언(클로드 문장 생성으로 대체됨). 다시 올릴 때 같은 주소에 `capabilities`를 빼고 올리면 선언이 유지된다.
+  - 현황판을 고칠 때마다 **두 화면을 함께** 다시 올린다. 연결 호출은 이 세션에서 실제로 눌러 보지 못했으므로 회장님 첫 사용 때 읽기 기능부터 확인.
