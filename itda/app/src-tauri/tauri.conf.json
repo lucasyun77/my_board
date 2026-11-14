@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Itda",
+  "version": "0.1.0",
+  "identifier": "camp.isens.itda",
+  "build": { "frontendDist": "../ui" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      { "title": "잇다 — 세션을 잇는 팀", "width": 1440, "height": 900, "minWidth": 1000, "minHeight": 640 }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "shortDescription": "서로 다른 컴퓨터의 AI 세션을 잇는 팀 협업 도구"
+  }
+}

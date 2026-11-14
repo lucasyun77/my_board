@@ -1,0 +1,25 @@
+# 잇다 윈도우 설치 파일 만들기 (윈도우 서버에서 정식 설치 파일 생성)
+name: itda-windows
+on:
+  workflow_dispatch: {}
+  push:
+    paths: ["itda/**"]
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: itda/app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 중계 서버 시험
+        run: cargo test -p itda-relay
+      - name: 타우리 도구 설치
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: 설치 파일 만들기
+        run: cargo tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: itda-windows-installer
+          path: itda/target/release/bundle/nsis/*.exe

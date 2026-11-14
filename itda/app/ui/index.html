@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>잇다</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- ① 왼쪽: 프로젝트 → 컴퓨터·사람 → 세션 -->
+  <aside id="side">
+    <div class="brand">
+      <svg viewBox="0 0 40 40" width="28" height="28" aria-hidden="true"><path d="M8 26 C14 10, 26 10, 32 26" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/><circle cx="8" cy="26" r="5" fill="var(--navy)"/><circle cx="20" cy="14" r="5" fill="var(--accent)"/><circle cx="32" cy="26" r="5" fill="var(--navy)"/></svg>
+      <b>잇다</b><span class="muted small">세션을 잇는 팀</span>
+    </div>
+    <button class="btn wide" id="btnNewProject">＋ 새 프로젝트</button>
+    <div id="tree"></div>
+    <div class="me" id="meBox"></div>
+  </aside>
+
+  <!-- ② 가운데: 세션 창 -->
+  <main id="center">
+    <header id="sessHead"></header>
+    <div id="log" class="log"></div>
+    <div id="coachStrip"></div>
+    <form id="inputBar" autocomplete="off">
+      <div class="hint" id="inputHint"></div>
+      <div class="row">
+        <textarea id="input" rows="2" placeholder="메시지 또는 명령"></textarea>
+        <button class="btn primary" type="submit">보내기</button>
+      </div>
+    </form>
+  </main>
+
+  <div id="splitter" title="끌어서 넓이 조절"></div>
+
+  <!-- ③ 오른쪽: 아티팩트 공간 -->
+  <section id="right">
+    <nav id="tabs">
+      <button data-tab="map" class="on">연결 지도</button>
+      <button data-tab="board">협업 대시보드</button>
+      <button data-tab="chat">메신저 <i id="unread"></i></button>
+      <button data-tab="wiki">지식위키</button>
+      <button data-tab="agent">AI 본부장</button>
+    </nav>
+    <div id="pane"></div>
+  </section>
+</div>
+
+<div id="modal" class="modal hidden"><div class="box" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<script src="demo-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

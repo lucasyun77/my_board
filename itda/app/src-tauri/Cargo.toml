@@ -1,0 +1,20 @@
+[package]
+name = "itda-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "잇다 윈도우 데스크톱 앱"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "net"] }
+itda-relay = { path = "../../relay" }
+
+[features]
+# 화면 파일을 실행 파일 안에 넣는다(배포용)
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
