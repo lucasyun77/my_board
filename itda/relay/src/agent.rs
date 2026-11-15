@@ -91,11 +91,11 @@ pub fn review(st: &mut State, project_id: &str, now: u64) -> String {
     let stalled: Vec<&Session> = sessions.iter().filter(|s| s.status == "stalled").collect();
     let pending = st.requests.iter().filter(|r| r.project_id == project_id && r.status == "대기").count();
 
-    let mut out = format!("점검 보고 · 「{}」\n· 계획 {}건 중 {}건 완료\n· 세션 {}개 중 {}개 가동, {}개 멈춤\n· 합치기 대기 {}건\n", p.name, items.len(), done, sessions.len(), working, stalled.len(), pending);
+    let mut out = format!("📋 「{}」 점검 보고\n· 계획 {}건 중 {}건 완료\n· 세션 {}개 중 {}개 가동, {}개 멈춤\n· 합치기 대기 {}건\n", p.name, items.len(), done, sessions.len(), working, stalled.len(), pending);
     if p.goal.trim().is_empty() {
-        out.push_str("· 목표가 비어 있습니다. 이 채널에 「목표: …」라고 적어 주시면 위키와 대시보드에 반영합니다.\n");
+        out.push_str("⚠ 목표가 비어 있습니다. 이 채널에 「목표: …」라고 적어 주시면 위키와 대시보드에 반영합니다.\n");
     }
-    out.push_str("\n오늘 후속 계획 (노는 세션 없이)\n");
+    out.push_str("\n🗓 오늘 후속 계획 (노는 세션 없이)\n");
     let mut n = 0;
     for mid in p.members.iter() {
         let name = st.member_name(mid);
