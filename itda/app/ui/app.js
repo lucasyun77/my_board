@@ -16,7 +16,6 @@ const now = () => Date.now();
 const rid = () => Math.random().toString(36).slice(2, 9);
 const AGENT = 'agent';
 const STATUS = { working: '일하는 중', waiting: '사람 대기', stalled: '멈춤', done: '끝남' };
-const COLORS = ['#FF7A45', '#2BB673', '#5B7CFA', '#C455D9', '#E8A33D', '#1FA2B8'];
 const HELP = ['끔', '가볍게', '보통', '적극'];
 const HELP_DESC = [
   '본부장이 아무 말도 하지 않습니다.',
@@ -58,8 +57,45 @@ function fixTimes(st) {
 const st = () => S.state;
 const member = id => id === AGENT ? { id: AGENT, name: 'AI 본부장', computer: '잇다 중계 서버' } : (st().members.find(m => m.id === id) || { id, name: id, computer: '' });
 const nameOf = id => member(id).name;
-const colorOf = id => id === AGENT ? '#1F2A44' : COLORS[Math.abs([...id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7)) % COLORS.length];
-const avatar = (id, size = 28) => `<span class="avatar" style="background:${colorOf(id)};width:${size}px;height:${size}px">${id === AGENT ? '본' : esc(nameOf(id).slice(-2, -1) || nameOf(id)[0] || '?')}</span>`;
+// 선 아이콘 한 벌(루시드 모양, 굵기 1.5)
+const ICONS = {
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  merge: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  compass: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.8 5.41a2 2 0 0 1-1.27 1.27L7.76 16.24l1.8-5.41a2 2 0 0 1 1.27-1.27z"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  code: '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
+  mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  package: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  check: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  sliders: '<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  terminal: '<path d="m4 17 6-6-6-6M12 19h8"/>',
+  map: '<circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M7 12c5 0 5-7 10-7M7 12c5 0 5 7 10 7"/>',
+  layout: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  pause: '<circle cx="12" cy="12" r="10"/><path d="M10 15V9M14 15V9"/>',
+};
+const ico = (n, size = 16) => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const initial = id => { const n = nameOf(id); return n.length >= 2 ? n.slice(-2, -1) === ' ' ? n[0] : n.slice(1, 2) : (n[0] || '?'); };
+const avatar = (id, size = 28) => id === AGENT
+  ? `<span class="avatar agent" style="width:${size}px;height:${size}px">${ico('compass', Math.round(size * .55))}</span>`
+  : `<span class="avatar" style="width:${size}px;height:${size}px">${esc(initial(id))}</span>`;
 const project = () => st().projects.find(p => p.id === ui.projectId);
 const session = () => st().sessions.find(s => s.id === ui.sessionId);
 const sessionsOf = pid => st().sessions.filter(s => s.projectId === pid);
@@ -69,7 +105,8 @@ const artifactsOf = pid => st().artifacts.filter(a => a.projectId === pid);
 const latest = a => a.versions[a.versions.length - 1];
 const ago = ts => { const m = Math.round((now() - ts) / 60000); if (m < 1) return '방금'; if (m < 60) return m + '분 전'; const h = Math.round(m / 60); if (h < 24) return h + '시간 전'; return Math.round(h / 24) + '일 전'; };
 const hhmm = ts => { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
-const kindIcon = k => ({ '디자인': '🎨', '코드': '🧩', '문서': '📄', '이미지': '🖼', '이메일': '✉️' }[k] || '📦');
+const kindIco = k => ({ '디자인': 'pen', '코드': 'code', '문서': 'file', '이미지': 'image', '이메일': 'mail' }[k] || 'package');
+const kindIcon = (k, size = 16) => ico(kindIco(k), size);
 
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2200); }
 
@@ -162,9 +199,9 @@ const Demo = {
     const items = st().plan.filter(x => x.projectId === pid);
     const ss = sessionsOf(pid);
     const pending = st().requests.filter(r => r.projectId === pid && r.status === '대기').length;
-    let out = `📋 「${p.name}」 점검 보고\n· 계획 ${items.length}건 중 ${items.filter(x => x.done).length}건 완료\n· 세션 ${ss.length}개 중 ${ss.filter(s => s.status === 'working').length}개 가동, ${ss.filter(s => s.status === 'stalled').length}개 멈춤\n· 합치기 대기 ${pending}건\n`;
-    if (!p.goal) out += '⚠ 목표가 비어 있습니다. 이 채널에 「목표: …」라고 적어 주세요.\n';
-    out += '\n🗓 오늘 후속 계획 (노는 세션 없이)\n';
+    let out = `점검 보고 · 「${p.name}」\n· 계획 ${items.length}건 중 ${items.filter(x => x.done).length}건 완료\n· 세션 ${ss.length}개 중 ${ss.filter(s => s.status === 'working').length}개 가동, ${ss.filter(s => s.status === 'stalled').length}개 멈춤\n· 합치기 대기 ${pending}건\n`;
+    if (!p.goal) out += '· 목표가 비어 있습니다. 이 채널에 「목표: …」라고 적어 주세요.\n';
+    out += '\n오늘 후속 계획 (노는 세션 없이)\n';
     let n = 0;
     p.members.forEach(mid => {
       const todo = items.filter(x => !x.done && x.ownerId === mid);
@@ -276,23 +313,23 @@ function renderTree() {
     const people = p.members.map(mid => {
       const m = member(mid); const ss = sessionsOf(p.id).filter(s => s.ownerId === mid && !s.isTeamMain);
       if (!ss.length && mid !== S.me) return '';
-      return `<div class="pc"><div class="who"><span title="${m.online ? '접속 중' : '접속 안 함'}">🖥</span><span class="dot ${m.online ? 'on' : 'off'}"></span>${esc(m.name)}<span class="comp">${esc(m.computer)}</span></div>
+      return `<div class="pc"><div class="who" title="${m.online ? '접속 중' : '접속 안 함'}">${ico('monitor')}<b>${esc(m.name)}</b><span class="comp">${esc(m.computer)}</span><span class="dot ${m.online ? 'on' : 'off'}" style="margin-left:auto"></span></div>
         ${ss.map(s => sessNode(s)).join('')}
-        ${mid === S.me ? `<div class="addsess" data-add="${p.id}">＋ 내 세션 열기</div>` : ''}</div>`;
+        ${mid === S.me ? `<div class="addsess" data-add="${p.id}" role="button" tabindex="0">${ico('plus', 14)}내 세션 열기</div>` : ''}</div>`;
     }).join('');
     const tm = teamMain(p.id);
-    return `<div class="proj ${on ? 'on' : ''}"><div class="pt" data-proj="${p.id}"><span>${open ? '▾' : '▸'}</span><span style="flex:1">${esc(p.name)}</span><span class="kind ${p.kind === '사업' ? 'biz' : ''}">${esc(p.kind)}</span></div>
-      ${open ? `${tm ? sessNode(tm, '🎼 ') : ''}${people}` : ''}</div>`;
+    return `<div class="proj ${on ? 'on' : ''}"><div class="pt" data-proj="${p.id}" role="button" tabindex="0">${ico(open ? 'down' : 'right', 14)}<span class="name">${esc(p.name)}</span><span class="kind">${esc(p.kind)}</span></div>
+      ${open ? `${tm ? sessNode(tm, true) : ''}${people}` : ''}</div>`;
   }).join('');
-  $('#tree').innerHTML = html || '<p class="muted pad">프로젝트가 없습니다. 위의 버튼으로 만드세요.</p>';
+  $('#tree').innerHTML = html || '<p class="muted pad">프로젝트가 없습니다. 위 단추로 만드세요</p>';
 }
-function sessNode(s, pre = '') {
-  return `<div class="node ${s.id === ui.sessionId ? 'on' : ''}" data-sess="${s.id}" title="${esc(STATUS[s.status] || s.status)}"><span class="dot ${s.status}"></span><span class="t">${pre}${esc(s.title)}</span>${s.isMain && !s.isTeamMain ? '<span class="muted small">메인</span>' : ''}</div>`;
+function sessNode(s, team = false) {
+  return `<div class="node ${team ? 'team' : ''} ${s.id === ui.sessionId ? 'on' : ''}" data-sess="${s.id}" role="button" tabindex="0" title="${esc(STATUS[s.status] || s.status)}">${team ? ico('merge') : `<span class="dot ${s.status}"></span>`}<span class="t">${esc(s.title)}</span>${team ? `<span class="dot ${s.status}"></span>` : s.isMain ? '<span class="tag-main">메인</span>' : ''}</div>`;
 }
 
 function renderMe() {
   const m = st() ? member(S.me) : { name: cfg.name };
-  $('#meBox').innerHTML = `${st() ? avatar(S.me) : ''}<div style="flex:1;min-width:0"><b>${esc(m.name || '이름 없음')}</b><div class="muted">${esc(S.connText || '')}${S.live && S.claude ? ' · 클로드 본부장' : ''}</div></div><button class="btn sm" id="btnSettings">설정</button>`;
+  $('#meBox').innerHTML = `${st() ? avatar(S.me) : ''}<div style="flex:1;min-width:0"><b>${esc(m.name || '이름 없음')}</b><div class="muted">${esc(S.connText || '')}${S.live && S.claude ? ' · 클로드 본부장' : ''}</div></div><button class="btn sm" id="btnSettings" aria-label="설정">${ico('sliders')}설정</button>`;
 }
 
 function renderCenter(light) {
@@ -300,27 +337,27 @@ function renderCenter(light) {
   if (!s) { head.innerHTML = '<h2>세션을 고르세요</h2>'; log.innerHTML = ''; $('#coachStrip').innerHTML = ''; return; }
   const mine = s.ownerId === S.me; const owner = member(s.ownerId);
   if (!light) {
-    head.innerHTML = `${avatar(s.ownerId, 30)}<div><h2>${s.isTeamMain ? '🎼 ' : ''}${esc(s.title)}</h2><div class="muted small">🖥 ${esc(owner.name)} · ${esc(owner.computer)} · <span class="dot ${s.status}" style="display:inline-block"></span> ${STATUS[s.status] || s.status}</div></div>
+    head.innerHTML = `<div style="min-width:0"><h2>${s.isTeamMain ? ico('merge') : ''}${esc(s.title)}</h2><div class="sub">${ico('monitor', 14)}${esc(owner.name)} · ${esc(owner.computer)}<span class="dot ${s.status}"></span>${STATUS[s.status] || s.status}</div></div>
       <div class="grow"></div>
       <div class="seg" role="group" aria-label="보기 방식"><button data-mode="term" class="${ui.mode === 'term' ? 'on' : ''}">터미널</button><button data-mode="chat" class="${ui.mode === 'chat' ? 'on' : ''}">쉬운 채팅</button></div>
-      ${mine ? `<button class="btn sm" id="btnPublish">산출물 올리기</button>${!s.isTeamMain ? '<button class="btn sm" id="btnSendTeam">팀 메인에 합치기 요청</button>' : ''}
-      <select class="btn sm" id="selStatus">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === s.status ? 'selected' : ''}>${v}</option>`).join('')}</select>` : `<button class="btn sm" id="btnAsk">이 세션에 요청 보내기</button>`}`;
+      ${mine ? `<button class="btn sm" id="btnPublish">${ico('package', 14)}산출물 올리기</button>${!s.isTeamMain ? `<button class="btn sm" id="btnSendTeam">${ico('send', 14)}팀 메인에 합치기 요청</button>` : ''}
+      <select class="btn sm" id="selStatus" aria-label="세션 상태">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === s.status ? 'selected' : ''}>${v}</option>`).join('')}</select>` : `<button class="btn sm" id="btnAsk">${ico('send', 14)}이 세션에 요청 보내기</button>`}`;
   }
   const lines = (st().logs[s.id] || []);
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.className = 'log' + (ui.mode === 'term' ? ' term' : '');
   const pend = s.isTeamMain ? st().requests.filter(r => r.toSession === s.id && r.status === '대기') : [];
-  const reqBox = pend.length ? `<div class="card-req pending"><b>📥 합치기 대기 ${pend.length}건</b> — 팀 메인이 순서대로 정리합니다.\n${pend.map(r => { const f = st().sessions.find(x => x.id === r.fromSession) || {}; return `· ${esc(nameOf(f.ownerId))} «${esc(f.title)}»: ${esc(r.note)} <button class="btn sm" data-resolve="${r.id}" data-st="합침">합침</button> <button class="btn sm" data-resolve="${r.id}" data-st="반려">반려</button>`; }).join('\n')}</div>` : '';
+  const queue = pend.length ? `<div class="queue pending"><div class="h">${ico('inbox')}합치기 대기 <span class="mono">${pend.length}</span><span class="muted small" style="font-weight:400">· 팀 메인이 순서대로 정리합니다</span></div>
+    ${pend.map(r => { const f = st().sessions.find(x => x.id === r.fromSession) || {}; return `<div class="qi"><div><div class="from">${esc(nameOf(f.ownerId))} · ${esc(f.title)}</div>${esc(r.note)}</div><div class="acts"><button class="btn sm" data-resolve="${r.id}" data-st="합침">합침</button><button class="btn sm" data-resolve="${r.id}" data-st="반려">반려</button></div></div>`; }).join('')}</div>` : '';
+  const note = (kind, l) => `<div class="note ${kind}"><div class="h">${ico(kind === 'req' ? 'send' : 'compass', 14)}${kind === 'req' ? '요청' : 'AI 본부장'} · <span class="mono">${hhmm(l.ts)}</span></div>${esc(l.text.replace(/^\[AI 본부장[^\]]*\]\s*/, ''))}</div>`;
   if (ui.mode === 'term') {
-    log.innerHTML = reqBox + lines.map(l => `<div class="l ${l.kind}"><span class="ts">${hhmm(l.ts)}</span>${l.from && l.from !== s.ownerId ? `[${esc(nameOf(l.from))}] ` : ''}${esc(l.text)}</div>`).join('');
+    log.innerHTML = queue + lines.map(l => (l.kind === 'req' || l.kind === 'coach') ? note(l.kind, l) : `<div class="l ${l.kind}"><span class="ts">${hhmm(l.ts)}</span>${l.from && l.from !== s.ownerId && l.from !== AGENT ? `[${esc(nameOf(l.from))}] ` : ''}${esc(l.text)}</div>`).join('');
   } else {
-    log.innerHTML = reqBox + lines.map(l => {
-      if (l.kind === 'sys') return `<div class="sysline">${esc(l.text)} · ${hhmm(l.ts)}</div>`;
-      if (l.kind === 'req') return `<div class="card-req">📨 ${esc(l.text)}</div>`;
-      if (l.kind === 'coach') return `<div class="card-coach">🧭 ${esc(l.text)}</div>`;
+    log.innerHTML = queue + lines.map(l => {
+      if (l.kind === 'sys') return `<div class="sysline">${esc(l.text)} <span class="mono">${hhmm(l.ts)}</span></div>`;
+      if (l.kind === 'req' || l.kind === 'coach') return note(l.kind, l);
       const isIn = l.kind === 'in';
-      const who = isIn ? nameOf(l.from) : 'AI 세션';
-      return `<div class="bub ${isIn ? 'in' : 'out'}">${isIn ? avatar(l.from, 26) : '<span class="avatar" style="background:#1F2A44;width:26px;height:26px">AI</span>'}<div><div class="who">${esc(who)} · ${hhmm(l.ts)}</div><div class="body" ${l.kind === 'err' ? 'style="color:var(--red)"' : ''}>${esc(l.text)}</div></div></div>`;
+      return `<div class="msgrow ${isIn ? 'in' : 'out'}">${isIn ? avatar(l.from, 28) : `<span class="avatar">${ico('terminal', 14)}</span>`}<div style="min-width:0"><div class="who"><b>${isIn ? esc(nameOf(l.from)) : 'AI'}</b><span class="mono">${hhmm(l.ts)}</span></div><div class="body" ${l.kind === 'err' ? 'style="color:var(--bad)"' : ''}>${esc(l.text)}</div></div></div>`;
     }).join('');
   }
   if (atBottom || !light) log.scrollTop = log.scrollHeight;
@@ -328,14 +365,13 @@ function renderCenter(light) {
   // 본부장 코칭 띠
   const me = member(S.me); const lvl = me.helpLevel ?? 2;
   const c = lvl === 0 ? null : [...st().coach].reverse().find(c => c.sessionId === s.id || (!c.sessionId && c.projectId === s.projectId && lvl >= 2)) || [...st().coach].reverse().find(c => c.projectId === s.projectId && (lvl >= 2 || c.level !== 'info'));
-  $('#coachStrip').innerHTML = `<span>🧭</span><span class="txt">${c ? `<span class="tag ${c.level}">${{ warn: '경고', check: '검수', info: '코칭' }[c.level] || ''}</span>${esc(c.text)}` : '<span class="muted">AI 본부장 코칭이 꺼져 있거나 지금은 할 말이 없습니다.</span>'}</span>
-    <label class="muted small">도움 정도 <select id="selHelp" class="btn sm">${HELP.map((h, i) => `<option value="${i}" ${i === lvl ? 'selected' : ''}>${h}</option>`).join('')}</select></label>`;
+  $('#coachStrip').innerHTML = `${ico('compass')}<span class="txt">${c ? `<span class="kindlabel ${c.level}">${{ warn: '경고', check: '검수', info: '코칭' }[c.level] || ''}</span>${esc(c.text.replace(/^검수:\s*/, ''))}` : '<span class="muted">지금은 본부장이 드릴 말이 없습니다</span>'}</span>
+    <label class="lvl">도움 정도 <select id="selHelp" class="btn sm">${HELP.map((h, i) => `<option value="${i}" ${i === lvl ? 'selected' : ''}>${h}</option>`).join('')}</select></label>`;
 
   $('#inputHint').innerHTML = mine
-    ? (ui.mode === 'term' ? `터미널 방식: ${TAURI ? '이 컴퓨터에서 명령이 실행됩니다.' : '<b>시연</b>: 명령은 흉내만 냅니다(데스크톱 앱에서 실제 실행).'} · <code>/보내기 내용</code> 팀 메인에 합치기 요청 · <code>/산출물 이름 | 내용</code> · <code>/도움</code>`
-      : `쉬운 채팅: AI에게 평소 말로 부탁하세요. ${TAURI ? `(<code>${esc(cfg.aiCmd)}</code> 로 실행)` : '<b>시연</b>: 답은 흉내만 냅니다.'} · <code>/보내기</code> · <code>/산출물</code> · <code>/도움</code>`)
-    : `${esc(owner.name)} 님의 세션은 볼 수만 있습니다. 여기에 쓰면 <b>이 세션으로 요청</b>이 갑니다(내 메인 세션에서 보냄).`;
-  $('#input').placeholder = mine ? (ui.mode === 'term' ? '명령 입력 (예: dir, cargo test)' : '무엇을 도와드릴까요?') : `${owner.name} 님 세션에 보낼 요청`;
+    ? `${ui.mode === 'term' ? (TAURI ? '이 컴퓨터에서 명령이 실행됩니다' : '시연: 명령은 흉내만 냅니다. 실제 실행은 데스크톱 앱에서') : (TAURI ? `<code>${esc(cfg.aiCmd)}</code> 로 실행합니다` : '시연: AI의 답은 흉내만 냅니다')} · <code>/보내기</code> 팀 메인에 합치기 요청 · <code>/산출물</code> · <code>/도움</code>`
+    : `${esc(owner.name)} 님의 세션은 볼 수만 있습니다. 여기에 쓰면 내 메인 세션에서 이 세션으로 요청이 갑니다`;
+  $('#input').placeholder = mine ? (ui.mode === 'term' ? '명령 입력, 예: cargo test' : '무엇을 맡길까요') : `${owner.name} 님 세션에 보낼 요청`;
 }
 
 function renderUnread() {
@@ -352,14 +388,16 @@ function renderRight(light) {
   ({ map: renderMap, board: renderBoard, chat: renderChat, wiki: renderWiki, agent: renderAgent })[ui.tab]();
 }
 
-// ── 연결 지도(마인드맵) ──
+// ── 연결 지도: 사람 → 세션 → 산출물을 실로 꿰맨 지도 ──
+const svgIco = (n, x, y, size = 14, color = 'var(--ink-3)') => `<g transform="translate(${x},${y}) scale(${size / 24})" fill="none" stroke="${color}" stroke-width="${(1.5 * 24 / size).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</g>`;
 function renderMap() {
   const p = project(); if (!p) { $('#pane').innerHTML = ''; return; }
   const arts = artifactsOf(p.id);
   const people = p.members.filter(mid => ui.mapFilter === 'all' || mid === S.me);
-  const W = { p: 140, m: 168, s: 178, a: 196 }, X = { p: 8, m: 170, s: 362, a: 566 }, RH = 46;
+  const W = { p: 136, m: 152, s: 164, a: 180 }, X = { p: 0, m: 164, s: 340, a: 528 }, RH = 48, NH = 36;
   let rows = 0; const nodes = []; const links = [];
   const totalV = arts.reduce((a, x) => a + x.versions.length, 0);
+  const sel = ui.sessionId;
   people.forEach(mid => {
     const ss = sessionsOf(p.id).filter(s => s.ownerId === mid);
     if (!ss.length) return;
@@ -367,45 +405,55 @@ function renderMap() {
     ss.forEach(s => {
       const as = arts.filter(a => a.sessionId === s.id);
       const sStart = rows;
-      as.forEach(a => { nodes.push({ t: 'a', a, y: rows * RH }); rows++; });
+      as.forEach(a => { nodes.push({ t: 'a', a, y: rows * RH, hot: s.id === sel }); rows++; });
       if (!as.length) rows++;
       const sy = ((sStart + rows - 1) / 2) * RH;
       nodes.push({ t: 's', s, y: sy });
-      as.forEach((a, i) => links.push([X.s + W.s, sy, X.a, (sStart + i) * RH]));
+      as.forEach((a, i) => links.push({ x1: X.s + W.s, y1: sy, x2: X.a, y2: (sStart + i) * RH, hot: s.id === sel }));
     });
     const my = ((mStart + rows - 1) / 2) * RH;
-    nodes.push({ t: 'm', mid, y: my, ss });
-    nodes.filter(n => n.t === 's' && n.s.ownerId === mid).forEach(n => links.push([X.m + W.m, my, X.s, n.y]));
-    rows += 0.4;
+    nodes.push({ t: 'm', mid, y: my });
+    nodes.filter(n => n.t === 's' && n.s.ownerId === mid).forEach(n => links.push({ x1: X.m + W.m, y1: my, x2: X.s, y2: n.y, hot: n.s.id === sel }));
+    rows += 0.5;
   });
-  const py = ((rows - 1.4) / 2) * RH;
-  nodes.filter(n => n.t === 'm').forEach(n => links.push([X.p + W.p, py, X.m, n.y]));
-  const H = Math.max(rows * RH + 20, 200);
+  const py = Math.max(0, ((rows - 1.5) / 2) * RH);
+  const selOwner = (st().sessions.find(s => s.id === sel) || {}).ownerId;
+  nodes.filter(n => n.t === 'm').forEach(n => links.push({ x1: X.p + W.p, y1: py, x2: X.m, y2: n.y, hot: n.mid === selOwner }));
+  const H = Math.max(rows * RH + 16, 160);
   const cut = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
   const maxWork = Math.max(1, ...nodes.filter(n => n.t === 'm').map(n => work(n.mid, p.id).score));
-  let svg = `<svg class="map" viewBox="0 0 770 ${H}" role="img" aria-label="${esc(p.name)} 연결 지도"><g transform="translate(0,14)">`;
-  links.forEach(([x1, y1, x2, y2]) => { const mx = (x1 + x2) / 2; svg += `<path class="lnk" d="M${x1} ${y1 + 17} C${mx} ${y1 + 17}, ${mx} ${y2 + 17}, ${x2} ${y2 + 17}"/>`; });
-  svg += `<g class="n"><rect x="${X.p}" y="${py - 6}" width="${W.p}" height="46" rx="12" fill="var(--navy)"/><text x="${X.p + 12}" y="${py + 13}" font-size="13" font-weight="700" fill="var(--paper)" style="fill:var(--paper)">${esc(cut(p.name, 10))}</text><text x="${X.p + 12}" y="${py + 31}" font-size="10.5" style="fill:#FFB38F">${p.members.length}명 · 산출물 ${arts.length} · 버전 ${totalV}</text></g>`;
+  const VW = X.a + W.a + 8;
+  let svg = `<svg class="map" viewBox="-8 -8 ${VW + 8} ${H + 8}" role="img" aria-label="${esc(p.name)} 연결 지도"><g>`;
+  // 실: 고른 세션으로 가는 길만 주황 바늘땀, 나머지는 실 색
+  links.sort((a, b) => a.hot - b.hot).forEach(l => { const mx = (l.x1 + l.x2) / 2; const y1 = l.y1 + NH / 2, y2 = l.y2 + NH / 2;
+    svg += `<path d="M${l.x1} ${y1} C${mx} ${y1}, ${mx} ${y2}, ${l.x2} ${y2}" fill="none" stroke="${l.hot ? 'var(--accent)' : 'var(--thread)'}" stroke-width="${l.hot ? 2 : 1.5}" stroke-dasharray="6 4" stroke-linecap="round"/>`; });
+  // 실패(프로젝트)
+  svg += `<g><rect x="${X.p}" y="${py - 4}" width="${W.p}" height="${NH + 8}" rx="12" fill="var(--btn)"/><text x="${X.p + 12}" y="${py + 16}" font-size="13" font-weight="500" style="fill:var(--btn-ink)">${esc(cut(p.name, 8))}</text><text x="${X.p + 12}" y="${py + 33}" font-size="12" class="sub" style="fill:var(--btn-ink);opacity:.7">${p.members.length}명 · 버전 ${totalV}</text></g>`;
   nodes.forEach(n => {
     if (n.t === 'm') {
       const m = member(n.mid); const w = work(n.mid, p.id);
-      svg += `<g class="n"><rect x="${X.m}" y="${n.y - 4}" width="${W.m}" height="42" rx="10" fill="var(--paper)"/><circle cx="${X.m + 16}" cy="${n.y + 11}" r="9" fill="${colorOf(n.mid)}"/><text x="${X.m + 31}" y="${n.y + 15}" font-size="12.5" font-weight="700">🖥 ${esc(cut(m.name, 6))}</text>
-        <text x="${X.m + 10}" y="${n.y + 31}" font-size="10" style="fill:var(--muted)">세션 ${w.sessions} · 버전 ${w.versions} · 줄 ${w.lines}</text>
-        <rect x="${X.m + 118}" y="${n.y + 24}" width="42" height="6" rx="3" fill="var(--bg)"/><rect x="${X.m + 118}" y="${n.y + 24}" width="${Math.max(3, 42 * w.score / maxWork)}" height="6" rx="3" fill="var(--accent)"/></g>`;
+      const bw = Math.max(4, 36 * w.score / maxWork);
+      svg += `<g><rect x="${X.m}" y="${n.y}" width="${W.m}" height="${NH}" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>${svgIco('monitor', X.m + 10, n.y + 5, 14)}<text x="${X.m + 32}" y="${n.y + 16}" font-size="13" font-weight="500">${esc(cut(m.name, 5))}</text>
+        <text x="${X.m + 32}" y="${n.y + 30}" font-size="12" class="sub">세션 ${w.sessions} · v${w.versions}</text>
+        <rect x="${X.m + W.m - 48}" y="${n.y + 11}" width="36" height="4" rx="2" fill="var(--raised)"/><rect x="${X.m + W.m - 48}" y="${n.y + 11}" width="${bw}" height="4" rx="2" fill="var(--ink-3)"/></g>`;
     } else if (n.t === 's') {
-      const c = { working: '#2BB673', waiting: '#E8A33D', stalled: '#E5484D', done: '#9aa3b5' }[n.s.status] || '#999';
-      svg += `<g class="n" data-sess="${n.s.id}" style="cursor:pointer"><rect x="${X.s}" y="${n.y}" width="${W.s}" height="34" rx="9" fill="var(--paper)"/><circle cx="${X.s + 13}" cy="${n.y + 17}" r="5" fill="${c}"/><text x="${X.s + 24}" y="${n.y + 21}" font-size="12">${n.s.isTeamMain ? '🎼 ' : ''}${esc(cut(n.s.title, 11))}</text></g>`;
+      const c = { working: 'var(--ok)', waiting: 'var(--warn)', stalled: 'var(--bad)', done: 'var(--thread)' }[n.s.status] || 'var(--ink-3)';
+      const on = n.s.id === sel;
+      svg += `<g class="ses" data-sess="${n.s.id}"><rect class="row-bg" x="${X.s}" y="${n.y + 2}" width="${W.s}" height="${NH - 4}" rx="8" fill="${on ? 'var(--raised)' : 'var(--card)'}" stroke="${on ? 'var(--ink-3)' : 'var(--line-strong)'}"/>${n.s.isTeamMain ? svgIco('merge', X.s + 10, n.y + 13, 14) : `<circle cx="${X.s + 16}" cy="${n.y + NH / 2}" r="4" fill="${c}"/>`}<text x="${X.s + 28}" y="${n.y + 23}" font-size="13">${esc(cut(n.s.title, 9))}</text></g>`;
     } else {
-      const a = n.a; const v = latest(a).v;
-      svg += `<g class="n art" data-art="${a.id}"><rect x="${X.a}" y="${n.y}" width="${W.a}" height="34" rx="9" fill="var(--bg)"/><text x="${X.a + 10}" y="${n.y + 21}" font-size="12">${kindIcon(a.kind)} ${esc(cut(a.name, 10))}</text>
-        <rect x="${X.a + W.a - 40}" y="${n.y + 8}" width="32" height="18" rx="9" fill="${v >= 5 ? '#FF7A45' : v >= 3 ? '#FFB38F' : '#E3DACA'}"/><text x="${X.a + W.a - 24}" y="${n.y + 21}" font-size="11" font-weight="700" text-anchor="middle" style="fill:${v >= 3 ? '#fff' : '#1F2A44'}">v${v}</text></g>`;
+      const a = n.a; const v = latest(a).v; const depth = Math.min(v, 4) - 1;
+      let sheets = '';
+      for (let i = depth; i >= 1; i--) sheets += `<rect x="${X.a + i * 3}" y="${n.y + 2 - i * 3}" width="${W.a - 12}" height="${NH - 4}" rx="8" fill="var(--card)" stroke="var(--line-strong)"/>`;
+      svg += `<g class="art" data-art="${a.id}">${sheets}<rect class="sheet-top" x="${X.a}" y="${n.y + 2}" width="${W.a - 12}" height="${NH - 4}" rx="8" fill="var(--card)" stroke="${n.hot ? 'var(--accent)' : 'var(--line-strong)'}"/>${svgIco(kindIco(a.kind), X.a + 10, n.y + 11, 14)}<text x="${X.a + 30}" y="${n.y + 23}" font-size="13">${esc(cut(a.name, 8))}</text><text x="${X.a + W.a - 22}" y="${n.y + 23}" font-size="12" text-anchor="end" class="sub" style="fill:${n.hot ? 'var(--accent-ink)' : 'var(--ink-3)'}">v${v}</text></g>`;
     }
   });
   svg += '</g></svg>';
-  $('#pane').innerHTML = `<div class="map-tools"><b>${esc(p.name)}</b><span class="muted small">사람 → 세션 → 산출물. 산출물을 누르면 열립니다.</span><div class="grow"></div>
-    <span class="chip ${ui.mapFilter === 'all' ? 'on' : ''}" data-mapf="all">모두</span><span class="chip ${ui.mapFilter === 'me' ? 'on' : ''}" data-mapf="me">나만</span></div>
-    <div class="legend pad" style="padding-bottom:0"><span><i class="dot working"></i>일하는 중</span><span><i class="dot waiting"></i>사람 대기</span><span><i class="dot stalled"></i>멈춤</span><span>v숫자 = 버전(진할수록 많이 고침)</span><span>주황 막대 = 업무량</span></div>
-    <div class="pad">${svg}</div>`;
+  const ses = sessionsOf(p.id);
+  $('#pane').innerHTML = `<div class="map-tools"><b>${esc(p.name)}</b><div class="grow"></div>
+    <div class="seg" role="group" aria-label="보이는 사람"><button data-mapf="all" class="${ui.mapFilter === 'all' ? 'on' : ''}">모두</button><button data-mapf="me" class="${ui.mapFilter === 'me' ? 'on' : ''}">나만</button></div></div>
+    <div class="map-sum"><span><b>${p.members.length}</b>명</span><span><b>${ses.length}</b>세션</span><span><b>${ses.filter(s => s.status === 'working').length}</b>가동</span><span><b>${arts.length}</b>산출물</span><span><b>${totalV}</b>버전</span></div>
+    <div class="map-card">${svg}</div>
+    <div class="legend"><span><i class="st"></i>고른 세션으로 이어진 실</span><span><i class="th"></i>다른 이음</span><span><i class="dot working"></i>일하는 중</span><span><i class="dot waiting"></i>사람 대기</span><span><i class="dot stalled"></i>멈춤</span><span>겹친 종이 = 고친 횟수, 누르면 열림</span></div>`;
 }
 function work(mid, pid) {
   const ss = sessionsOf(pid).filter(s => s.ownerId === mid);
@@ -420,12 +468,12 @@ function openArtifact(id) {
   const draw = () => {
     const v = a.versions[vi];
     const c = v.content || '';
-    const prev = c.trim().startsWith('<svg') ? c.replace(/<script[\s\S]*?<\/script>/gi, '') : c ? `<pre>${esc(c)}</pre>` : '<p class="muted">이 버전은 내용 미리보기가 없습니다(시연 자료).</p>';
-    $('#modalBox').innerHTML = `<h3>${kindIcon(a.kind)} ${esc(a.name)} <span class="muted small">${esc(a.kind)} · 만든 사람 ${esc(nameOf(a.ownerId))}</span></h3>
-      <div class="vers">${a.versions.map((x, i) => `<span class="chip ${i === vi ? 'on' : ''}" data-vi="${i}">v${x.v}</span>`).join('')}</div>
+    const prev = c.trim().startsWith('<svg') ? c.replace(/<script[\s\S]*?<\/script>/gi, '') : c ? `<pre>${esc(c)}</pre>` : '<p class="muted">이 버전은 내용 미리보기가 없습니다(시연 자료)</p>';
+    $('#modalBox').innerHTML = `<h3>${kindIcon(a.kind)}${esc(a.name)}</h3><p class="muted small" style="margin:0">${esc(a.kind)} · 만든 사람 ${esc(nameOf(a.ownerId))}</p>
+      <div class="vers">${a.versions.map((x, i) => `<button class="${i === vi ? 'on' : ''}" data-vi="${i}">v${x.v}</button>`).join('')}</div>
       <p class="muted small">v${v.v} · ${esc(nameOf(v.by))} · ${ago(v.ts)}${v.note ? ' · ' + esc(v.note) : ''}</p>
       <div class="preview">${prev}</div>
-      <div class="acts"><button class="btn" data-share="${a.id}">메신저에 공유</button><button class="btn primary" data-close>닫기</button></div>`;
+      <div class="acts"><button class="btn" data-share="${a.id}">${ico('chat', 14)}메신저에 공유</button><button class="btn primary" data-close>닫기</button></div>`;
     $$('[data-vi]', $('#modalBox')).forEach(b => b.onclick = () => { vi = +b.dataset.vi; draw(); });
   };
   draw(); $('#modal').classList.remove('hidden');
@@ -439,29 +487,31 @@ function renderBoard() {
   const b = boards.find(b => b.id === ui.boardId) || { id: 'base', name: '기본', widgets: Object.keys(WIDGETS) };
   const items = st().plan.filter(x => x.projectId === p.id);
   const ss = sessionsOf(p.id);
+  const label = l => ({ warn: '경고', check: '검수', info: '코칭' }[l]);
   const W = {
-    goal: () => `<h4>🎯 목표·지침</h4><div style="font-weight:700;line-height:1.5">${esc(p.goal || '목표가 비어 있습니다')}</div><p class="muted small" style="white-space:pre-wrap">${esc(p.guide || '')}</p><button class="btn sm" data-editgoal>고치기</button>`,
-    progress: () => { const d = items.filter(x => x.done).length; return `<h4>✅ 계획 진척 <span class="muted">${d}/${items.length}</span></h4><div class="bar g"><i style="width:${items.length ? 100 * d / items.length : 0}%"></i></div>
-      <div style="margin-top:8px">${items.map(x => `<label class="check"><input type="checkbox" data-plan="${x.id}" ${x.done ? 'checked' : ''}><span class="${x.done ? 'done' : ''}">${esc(x.title)} <span class="muted small">· ${esc(x.ownerId ? nameOf(x.ownerId) : '담당 없음')}${x.done && !x.artifactId ? ' · <b style="color:var(--red)">산출물 없음</b>' : ''}</span></span></label>`).join('')}</div>
-      <div class="row" style="display:flex;gap:6px;margin-top:6px"><input id="newPlan" placeholder="할 일 추가" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:var(--bg)"><button class="btn sm" data-addplan>추가</button></div>`; },
-    uptime: () => { const c = k => ss.filter(s => s.status === k).length; const n = ss.length || 1; return `<h4>⚙️ 세션 가동 현황</h4><div class="big">${Math.round(100 * c('working') / n)}<span style="font-size:14px">% 가동</span></div>
-      <div class="stack" style="margin:8px 0"><i style="width:${100 * c('working') / n}%;background:var(--green)"></i><i style="width:${100 * c('waiting') / n}%;background:var(--yellow)"></i><i style="width:${100 * c('stalled') / n}%;background:var(--red)"></i></div>
-      <div class="small muted">일하는 중 ${c('working')} · 사람 대기 ${c('waiting')} · 멈춤 ${c('stalled')} · 끝남 ${c('done')}</div>`; },
-    workload: () => { const ws = p.members.map(m => [m, work(m, p.id)]); const mx = Math.max(1, ...ws.map(x => x[1].score)); return `<h4>👥 팀원 업무량</h4>${ws.map(([m, w]) => `<div class="wl"><span>${esc(nameOf(m))}</span><div class="bar"><i style="width:${100 * w.score / mx}%"></i></div><span class="muted">버전 ${w.versions}</span></div>`).join('')}<p class="muted small">세션 수·올린 버전·작업 줄 수로 계산(예시 공식)</p>`; },
-    followup: () => { const todo = items.filter(x => !x.done); return `<h4>🗓 오늘 후속 계획</h4>${todo.length ? todo.map((x, i) => `<div class="check">${i + 1}. ${esc(x.title)} <span class="muted small">· ${esc(x.ownerId ? nameOf(x.ownerId) : '담당 없음')} · ${esc(x.when || '')}</span></div>`).join('') : '<p class="muted">남은 일이 없습니다. 본부장에게 다음 계획을 물어보세요.</p>'}<button class="btn sm" data-review>본부장에게 후속 계획 받기</button>`; },
-    coach: () => `<h4>🧭 본부장 코칭</h4>${[...st().coach].filter(c => c.projectId === p.id).reverse().slice(0, 6).map(c => `<div class="coachitem"><span class="tag ${c.level}">${{ warn: '경고', check: '검수', info: '코칭' }[c.level]}</span>${esc(c.text)} <span class="muted small">${ago(c.ts)}</span></div>`).join('') || '<p class="muted">없음</p>'}`,
-    requests: () => `<h4>📥 합치기 요청</h4>${st().requests.filter(r => r.projectId === p.id).slice().reverse().map(r => { const f = st().sessions.find(s => s.id === r.fromSession) || {}; return `<div class="coachitem"><span class="tag ${r.status === '대기' ? 'check' : 'info'}">${esc(r.status)}</span>${esc(nameOf(f.ownerId))}: ${esc(r.note)}</div>`; }).join('') || '<p class="muted">없음</p>'}`,
-    artifacts: () => `<h4>📦 최근 산출물</h4>${artifactsOf(p.id).slice().sort((a, b) => latest(b).ts - latest(a).ts).slice(0, 6).map(a => `<div class="coachitem" data-art="${a.id}" style="cursor:pointer">${kindIcon(a.kind)} ${esc(a.name)} <b>v${latest(a).v}</b> <span class="muted small">${esc(nameOf(latest(a).by))} · ${ago(latest(a).ts)}</span></div>`).join('')}`,
+    goal: () => `<h4>${ico('target')}목표·지침</h4><div style="font-size:16px;font-weight:500;line-height:1.5">${esc(p.goal || '목표가 비어 있습니다')}</div><p class="muted small" style="white-space:pre-wrap;margin:8px 0 12px">${esc(p.guide || '')}</p><button class="btn sm" data-editgoal>고치기</button>`,
+    progress: () => { const d = items.filter(x => x.done).length; const pct = items.length ? Math.round(100 * d / items.length) : 0; return `<h4>${ico('check')}계획 진척<span class="mono">${d}/${items.length}</span></h4><div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px"><span class="figure">${pct}<small>% 완료</small></span></div><div class="bar lead"><i style="width:${pct}%"></i></div>
+      <div style="margin-top:12px">${items.map(x => `<label class="check"><input type="checkbox" data-plan="${x.id}" ${x.done ? 'checked' : ''}><span><span class="${x.done ? 'done' : ''}">${esc(x.title)}</span> <span class="meta">· ${esc(x.ownerId ? nameOf(x.ownerId) : '담당 없음')}</span>${x.done && !x.artifactId ? ' <span class="miss">· 산출물 없음</span>' : ''}</span></label>`).join('')}</div>
+      <div class="addrow"><input id="newPlan" placeholder="할 일 추가" aria-label="할 일 추가"><button class="btn sm" data-addplan>추가</button></div>`; },
+    uptime: () => { const c = k => ss.filter(s => s.status === k).length; const n = ss.length || 1; return `<h4>${ico('activity')}세션 가동</h4><div class="figure">${Math.round(100 * c('working') / n)}<small>% 가동 · 세션 ${ss.length}개 중 ${c('working')}개</small></div>
+      <div class="stack" style="margin:12px 0 8px"><i style="width:${100 * c('working') / n}%;background:var(--ok)"></i><i style="width:${100 * c('waiting') / n}%;background:var(--warn)"></i><i style="width:${100 * c('stalled') / n}%;background:var(--bad)"></i></div>
+      <div class="legendrow"><span><i class="dot working"></i>일하는 중 ${c('working')}</span><span><i class="dot waiting"></i>사람 대기 ${c('waiting')}</span><span><i class="dot stalled"></i>멈춤 ${c('stalled')}</span></div>`; },
+    workload: () => { const ws = p.members.map(m => [m, work(m, p.id)]).sort((a, b) => b[1].score - a[1].score); const mx = Math.max(1, ...ws.map(x => x[1].score)); return `<h4>${ico('users')}팀원 업무량</h4>${ws.map(([m, w]) => `<div class="wl"><span>${esc(nameOf(m))}</span><div class="bar"><i style="width:${100 * w.score / mx}%"></i></div><span class="mono">v${w.versions}</span></div>`).join('')}<p class="muted small" style="margin:8px 0 0">세션 수·올린 버전·작업 줄 수로 계산(예시 공식)</p>`; },
+    followup: () => { const todo = items.filter(x => !x.done); return `<h4>${ico('calendar')}오늘 후속 계획<span class="mono">${todo.length}</span></h4>${todo.length ? todo.map((x, i) => `<div class="item"><span class="mono muted">${i + 1}</span><span>${esc(x.title)} <span class="muted small">· ${esc(x.ownerId ? nameOf(x.ownerId) : '담당 없음')}</span></span><span class="when">${esc(x.when || '')}</span></div>`).join('') : '<p class="muted">남은 일이 없습니다. 본부장에게 다음 계획을 물어보세요</p>'}<button class="btn sm" data-review style="margin-top:12px">${ico('compass', 14)}본부장에게 후속 계획 받기</button>`; },
+    coach: () => `<h4>${ico('compass')}본부장 코칭</h4>${[...st().coach].filter(c => c.projectId === p.id).reverse().slice(0, 6).map(c => `<div class="item"><span><span class="kindlabel ${c.level}">${label(c.level)}</span>${esc(c.text.replace(/^검수:\s*/, ''))}</span><span class="when">${ago(c.ts)}</span></div>`).join('') || '<p class="muted">없음</p>'}`,
+    requests: () => `<h4>${ico('inbox')}합치기 요청</h4>${st().requests.filter(r => r.projectId === p.id).slice().reverse().map(r => { const f = st().sessions.find(s => s.id === r.fromSession) || {}; return `<div class="item"><span><span class="kindlabel ${r.status === '대기' ? 'check' : 'info'}">${esc(r.status)}</span>${esc(nameOf(f.ownerId))}: ${esc(r.note)}</span><span class="when">${ago(r.ts)}</span></div>`; }).join('') || '<p class="muted">없음</p>'}`,
+    artifacts: () => `<h4>${ico('package')}최근 산출물</h4>${artifactsOf(p.id).slice().sort((a, b) => latest(b).ts - latest(a).ts).slice(0, 6).map(a => `<div class="item click" data-art="${a.id}">${kindIcon(a.kind, 14)}<span>${esc(a.name)} <span class="mono">v${latest(a).v}</span> <span class="muted small">· ${esc(nameOf(latest(a).by))}</span></span><span class="when">${ago(latest(a).ts)}</span></div>`).join('')}`,
   };
-  $('#pane').innerHTML = `<div class="boards"><span class="chip ${b.id === 'base' ? 'on' : ''}" data-board="base">기본</span>${boards.map(x => `<span class="chip ${x.id === b.id ? 'on' : ''}" data-board="${x.id}">${esc(x.name)}</span>`).join('')}
-    <div class="grow"></div>${b.id !== 'base' ? '<button class="btn sm" data-editboard>이 판 고치기</button>' : ''}<button class="btn sm" data-newboard>＋ 대시보드 만들기</button></div>
-    <p class="muted small" style="margin:8px 14px 0">공유 대시보드: 여기서 만든 판은 프로젝트의 모든 사람에게 똑같이 보입니다.${b.by ? ` 만든 사람 ${esc(nameOf(b.by))}.` : ''}</p>
-    <div class="grid">${b.widgets.filter(w => W[w]).map(w => `<div class="card">${W[w]()}</div>`).join('')}</div>`;
+  const wide = ['progress'];
+  $('#pane').innerHTML = `<div class="boards"><div class="seg" role="group" aria-label="대시보드">${[{ id: 'base', name: '기본' }, ...boards].map(x => `<button data-board="${x.id}" class="${x.id === b.id ? 'on' : ''}">${esc(x.name)}</button>`).join('')}</div>
+    <div class="grow"></div>${b.id !== 'base' ? '<button class="btn sm" data-editboard>이 판 고치기</button>' : ''}<button class="btn sm" data-newboard>${ico('plus', 14)}대시보드 만들기</button></div>
+    <p class="muted small" style="margin:12px 16px 0">여기서 만든 판은 프로젝트의 모든 사람에게 똑같이 보입니다${b.by ? ` · 만든 사람 ${esc(nameOf(b.by))}` : ''}</p>
+    <div class="grid">${b.widgets.filter(w => W[w]).map(w => `<div class="card ${wide.includes(w) && b.widgets.length > 2 ? 'wide' : ''}">${W[w]()}</div>`).join('')}</div>`;
 }
 function boardDialog(b) {
   const p = project();
-  modal(`<h3>${b ? '대시보드 고치기' : '새 협업 대시보드'}</h3><label>이름</label><input id="bName" value="${esc(b ? b.name : '')}" placeholder="예: 출시 준비판">
-    <label>보여 줄 조각</label>${Object.entries(WIDGETS).map(([k, v]) => `<label class="check" style="color:var(--text);font-size:14px"><input type="checkbox" value="${k}" ${!b || b.widgets.includes(k) ? 'checked' : ''}> ${v}</label>`).join('')}
+  modal(`<h3>${ico('layout')}${b ? '대시보드 고치기' : '새 협업 대시보드'}</h3><label for="bName">이름</label><input id="bName" value="${esc(b ? b.name : '')}" placeholder="예: 출시 준비판">
+    <label>보여 줄 조각</label>${Object.entries(WIDGETS).map(([k, v]) => `<label class="check"><input type="checkbox" value="${k}" ${!b || b.widgets.includes(k) ? 'checked' : ''}> ${v}</label>`).join('')}
     <div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="bSave">저장하고 공유</button></div>`);
   $('#bSave').onclick = () => {
     const name = $('#bName').value.trim() || '이름 없는 판';
@@ -475,27 +525,29 @@ function renderChat() {
   const p = project(); if (!p) return;
   const chs = st().channels.filter(c => c.projectId === p.id && (c.kind === 'channel' || c.members.includes(S.me)));
   const ch = chs.find(c => c.id === ui.channelId) || chs[0];
-  if (!ch) { $('#pane').innerHTML = '<p class="pad muted">채널이 없습니다.</p>'; return; }
+  if (!ch) { $('#pane').innerHTML = '<p class="pad muted">채널이 없습니다</p>'; return; }
   ui.channelId = ch.id;
   ui.lastRead[ch.id] = now(); LS.set('read', ui.lastRead);
   const msgs = st().messages.filter(m => m.channelId === ch.id);
   const byId = Object.fromEntries(st().messages.map(m => [m.id, m]));
   const names = st().members.map(m => m.name).concat(['본부장']);
   const hl = t => { let h = esc(t); names.forEach(n => { h = h.split('@' + esc(n)).join(`<span class="mention">@${esc(n)}</span>`); }); return h; };
-  const listItem = c => `<div class="ch ${c.id === ch.id ? 'on' : ''}" data-ch="${c.id}">${c.kind === 'dm' ? '👤' : c.name === '본부장' ? '🧭' : '#'} ${esc(c.kind === 'dm' ? c.members.filter(m => m !== S.me).map(nameOf).join(', ') || c.name : c.name)}${unreadOf(c.id) && c.id !== ch.id ? `<span class="n">${unreadOf(c.id)}</span>` : ''}</div>`;
+  const chIco = c => ico(c.kind === 'dm' ? 'user' : c.name === '본부장' ? 'compass' : 'hash', 14);
+  const chName = c => esc(c.kind === 'dm' ? c.members.filter(m => m !== S.me).map(nameOf).join(', ') || c.name : c.name);
+  const listItem = c => `<div class="ch ${c.id === ch.id ? 'on' : ''}" data-ch="${c.id}" role="button" tabindex="0">${chIco(c)}${chName(c)}${unreadOf(c.id) && c.id !== ch.id ? `<span class="n count">${unreadOf(c.id)}</span>` : ''}</div>`;
   const existing = $('.msgs', $('#pane'));
   const keepScroll = existing && existing.dataset.ch === ch.id ? existing.scrollHeight - existing.scrollTop - existing.clientHeight < 60 : true;
   const draft = $('#chatInput') ? $('#chatInput').value : '';
   const focused = document.activeElement && document.activeElement.id === 'chatInput';
-  $('#pane').innerHTML = `<div class="chat"><div class="chlist"><div class="sec">채널</div>${chs.filter(c => c.kind === 'channel').map(listItem).join('')}<div class="ch muted" data-newch>＋ 채널 만들기</div>
-      <div class="sec">개인 대화</div>${chs.filter(c => c.kind === 'dm').map(listItem).join('')}<div class="ch muted" data-newdm>＋ 개인 대화</div></div>
-    <div class="chmain"><div class="chhead">${ch.kind === 'dm' ? '👤' : ch.name === '본부장' ? '🧭' : '#'} ${esc(ch.kind === 'dm' ? ch.members.filter(m => m !== S.me).map(nameOf).join(', ') : ch.name)}${ch.name === '본부장' ? '<span class="muted small" style="font-weight:400">AI 본부장이 여러분의 생각을 묻고 위키에 정리합니다. 「목표: …」 「할 일: …」 「점검」</span>' : ''}</div>
+  $('#pane').innerHTML = `<div class="chat"><div class="chlist"><div class="sec">채널</div>${chs.filter(c => c.kind === 'channel').map(listItem).join('')}<div class="ch add" data-newch role="button" tabindex="0">${ico('plus', 14)}채널 만들기</div>
+      <div class="sec">개인 대화</div>${chs.filter(c => c.kind === 'dm').map(listItem).join('')}<div class="ch add" data-newdm role="button" tabindex="0">${ico('plus', 14)}개인 대화</div></div>
+    <div class="chmain"><div class="chhead"><b>${chIco(ch)}${chName(ch)}</b>${ch.name === '본부장' ? '<span class="muted">본부장이 생각을 묻고 위키에 정리합니다 · <code>목표:</code> <code>할 일:</code> <code>점검</code></span>' : ''}</div>
       <div class="msgs" data-ch="${ch.id}">${msgs.map(m => { const a = m.artifactId && st().artifacts.find(x => x.id === m.artifactId); const r = m.replyTo && byId[m.replyTo];
-        return `<div class="msg ${m.from === AGENT ? 'agent' : ''}">${avatar(m.from, 30)}<div style="min-width:0;flex:1"><div class="meta"><b>${esc(nameOf(m.from))}</b>${hhmm(m.ts)}<span class="msgact" data-reply="${m.id}">답글</span></div>
-        ${r ? `<div class="reply">↪ ${esc(nameOf(r.from))}: ${esc(r.text.slice(0, 60))}</div>` : ''}<div class="txt">${hl(m.text)}</div>${a ? `<div class="attach" data-art="${a.id}">${kindIcon(a.kind)} ${esc(a.name)} <b>v${latest(a).v}</b> 열기</div>` : ''}</div></div>`; }).join('') || '<p class="muted">첫 메시지를 남겨 보세요.</p>'}</div>
-      ${ui.replyTo ? `<div class="reply" style="margin:0 12px">↪ 답글 다는 중: ${esc((byId[ui.replyTo] || {}).text || '').slice(0, 50)} <span class="msgact" data-noreply>취소</span></div>` : ''}
-      <form class="chinput" id="chatForm"><select id="chatAttach" class="btn sm" title="산출물 붙이기"><option value="">📎 없음</option>${artifactsOf(p.id).map(a => `<option value="${a.id}">${esc(a.name)} v${latest(a).v}</option>`).join('')}</select>
-        <input id="chatInput" placeholder="메시지 (@이름 으로 부르기, @본부장)" autocomplete="off"><button class="btn primary">보내기</button></form></div></div>`;
+        return `<div class="msg ${m.from === AGENT ? 'agent' : ''}">${avatar(m.from, 32)}<div style="min-width:0;flex:1"><div class="meta"><b>${esc(nameOf(m.from))}</b><span class="mono">${hhmm(m.ts)}</span><button class="msgact" data-reply="${m.id}">답글</button></div>
+        ${r ? `<div class="reply">${esc(nameOf(r.from))}: ${esc(r.text.slice(0, 60))}</div>` : ''}<div class="txt">${hl(m.text)}</div>${a ? `<div class="attach" data-art="${a.id}" role="button" tabindex="0">${kindIcon(a.kind, 14)}${esc(a.name)}<span class="mono">v${latest(a).v}</span></div>` : ''}</div></div>`; }).join('') || '<p class="muted">첫 메시지를 남겨 보세요</p>'}</div>
+      ${ui.replyTo ? `<div class="replying">답글 다는 중: ${esc((byId[ui.replyTo] || {}).text || '').slice(0, 50)} <button class="msgact" data-noreply>취소</button></div>` : ''}
+      <form class="chinput" id="chatForm"><select id="chatAttach" class="btn sm" aria-label="산출물 붙이기"><option value="">붙일 산출물 없음</option>${artifactsOf(p.id).map(a => `<option value="${a.id}">${esc(a.name)} v${latest(a).v}</option>`).join('')}</select>
+        <input id="chatInput" placeholder="메시지, @이름으로 부르기" autocomplete="off" aria-label="메시지"><button class="btn primary sm" style="height:32px">보내기</button></form></div></div>`;
   const box = $('.msgs', $('#pane')); if (keepScroll) box.scrollTop = box.scrollHeight;
   if (draft) $('#chatInput').value = draft; if (focused) $('#chatInput').focus();
   renderUnread();
@@ -506,16 +558,16 @@ function renderWiki() {
   const p = project(); if (!p) return;
   const pages = st().wiki.filter(w => w.projectId === p.id);
   const w = pages.find(w => w.id === ui.wikiId) || pages[0];
-  const item = x => `<div class="ch ${w && x.id === w.id ? 'on' : ''}" data-wiki="${x.id}">${x.scope === 'common' ? '🔗' : '📘'} ${esc(x.title)}</div>`;
+  const item = x => `<div class="ch ${w && x.id === w.id ? 'on' : ''}" data-wiki="${x.id}" role="button" tabindex="0">${ico(x.scope === 'common' ? 'link' : 'book', 14)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.title)}</span></div>`;
   $('#pane').innerHTML = `<div class="wiki"><div class="wlist"><div class="sec">팀 위키</div>${pages.filter(x => x.scope !== 'common').map(item).join('')}
-    <div class="sec">공통분모 위키 (여러 팀 공유)</div>${pages.filter(x => x.scope === 'common').map(item).join('') || '<div class="muted small" style="padding:4px 10px">없음</div>'}
-    <div class="ch muted" data-newwiki>＋ 새 문서</div></div>
-    <div class="wpage">${w ? `<h3>${w.scope === 'common' ? '🔗' : '📘'} ${esc(w.title)}</h3><p class="muted small">${w.scope === 'common' ? '공통분모 위키' : '팀 위키'} · 마지막 정리 ${esc(nameOf(w.by))} · ${ago(w.updatedAt)}</p><pre>${esc(w.body)}</pre><button class="btn sm" data-editwiki="${w.id}">고치기</button>` : '<p class="muted">위키가 비어 있습니다. AI 본부장이 대화·산출물·결정을 모아 채웁니다.</p>'}</div></div>`;
+    <div class="sec">공통분모 위키 · 여러 팀 공유</div>${pages.filter(x => x.scope === 'common').map(item).join('') || '<div class="muted small" style="padding:4px 8px">없음</div>'}
+    <div class="ch add" data-newwiki role="button" tabindex="0">${ico('plus', 14)}새 문서</div></div>
+    <div class="wpage">${w ? `<h3>${esc(w.title)}</h3><p class="muted small" style="margin:0">${w.scope === 'common' ? '공통분모 위키' : '팀 위키'} · 마지막 정리 ${esc(nameOf(w.by))} · ${ago(w.updatedAt)}</p><div class="body">${esc(w.body)}</div><button class="btn sm" data-editwiki="${w.id}">고치기</button>` : '<p class="muted">위키가 비어 있습니다. 본부장이 대화·산출물·결정을 모아 채웁니다</p>'}</div></div>`;
 }
 function wikiDialog(w) {
   const p = project();
-  modal(`<h3>${w ? '위키 고치기' : '새 위키 문서'}</h3><label>제목</label><input id="wTitle" value="${esc(w ? w.title : '')}"><label>내용</label><textarea id="wBody" rows="10">${esc(w ? w.body : '')}</textarea>
-    <label>범위</label><select id="wScope"><option value="team">팀 위키</option><option value="common" ${w && w.scope === 'common' ? 'selected' : ''}>공통분모 위키(다른 팀과 공유)</option></select>
+  modal(`<h3>${ico('book')}${w ? '위키 고치기' : '새 위키 문서'}</h3><label for="wTitle">제목</label><input id="wTitle" value="${esc(w ? w.title : '')}"><label for="wBody">내용</label><textarea id="wBody" rows="10">${esc(w ? w.body : '')}</textarea>
+    <label for="wScope">범위</label><select id="wScope"><option value="team">팀 위키</option><option value="common" ${w && w.scope === 'common' ? 'selected' : ''}>공통분모 위키 · 다른 팀과 공유</option></select>
     <div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="wSave">저장</button></div>`);
   $('#wSave').onclick = () => { send({ op: 'wiki', projectId: p.id, id: w ? w.id : null, title: $('#wTitle').value.trim() || '제목 없음', body: $('#wBody').value, scope: $('#wScope').value }); closeModal(); };
 }
@@ -528,16 +580,17 @@ function renderAgent() {
   const stalled = sessionsOf(p.id).filter(s => s.status === 'stalled');
   const common = st().wiki.filter(w => w.projectId === p.id && w.scope === 'common');
   const others = st().projects.filter(x => x.id !== p.id);
+  const passed = items.filter(x => x.done && x.artifactId).length, missing = items.filter(x => x.done && !x.artifactId).length;
   $('#pane').innerHTML = `<div class="grid">
-    <div class="card"><h4>🧭 나에 대한 도움 정도</h4><div class="seg">${HELP.map((h, i) => `<button data-help="${i}" class="${i === lvl ? 'on' : ''}">${h}</button>`).join('')}</div><p class="small" style="margin:8px 0 0">${HELP_DESC[lvl]}</p></div>
-    <div class="card"><h4>📋 지금 점검</h4><p class="small">계획서 대비 빠진 일, 멈춘 세션, 대기 중 합치기를 모아 <b>당일 후속 계획</b>을 메신저 #본부장 채널과 위키에 올립니다.</p><button class="btn primary sm" data-review>점검하고 후속 계획 세우기</button>${S.live ? `<p class="muted small">${S.claude ? '클로드가 답을 씁니다.' : '중계 서버에 클로드 열쇠가 없어 규칙으로 답합니다.'}</p>` : ''}</div>
-    <div class="card" style="grid-column:1/-1"><h4>✅ 계획서 검수표</h4><table style="width:100%;border-collapse:collapse;font-size:13px"><tr class="muted small"><td>할 일</td><td>담당</td><td>상태</td><td>산출물</td><td>판정</td></tr>
-      ${items.map(x => { const a = x.artifactId && st().artifacts.find(y => y.id === x.artifactId); const verdict = x.done ? (a ? '<span class="tag info">통과</span>' : '<span class="tag warn">빠짐</span>') : '<span class="tag check">진행</span>';
-        return `<tr style="border-top:1px solid var(--line)"><td style="padding:5px 0">${esc(x.title)}</td><td>${esc(x.ownerId ? nameOf(x.ownerId) : '—')}</td><td>${x.done ? '완료' : esc(x.when || '')}</td><td>${a ? `<span class="attach" data-art="${a.id}">${kindIcon(a.kind)} v${latest(a).v}</span>` : '—'}</td><td>${verdict}</td></tr>`; }).join('')}</table>
-      <p class="muted small">정식 제품에서는 다른 AI(지피티·재미나이)에게 같은 검수를 맡겨 교차 확인합니다.</p></div>
-    <div class="card"><h4>🔴 멈춘 세션 ${stalled.length}개</h4>${stalled.map(s => `<div class="coachitem">${esc(nameOf(s.ownerId))} · ${esc(s.title)} <span class="muted small">${ago(s.lastActivity)}</span><br><button class="btn sm" data-nudge="${s.id}">다음 일 시키기</button></div>`).join('') || '<p class="muted">노는 세션이 없습니다 👍</p>'}</div>
-    <div class="card"><h4>🔗 복제본·허브</h4><p class="small">본부장 복제본을 다른 팀(프로젝트)에 보내 <b>공통분모 위키</b> ${common.length}개를 함께 지키게 합니다.</p>
-      ${others.length ? `<select id="cloneTo" class="btn sm">${others.map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select> <button class="btn sm" data-clone>복제본 보내기</button>` : '<p class="muted small">다른 프로젝트가 없습니다.</p>'}</div>
+    <div class="card"><h4>${ico('compass')}나에 대한 도움 정도</h4><div class="seg" role="group" aria-label="도움 정도">${HELP.map((h, i) => `<button data-help="${i}" class="${i === lvl ? 'on' : ''}">${h}</button>`).join('')}</div><p class="helpdesc">${HELP_DESC[lvl]}</p></div>
+    <div class="card"><h4>${ico('calendar')}지금 점검</h4><p class="helpdesc" style="margin:0 0 12px">계획서 대비 빠진 일, 멈춘 세션, 대기 중 합치기를 모아 당일 후속 계획을 본부장 채널과 위키에 올립니다</p><button class="btn primary sm" data-review>점검하고 후속 계획 세우기</button>${S.live ? `<p class="muted small">${S.claude ? '클로드가 답을 씁니다' : '중계 서버에 클로드 열쇠가 없어 규칙으로 답합니다'}</p>` : ''}</div>
+    <div class="card wide"><h4>${ico('check')}계획서 검수표<span class="mono">통과 ${passed} · 빠짐 ${missing} · 진행 ${items.length - passed - missing}</span></h4><div style="overflow-x:auto"><table class="chk"><tr><th>할 일</th><th>담당</th><th>상태</th><th>산출물</th><th>판정</th></tr>
+      ${items.map(x => { const a = x.artifactId && st().artifacts.find(y => y.id === x.artifactId); const verdict = x.done ? (a ? '<span class="verdict pass">통과</span>' : '<span class="verdict miss">빠짐</span>') : '<span class="verdict prog">진행</span>';
+        return `<tr><td>${esc(x.title)}</td><td>${esc(x.ownerId ? nameOf(x.ownerId) : '—')}</td><td>${x.done ? '완료' : esc(x.when || '')}</td><td>${a ? `<span class="attach" style="margin:0;height:28px" data-art="${a.id}" role="button" tabindex="0">${kindIcon(a.kind, 14)}<span class="mono">v${latest(a).v}</span></span>` : '<span class="muted">—</span>'}</td><td>${verdict}</td></tr>`; }).join('')}</table></div>
+      <p class="muted small" style="margin:12px 0 0">정식 제품에서는 지피티·재미나이에게 같은 검수를 맡겨 교차 확인합니다</p></div>
+    <div class="card"><h4>${ico('pause')}멈춘 세션<span class="mono">${stalled.length}</span></h4>${stalled.map(s => `<div class="item"><span>${esc(nameOf(s.ownerId))} · ${esc(s.title)}</span><button class="btn sm" data-nudge="${s.id}" style="margin-left:auto">다음 일 시키기</button></div><div class="muted small mono" style="margin:-4px 0 4px">${ago(s.lastActivity)}부터 멈춤</div>`).join('') || '<p class="muted">멈춘 세션이 없습니다</p>'}</div>
+    <div class="card"><h4>${ico('link')}복제본·허브</h4><p class="helpdesc" style="margin:0 0 12px">본부장 복제본을 다른 팀에 보내 공통분모 위키 ${common.length}개를 함께 지키게 합니다</p>
+      ${others.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="cloneTo" class="btn sm" aria-label="보낼 팀">${others.map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select><button class="btn sm" data-clone>복제본 보내기</button></div>` : '<p class="muted small">다른 프로젝트가 없습니다</p>'}</div>
   </div>`;
 }
 function nudge(sid) {
@@ -552,9 +605,9 @@ function cloneTo(target) {
   const p = project(); const common = st().wiki.filter(w => w.projectId === p.id && w.scope === 'common');
   common.forEach(w => send({ op: 'wiki', projectId: target, title: `${w.title.replace(/ \(.+에서 복제\)$/, '')} (${p.name}에서 복제)`, body: w.body, scope: 'common' }));
   const ch = st().channels.find(c => c.projectId === target && c.name === '본부장');
-  const msg = `🔗 「${p.name}」 본부장의 복제본이 왔습니다. 공통분모 위키 ${common.length}개를 가져왔고, 이 팀이 그 원칙을 지키는지 함께 보겠습니다.`;
+  const msg = `「${p.name}」 본부장의 복제본이 왔습니다. 공통분모 위키 ${common.length}개를 가져왔고, 이 팀이 그 원칙을 지키는지 함께 보겠습니다.`;
   if (ch) send({ op: 'post', channelId: ch.id, text: msg });
-  toast(`복제본을 보냈습니다 (공통 위키 ${common.length}개)`);
+  toast(`복제본을 보냈습니다 · 공통 위키 ${common.length}개`);
 }
 
 // ───────── 세션 입력 처리 ─────────
@@ -680,7 +733,10 @@ document.addEventListener('submit', e => {
   if (e.target.id === 'chatForm') { const v = $('#chatInput').value.trim(); if (!v) return; send({ op: 'post', channelId: ui.channelId, text: v, artifactId: $('#chatAttach').value || null, replyTo: ui.replyTo }); $('#chatInput').value = ''; ui.replyTo = null; renderChat(); }
 });
 $('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#inputBar').requestSubmit(); } });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute && e.target.getAttribute('role') === 'button') { e.preventDefault(); e.target.click(); }
+});
 
 // 가운데·오른쪽 넓이 조절
 (() => { const sp = $('#splitter'); let drag = false; sp.addEventListener('mousedown', () => { drag = true; document.body.style.userSelect = 'none'; });

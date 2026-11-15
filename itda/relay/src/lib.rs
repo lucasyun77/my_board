@@ -206,7 +206,7 @@ async fn answer_message(hub: Arc<Hub>, m: Message) {
             Some(r) => r,
             None => agent::rule_answer(&mut st, &m, now_ms()),
         };
-        if !text.is_empty() && !text.starts_with("📋") {
+        if !text.is_empty() && !text.starts_with("점검 보고") {
             st.post_as(&m.channel_id, AGENT_ID, text, Some(m.id.clone()));
         }
     }
