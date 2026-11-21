@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 mod claude_cmd;
 mod ext_cmd;
+mod git_cmd;
 mod login;
 
 #[derive(Serialize, Clone)]
@@ -138,7 +139,12 @@ fn main() {
             claude_cmd::claude_stop,
             claude_cmd::claude_status,
             ext_cmd::ext_workspace,
-            ext_cmd::ext_write_layout
+            ext_cmd::ext_write_layout,
+            git_cmd::git_check,
+            git_cmd::git_prepare,
+            git_cmd::git_status,
+            git_cmd::git_save_push,
+            git_cmd::git_head
         ])
         .build(tauri::generate_context!())
         .expect("아이센스투게더를 시작하지 못했습니다")
