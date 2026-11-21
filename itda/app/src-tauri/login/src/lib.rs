@@ -94,7 +94,8 @@ pub fn auth_url(client_id: &str, redirect_uri: &str, challenge: &str, state: &st
         ("code_challenge_method", "S256"),
         ("state", state),
         ("access_type", "offline"),
-        ("prompt", "select_account"),
+        // 로그인 창은 새로 고침 토큰이 없을 때만 열리므로 매번 동의를 받아 새로 고침 토큰을 확실히 받는다
+        ("prompt", "select_account consent"),
     ];
     let domain = domain.trim();
     if !domain.is_empty() {
@@ -438,7 +439,7 @@ mod tests {
         assert_eq!(q["code_challenge_method"], "S256");
         assert_eq!(q["state"], "상태값");
         assert_eq!(q["access_type"], "offline");
-        assert_eq!(q["prompt"], "select_account");
+        assert_eq!(q["prompt"], "select_account consent");
         assert_eq!(q["hd"], "isens.camp");
         // 도메인이 비면 hd 를 싣지 않는다
         let u2 = auth_url("a", "http://127.0.0.1:1", "c", "s", " ");
