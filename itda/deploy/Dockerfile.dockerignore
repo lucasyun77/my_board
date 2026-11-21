@@ -1,0 +1,5 @@
+target
+release
+manual
+**/target
+**/.git
