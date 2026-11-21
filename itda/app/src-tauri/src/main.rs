@@ -2,6 +2,7 @@
 //! 화면(app/ui)을 창에 띄우고, 화면이 부탁하면
 //!  1) 이 컴퓨터에서 명령(터미널 방식) 또는 AI 명령(쉬운 채팅 방식, 기본 `claude -p`)을 실행해 출력을 돌려주고,
 //!  2) 원하면 이 컴퓨터를 팀의 중계 서버로 켠다(팀장 컴퓨터 하나만 켜면 됨).
+//!  3) 회사 구글 계정으로 로그인한다(login.rs).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
@@ -9,6 +10,8 @@ use std::process::Stdio;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
+
+mod login;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -116,7 +119,7 @@ async fn itda_relay_serve(listener: tokio::net::TcpListener, router: itda_relay:
 fn main() {
     tauri::Builder::default()
         .manage(RelayState(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![run_command, machine_info, start_relay])
+        .invoke_handler(tauri::generate_handler![run_command, machine_info, start_relay, login::google_sign_in, login::google_refresh])
         .run(tauri::generate_context!())
         .expect("아이센스투게더를 시작하지 못했습니다");
 }
