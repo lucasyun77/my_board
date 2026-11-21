@@ -1,0 +1,62 @@
+# 아이센스투게더 중계 서버 묶음 (중계 서버 + 포스트그레스 16 [+ 선택: 캐디 앞단])
+# 사용법: 이 폴더에서  cp .env.example .env  →  .env 채우기  →  docker compose up -d --build
+# 암호화(https·wss)를 캐디 앞단에 맡기려면:  docker compose --profile https up -d --build
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: itda-relay:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TOGETHER_DATABASE_URL: postgres://together:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env 에 적어 주세요}@db:5432/together
+      TOGETHER_GOOGLE_CLIENT_ID: ${TOGETHER_GOOGLE_CLIENT_ID:-}
+      TOGETHER_GOOGLE_CLIENT_SECRET: ${TOGETHER_GOOGLE_CLIENT_SECRET:-}
+      TOGETHER_ALLOWED_DOMAIN: ${TOGETHER_ALLOWED_DOMAIN:-}
+      TOGETHER_ADMINS: ${TOGETHER_ADMINS:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ITDA_TEAM_KEY: ${ITDA_TEAM_KEY:-}
+    ports:
+      # 기본은 서버 안에서만 열림. 캐디 앞단을 쓰면 그대로 두고, 직접 열려면 .env 의 RELAY_BIND 를 0.0.0.0 으로
+      - "${RELAY_BIND:-127.0.0.1}:${RELAY_PORT:-7878}:7878"
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: together
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env 에 적어 주세요}
+      POSTGRES_DB: together
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./backup:/backup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U together -d together"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 선택: 자동 인증서로 https·wss 를 앞에서 처리 (프로필 https 를 켤 때만 뜸)
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - relay
+    environment:
+      TOGETHER_DOMAIN: ${TOGETHER_DOMAIN:?TOGETHER_DOMAIN 을 .env 에 적어 주세요}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

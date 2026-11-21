@@ -1,0 +1,8 @@
+# 자동 인증서로 https·wss 를 앞단에서 처리하는 설정 (캐디)
+# docker-compose.yml 의 https 프로필을 켜면 사용됩니다. 도메인은 .env 의 TOGETHER_DOMAIN.
+# 도메인이 이 서버의 공인 주소를 가리키고, 80·443 포트가 열려 있어야 인증서가 자동 발급됩니다.
+# 웹소켓(wss)은 별도 설정 없이 그대로 전달됩니다.
+{$TOGETHER_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy relay:7878
+}

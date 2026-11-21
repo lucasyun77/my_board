@@ -1,9 +1,9 @@
-# 아이센스투게더 윈도우 설치 파일 만들기 (윈도우 서버에서 정식 설치 파일 생성)
+# 아이센스투게더 만들기: 윈도우 설치 파일 + 리눅스 중계 서버 실행 파일
 name: itda-windows
 on:
   workflow_dispatch: {}
   push:
-    paths: ["itda/**"]
+    paths: ["itda/**", ".github/workflows/itda-windows.yml"]
 jobs:
   build:
     runs-on: windows-latest
@@ -23,3 +23,44 @@ jobs:
         with:
           name: itda-windows-installer
           path: itda/target/release/bundle/nsis/*.exe
+
+  # 리눅스용 중계 서버: 포스트그레스를 붙여 시험한 뒤 실행 파일을 만든다
+  relay-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: itda
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: together
+          POSTGRES_PASSWORD: together
+          POSTGRES_DB: together
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U together -d together"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TOGETHER_TEST_DATABASE_URL: postgres://together:together@127.0.0.1:5432/together
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            itda/target
+          key: relay-linux-${{ hashFiles('itda/Cargo.lock') }}
+      - name: 중계 서버 시험 (포스트그레스 연결)
+        run: cargo test -p itda-relay
+      - name: 중계 서버 실행 파일 빌드
+        run: cargo build --release -p itda-relay
+      - uses: actions/upload-artifact@v4
+        with:
+          name: itda-relay-linux
+          path: itda/target/release/itda-relay
