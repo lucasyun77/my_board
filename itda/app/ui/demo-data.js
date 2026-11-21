@@ -9,7 +9,7 @@ window.ITDA_DEMO = {
     {"id": "u-park", "name": "박서연", "computer": "마케팅 노트북", "role": "마케터", "online": false, "lastSeen": 40, "helpLevel": 2}
   ],
   "projects": [
-    {"id": "p-app", "name": "벌툰 예약 앱", "kind": "개발", "goal": "12월 첫 주 사내 시범 출시: 매장 예약·대기 알림", "guide": "디자인은 김하늘 담당, 합치기는 팀 메인 세션이 한다. 쉬운 우리말 화면 문구.", "ownerId": "u-choi", "members": ["u-choi", "u-kim", "u-lee", "u-park"], "createdAt": 4000},
+    {"id": "p-app", "name": "벌툰 예약 앱", "kind": "개발", "goal": "12월 첫 주 사내 시범 출시: 매장 예약·대기 알림", "guide": "디자인은 김하늘 담당, 합치기는 팀 메인 세션이 한다. 쉬운 우리말 화면 문구.", "ownerId": "u-choi", "members": ["u-choi", "u-kim", "u-lee", "u-park"], "createdAt": 4000, "repo": "https://github.com/isens-example/beoltoon-reservation.git", "baseBranch": "main"},
     {"id": "p-cos", "name": "K화장품 새 라인", "kind": "사업", "goal": "진정 크림 라인 컨셉·상세페이지·견본 발송 메일", "guide": "본 브랜드의 순한 성분 원칙을 지킨다.", "ownerId": "u-choi", "members": ["u-choi", "u-park", "u-kim"], "createdAt": 3000}
   ],
   "sessions": [
@@ -152,8 +152,8 @@ window.ITDA_DEMO = {
     {"id": "c4", "projectId": "p-app", "sessionId": "s-team", "level": "info", "text": "팀 메인이 로그인 시안 v3을 합쳤지만, 위키 「화면 문구 규칙」의 버튼 문구(동사로 끝냄) 확인이 빠졌습니다.", "ts": 8}
   ],
   "requests": [
-    {"id": "r1", "projectId": "p-app", "fromSession": "s-kim-main", "toSession": "s-team", "artifactId": "a-login", "note": "예약 버튼 색을 투게더 주황으로 바꿨어요. 앱에 반영해 주세요.", "status": "합침", "ts": 12},
-    {"id": "r2", "projectId": "p-app", "fromSession": "s-lee-main", "toSession": "s-team", "artifactId": "a-api", "note": "예약 취소 기능 붙으면 화면에 취소 버튼 추가 부탁", "status": "대기", "ts": 4}
+    {"id": "r1", "projectId": "p-app", "fromSession": "s-kim-main", "toSession": "s-team", "artifactId": "a-login", "note": "예약 버튼 색을 투게더 주황으로 바꿨어요. 앱에 반영해 주세요.", "status": "합침", "ts": 12, "branch": "together/김하늘/로그인예약-화면-시안", "commit": "9c0d1e2", "resultCommit": "4f5a6b7"},
+    {"id": "r2", "projectId": "p-app", "fromSession": "s-lee-main", "toSession": "s-team", "artifactId": "a-api", "note": "예약 취소 기능 붙으면 화면에 취소 버튼 추가 부탁", "status": "대기", "ts": 4, "branch": "together/이도윤/예약-서버", "commit": "7a8b9c0"}
   ],
   "boards": [
     {"id": "b1", "projectId": "p-app", "name": "출시 준비판", "widgets": ["goal", "progress", "followup", "coach"], "by": "u-choi"},
