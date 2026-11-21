@@ -1,1 +1,0 @@
-{ "name": "token-band", "version": "0.1.0", "description": "마더 세션 채팅창 위에 모델별(클로드·코덱스·재미나이) 토큰 사용량을 보여 주는 띠", "types": "./types/index.d.ts" }
