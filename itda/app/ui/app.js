@@ -33,7 +33,58 @@ let cfg = Object.assign({
 if (!cfg.relay && servedByRelay && location.port) cfg.relay = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
 
 // ───────── 상태 ─────────
-const S = { state: null, me: 'u-choi', live: false, ws: null, claude: false };
+const S = { state: null, me: 'u-choi', live: false, ws: null, claude: false, version: '', stop: false, gen: 0 };
+
+// ───────── 오류 보고 ─────────
+// 연결 중이면 바로 서버로, 아니면 localStorage 에 최대 20건 모았다가 다음 연결 때 보낸다. 같은 오류는 1분에 한 번만.
+const ERR = { sent: {} };
+function reportError(message, detail) {
+  try {
+    message = String(message || '알 수 없는 오류').slice(0, 500); detail = String(detail || '').slice(0, 4000);
+    const key = message + '|' + detail.split('\n')[0];
+    const t = Date.now();
+    if (ERR.sent[key] && t - ERR.sent[key] < 60000) return;
+    ERR.sent[key] = t;
+    const item = { message, detail, version: S.version || '화면' };
+    if (S.live && S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(Object.assign({ op: 'report' }, item)));
+    else { const q = LS.get('errq', []); q.push(item); LS.set('errq', q.slice(-20)); }
+  } catch {}
+}
+function flushErrors() {
+  try {
+    const q = LS.get('errq', []); if (!q.length || !(S.ws && S.ws.readyState === 1)) return;
+    LS.set('errq', []);
+    q.forEach(it => S.ws.send(JSON.stringify(Object.assign({ op: 'report' }, it))));
+  } catch {}
+}
+window.addEventListener('error', e => reportError(e.message, (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`));
+window.addEventListener('unhandledrejection', e => { const r = e.reason; reportError('처리되지 않은 약속 오류: ' + ((r && r.message) || r), (r && r.stack) || ''); });
+// 로그인·관리 상태. mode: 'open'(모임 암호 또는 무암호) | 'google'(회사 구글 계정)
+const A = { mode: null, google: null, needLogin: false, email: '', admin: false, audit: null, auditState: 'idle', auditMsg: '' };
+
+// ───────── 로그인 토큰 보관 ─────────
+// 나중에 운영체제 보관소(윈도우 자격 증명 관리자 등)로 옮길 것.
+// 지금은 편의상 localStorage 에 둔다. 토큰이 새어 나가지 않도록 화면에 찍거나 서버 오류 보고에 싣지 않는다.
+const Tok = {
+  get() { return LS.get('auth', null); },
+  set(v) { LS.set('auth', v); },
+  clear() { try { localStorage.removeItem('itda.auth'); } catch {} },
+};
+const nowSec = () => Math.floor(Date.now() / 1000);
+// 쓸 수 있는 토큰을 돌려준다. 만료가 5분 안이면 새로 받고, 안 되면 null.
+async function ensureToken() {
+  const a = Tok.get();
+  if (!a || !a.idToken) return null;
+  if ((a.expiresAt || 0) - nowSec() > 300) return a;
+  if (!TAURI || !a.refreshToken || !A.google) return null;
+  try {
+    const r = await TAURI.core.invoke('google_refresh', { clientId: A.google.clientId, clientSecret: A.google.clientSecret, refreshToken: a.refreshToken });
+    const n = Object.assign({}, a, { idToken: r.idToken, expiresAt: r.expiresAt });
+    Tok.set(n); return n;
+  } catch { return null; }
+}
+const httpBase = relay => { try { return new URL(relay.replace(/^ws/i, 'http')).origin; } catch { return ''; } };
+
 const ui = {
   projectId: null, sessionId: null, tab: 'map', mode: LS.get('mode', 'chat'),
   channelId: null, wikiId: null, boardId: 'base', replyTo: null, lastRead: LS.get('read', {}),
@@ -226,24 +277,76 @@ function simulate() {
 }
 
 // ───────── 연결 방식 ─────────
-function connect() {
+async function connect() {
+  const gen = ++S.gen;
+  S.stop = false;
   if (S.ws) { try { S.ws.onclose = null; S.ws.close(); } catch {} S.ws = null; }
-  if (!cfg.relay) { startDemo(); return; }
+  S.live = false;
+  if (!cfg.relay) { A.mode = null; A.needLogin = false; setAdmin(false, ''); startDemo(); return; }
   setConn('연결 중…');
+  // 1) 서버가 어떤 로그인 방식인지 먼저 묻는다(옛 서버라 답이 없으면 모임 암호 방식으로 본다)
+  let conf = { mode: 'open', needKey: !!cfg.key };
+  try {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 5000);
+    const r = await fetch(httpBase(cfg.relay) + '/auth-config', { signal: ctl.signal }); clearTimeout(to);
+    if (r.ok) conf = await r.json();
+  } catch {}
+  if (gen !== S.gen) return;
+  A.mode = conf.mode === 'google' ? 'google' : 'open';
+  let token = null;
+  if (A.mode === 'google') {
+    A.google = { clientId: conf.clientId || '', clientSecret: conf.clientSecret || '', domain: conf.domain || '' };
+    if (!TAURI) {
+      // 브라우저에서는 구글 로그인 창을 열 수 없다
+      A.needLogin = false; if (!st()) startDemo();
+      setConn('회사 계정 로그인은 데스크톱 앱에서 됩니다'); browserNotice(); return;
+    }
+    token = await ensureToken();
+    if (gen !== S.gen) return;
+    if (!token) { A.needLogin = true; if (!st()) startDemo(); setConn('로그인이 필요합니다'); loginDialog(); return; }
+  }
+  A.needLogin = false;
+  openSocket(gen, token);
+}
+function openSocket(gen, token) {
   let ws;
   try { ws = new WebSocket(cfg.relay); } catch (e) { setConn('주소 오류'); startDemo(); return; }
   S.ws = ws;
   ws.onopen = () => {
-    ws.send(JSON.stringify({ op: 'hello', key: cfg.key, member: { id: cfg.id, name: cfg.name || '이름 없음', computer: cfg.computer || '내 컴퓨터', role: cfg.role || '', helpLevel: 2 } }));
+    const hello = { op: 'hello', member: { id: cfg.id, name: cfg.name || '이름 없음', computer: cfg.computer || '내 컴퓨터', role: cfg.role || '', helpLevel: 2 } };
+    if (token) hello.token = token.idToken; else hello.key = cfg.key;
+    ws.send(JSON.stringify(hello));
   };
   ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.t === 'welcome') { S.live = true; S.me = m.memberId; S.claude = m.claude; setConn('연결됨'); }
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.t === 'welcome') {
+      S.live = true; S.me = m.memberId; S.claude = m.claude; S.version = m.version || '';
+      setAdmin(!!m.admin, m.email || ''); setConn('연결됨'); flushErrors();
+    }
     else if (m.t === 'snapshot') { S.state = m.state; ensureSelection(); render(); }
     else if (m.t === 'log') { if (!S.state) return; (S.state.logs[m.sessionId] = S.state.logs[m.sessionId] || []).push(m.line); const s = S.state.sessions.find(x => x.id === m.sessionId); if (s) s.lastActivity = m.line.ts; render(true); }
-    else if (m.t === 'error') toast(m.msg);
+    else if (m.t === 'error') onServerError(m);
   };
-  ws.onclose = () => { S.live = false; setConn('끊김 — 5초 뒤 다시 연결'); setTimeout(() => { if (S.ws === ws) connect(); }, 5000); };
+  ws.onclose = () => {
+    S.live = false; setAdmin(false, A.email);
+    if (S.stop) return;
+    setConn('끊김 — 5초 뒤 다시 연결'); setTimeout(() => { if (S.ws === ws && !S.stop) connect(); }, 5000);
+  };
+}
+function onServerError(m) {
+  if (m.code === 'auth') {
+    S.stop = true; Tok.clear();
+    if (A.mode === 'google') { A.needLogin = true; setConn('로그인이 필요합니다'); loginDialog(m.msg); }
+    else { setConn('모임 암호가 맞지 않습니다'); toast(m.msg); settingsDialog(); }
+  } else if (m.code === 'blocked') {
+    S.stop = true; setConn('차단된 계정입니다'); blockedDialog(m.msg);
+  } else toast(m.msg);
+}
+function setAdmin(on, email) {
+  A.admin = on; A.email = email || '';
+  const tab = $('#tabAdmin'); if (tab) tab.classList.toggle('hidden', !on);
+  if (!on && ui.tab === 'admin') { ui.tab = 'map'; if (st()) renderRight(); }
+  renderMe();
 }
 function setConn(t) { S.connText = t; renderMe(); }
 function startDemo() {
@@ -292,7 +395,9 @@ function sessNode(s, pre = '') {
 
 function renderMe() {
   const m = st() ? member(S.me) : { name: cfg.name };
-  $('#meBox').innerHTML = `${st() ? avatar(S.me) : ''}<div style="flex:1;min-width:0"><b>${esc(m.name || '이름 없음')}</b><div class="muted">${esc(S.connText || '')}${S.live && S.claude ? ' · 클로드 본부장' : ''}</div></div><button class="btn sm" id="btnSettings">설정</button>`;
+  const email = A.email || '';
+  const btns = `<button class="btn sm" id="btnSettings">설정</button>${A.mode === 'google' && (email || Tok.get()) ? '<button class="btn sm" data-a="logout">로그아웃</button>' : ''}${A.needLogin && TAURI ? '<button class="btn sm primary" data-a="login">로그인</button>' : ''}`;
+  $('#meBox').innerHTML = `${st() ? avatar(S.me) : ''}<div style="flex:1;min-width:0"><b>${esc(m.name || '이름 없음')}</b>${email ? `<div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(email)}">${esc(email)}</div>` : ''}<div class="muted">${esc(S.connText || '')}${S.live && S.claude ? ' · 클로드 본부장' : ''}</div></div><div style="display:flex;flex-direction:column;gap:4px">${btns}</div>`;
 }
 
 function renderCenter(light) {
@@ -349,7 +454,8 @@ function renderRight(light) {
   const pane = $('#pane');
   if (light && ui.tab === 'chat') { const box = $('.msgs', pane); if (box) { renderChat(); return; } }
   if (light && ui.tab === 'map') { renderMap(); return; }
-  ({ map: renderMap, board: renderBoard, chat: renderChat, wiki: renderWiki, agent: renderAgent })[ui.tab]();
+  if (ui.tab === 'admin' && !A.admin) ui.tab = 'map';
+  ({ map: renderMap, board: renderBoard, chat: renderChat, wiki: renderWiki, agent: renderAgent, admin: renderAdmin })[ui.tab]();
 }
 
 // ── 연결 지도(마인드맵) ──
@@ -627,6 +733,87 @@ function settingsDialog() {
     } catch (e) { $('#cHostMsg').textContent = '켜지 못했습니다: ' + e; }
   };
 }
+// ───────── 로그인 대화상자 ─────────
+function loginDialog(msg) {
+  modal(`<h3>회사 구글 계정으로 로그인</h3>
+    <p>${esc(msg || '아이센스투게더는 회사 구글 계정으로 들어옵니다.')}</p>
+    ${A.google && A.google.domain ? `<p class="muted small">회사 계정(@${esc(A.google.domain)})만 들어올 수 있습니다.</p>` : ''}
+    <p class="muted small" id="loginMsg"></p>
+    <div class="acts"><button class="btn" data-close>나중에</button><button class="btn primary" id="loginBtn">회사 구글 계정으로 로그인</button></div>`);
+  $('#loginBtn').onclick = async () => {
+    const b = $('#loginBtn'); b.disabled = true; $('#loginMsg').textContent = '브라우저에서 로그인 창이 열립니다. 로그인을 마치면 자동으로 돌아옵니다…';
+    try {
+      const r = await TAURI.core.invoke('google_sign_in', { clientId: A.google.clientId, clientSecret: A.google.clientSecret, domain: A.google.domain });
+      Tok.set({ idToken: r.idToken, refreshToken: r.refreshToken, expiresAt: r.expiresAt, email: r.email, name: r.name });
+      closeModal(); connect();
+    } catch (e) { b.disabled = false; $('#loginMsg').textContent = '로그인하지 못했습니다: ' + e; }
+  };
+}
+function browserNotice() {
+  modal(`<h3>회사 계정 로그인은 데스크톱 앱에서 됩니다</h3>
+    <p>이 서버는 회사 구글 계정으로만 들어올 수 있습니다. 인터넷 브라우저에서는 로그인 창을 열 수 없으니, 아이센스투게더 데스크톱 앱을 설치해 쓰세요.</p>
+    <p class="muted small">지금 보이는 화면은 시연 방식입니다(실제 팀 자료가 아닙니다).</p>
+    <div class="acts"><button class="btn primary" data-close>확인</button></div>`);
+}
+function blockedDialog(msg) {
+  modal(`<h3>접속이 차단되었습니다</h3><p>${esc(msg || '이 계정은 들어올 수 없습니다.')}</p><p class="muted small">관리자에게 문의하세요. 다시 연결하지 않습니다.</p>
+    <div class="acts"><button class="btn primary" data-close>확인</button></div>`);
+}
+function logout() {
+  Tok.clear(); S.stop = true; S.gen++;
+  if (S.ws) { try { S.ws.onclose = null; S.ws.close(); } catch {} S.ws = null; }
+  S.live = false; setAdmin(false, ''); A.needLogin = true; A.audit = null;
+  startDemo(); setConn('로그아웃했습니다');
+  if (TAURI) loginDialog('로그아웃했습니다. 다시 들어오려면 로그인하세요.');
+}
+
+// ── 관리 탭(관리자만) ──
+const opSummary = op => {
+  if (!op || typeof op !== 'object') return String(op ?? '');
+  const { op: name, ...rest } = op; const keys = Object.keys(rest).filter(k => !['token', 'key', 'content', 'body'].includes(k));
+  const detail = keys.map(k => `${k}=${typeof rest[k] === 'object' ? JSON.stringify(rest[k]) : rest[k]}`).join(' ');
+  return (name || '') + (detail ? ' ' + (detail.length > 90 ? detail.slice(0, 89) + '…' : detail) : '');
+};
+const fmtAt = at => { const d = new Date(typeof at === 'number' && at < 1e11 ? at * 1000 : at); return isNaN(d) ? String(at ?? '') : `${d.getMonth() + 1}/${d.getDate()} ${hhmm(d.getTime())}`; };
+async function loadAudit() {
+  if (A.mode !== 'google') { A.auditState = 'error'; A.auditMsg = '감사 기록은 회사 계정 로그인 방식에서만 볼 수 있습니다.'; if (ui.tab === 'admin') renderAdmin(); return; }
+  A.auditState = 'loading'; if (ui.tab === 'admin') renderAdmin();
+  try {
+    const tk = await ensureToken(); if (!tk) throw new Error('로그인이 만료되었습니다. 다시 로그인하세요.');
+    const r = await fetch(httpBase(cfg.relay) + '/admin/audit?limit=100', { headers: { Authorization: 'Bearer ' + tk.idToken } });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    A.audit = j.audit || []; A.auditState = 'ok';
+  } catch (e) { A.auditState = 'error'; A.auditMsg = '불러오지 못했습니다: ' + (e.message || e); }
+  if (ui.tab === 'admin') renderAdmin();
+}
+function renderAdmin() {
+  const pane = $('#pane'); if (!A.admin || !st()) { pane.innerHTML = '<p class="pad muted">관리자만 볼 수 있습니다.</p>'; return; }
+  const blocked = st().blocked || [];
+  const members = st().members || [];
+  const row = m => { const em = (m.email || '').toLowerCase(); const isMe = m.id === S.me; const bl = em && blocked.includes(em);
+    return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 0">${esc(m.name)}</td><td>${em ? esc(em) : '<span class="muted">—</span>'}</td><td><span class="dot ${m.online ? 'on' : 'off'}" style="display:inline-block"></span> ${m.online ? '접속 중' : '접속 안 함'}</td>
+      <td style="text-align:right">${!em || isMe ? '' : bl ? `<button class="btn sm" data-a="unblock" data-email="${esc(em)}">차단 풀기</button>` : `<button class="btn sm" data-a="block" data-email="${esc(em)}">차단</button>`}</td></tr>`; };
+  const nameById = id => (members.find(x => x.id === id) || {}).name || id;
+  pane.innerHTML = `<div class="grid">
+    <div class="card" style="grid-column:1/-1"><h4>👥 회원 ${members.length}명</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:13px"><tr class="muted small"><td>이름</td><td>이메일</td><td>접속</td><td></td></tr>${members.map(row).join('') || '<tr><td class="muted">없음</td></tr>'}</table></div>
+    <div class="card" style="grid-column:1/-1"><h4>⛔ 차단 목록 ${blocked.length}명</h4>
+      ${blocked.map(e => `<div class="coachitem">${esc(e)} <button class="btn sm" data-a="unblock" data-email="${esc(e)}">차단 풀기</button></div>`).join('') || '<p class="muted small">차단한 계정이 없습니다.</p>'}
+      <div class="row" style="display:flex;gap:6px;margin-top:8px"><input id="blockEmail" placeholder="차단할 이메일" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:var(--bg)"><button class="btn sm" data-a="blocknew">차단</button></div></div>
+    <div class="card" style="grid-column:1/-1"><h4>📜 최근 감사 기록 <button class="btn sm" data-a="audit" style="margin-left:8px">새로 고침</button></h4>
+      ${A.auditState === 'loading' ? '<p class="muted small">불러오는 중…</p>' : A.auditState === 'error' ? `<p class="small" style="color:var(--red)">${esc(A.auditMsg)}</p>` :
+        A.audit ? `<div style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr class="muted small"><td>번호</td><td>시각</td><td>누가</td><td>동작</td></tr>${A.audit.map(a => `<tr style="border-top:1px solid var(--line)"><td style="padding:4px 6px 4px 0">${esc(a.seq)}</td><td style="white-space:nowrap;padding-right:8px">${esc(fmtAt(a.at))}</td><td style="padding-right:8px">${esc(nameById(a.who))}</td><td style="word-break:break-all">${esc(opSummary(a.op))}</td></tr>`).join('') || '<tr><td class="muted">기록 없음</td></tr>'}</table></div>` : '<p class="muted small">「새로 고침」을 누르면 불러옵니다.</p>'}</div>
+  </div>`;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a;
+  if (a === 'logout') logout();
+  else if (a === 'login') loginDialog();
+  else if (a === 'audit') loadAudit();
+  else if (a === 'block' || a === 'unblock') send({ op: a === 'block' ? 'blockUser' : 'unblockUser', email: t.dataset.email });
+  else if (a === 'blocknew') { const v = ($('#blockEmail').value || '').trim().toLowerCase(); if (v) send({ op: 'blockUser', email: v }); }
+});
+
 function applyTheme() { if (cfg.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = cfg.theme; }
 
 // ───────── 이벤트 ─────────
@@ -640,7 +827,7 @@ document.addEventListener('click', e => {
   else if (d.add) { modal(`<h3>내 세션 열기</h3><label>세션 이름</label><input id="sTitle" placeholder="예: 로그인 화면 시안"><label class="check" style="color:var(--text)"><input type="checkbox" id="sMain" ${myMain(d.add) ? '' : 'checked'} style="width:auto"> 내 메인 세션 (하위 세션들을 대표)</label><div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="sSave">열기</button></div>`);
     $('#sSave').onclick = () => { send({ op: 'openSession', projectId: d.add, title: $('#sTitle').value.trim() || '새 세션', isMain: $('#sMain').checked }); closeModal(); }; }
   else if (d.mode) { ui.mode = d.mode; LS.set('mode', ui.mode); renderCenter(); }
-  else if (d.tab) { ui.tab = d.tab; renderRight(); }
+  else if (d.tab) { ui.tab = d.tab; renderRight(); if (d.tab === 'admin' && A.auditState === 'idle') loadAudit(); }
   else if (d.art) openArtifact(d.art);
   else if (d.close !== undefined) closeModal();
   else if (d.share) { const a = st().artifacts.find(x => x.id === d.share); const ch = st().channels.find(c => c.projectId === a.projectId && c.name === '전체') || st().channels.find(c => c.projectId === a.projectId); if (ch) send({ op: 'post', channelId: ch.id, text: `「${a.name}」 v${latest(a).v} 공유합니다`, artifactId: a.id }); closeModal(); ui.tab = 'chat'; ui.channelId = ch && ch.id; renderRight(); }
@@ -698,5 +885,5 @@ applyTheme();
 connect();
 setInterval(() => { if (!S.live && st()) { Demo.tick(); render(true); } }, 15000);
 setInterval(simulate, 5000);
-window.ITDA = { S, ui, send, Demo, render };
+window.ITDA = { S, ui, A, send, Demo, render };
 })();
