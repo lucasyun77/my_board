@@ -1,0 +1,13 @@
+[package]
+name = "itda-claude"
+version = "0.1.0"
+edition = "2021"
+description = "아이센스투게더 데스크톱 앱 안에서 진짜 클로드 코드 세션을 켜 두고 대화를 이어 가는 부품(타우리와 무관, 리눅스에서도 시험 가능)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "rt", "macros", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
