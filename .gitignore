@@ -5,3 +5,4 @@ node_modules/
 itda/target/
 itda-data.json
 !itda/deploy/.env.example
+.claude/worktrees/

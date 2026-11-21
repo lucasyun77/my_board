@@ -2,7 +2,7 @@
 
 | 무엇 | 어디 |
 |---|---|
-| 윈도우용 실행 묶음 (내려받아 바로 실행) | `release/iSensTogether-0.1.0-windows-x64.zip` |
+| 윈도우용 실행 묶음 (내려받아 바로 실행) | `release/iSensTogether-0.2.0-windows-x64.zip` |
 | 기획서 | `docs/01-기획서.md` |
 | 개발 계획서 | `docs/02-개발계획서.md` |
 | 제품설명서 | `docs/03-제품설명서.md` |
