@@ -1,38 +1,48 @@
 //! 아이센스투게더 중계 서버 본체.
 //! 각 컴퓨터의 아이센스투게더 앱은 이 서버로 "밖으로 나가는 연결(웹소켓)"만 맺는다.
 //! 그래서 공유기·방화벽 설정 없이 서로 다른 컴퓨터·계정의 세션이 이어진다.
+//! 기반 단계(0.2): 회사 구글 계정 확인, 데이터베이스 저장, 감사 기록, 오류 보고, 암호화 연결.
 
 pub mod agent;
+pub mod auth;
 pub mod state;
+pub mod store;
 
 use agent::AgentCfg;
+use auth::AuthMode;
 use axum::{
     extract::ws::{Message as WsMsg, WebSocket, WebSocketUpgrade},
-    extract::State as AxState,
+    extract::{Query, State as AxState},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
+use serde_json::{json, Value};
 use state::*;
 use std::{path::PathBuf, sync::Arc};
+use store::Store;
 use tokio::sync::{broadcast, mpsc, Mutex};
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct Hub {
     pub state: Mutex<State>,
     pub tx: broadcast::Sender<String>,
     pub cfg: AgentCfg,
-    pub data_path: Option<PathBuf>,
+    pub store: Store,
     pub dirty: Mutex<bool>,
-    /// 모임 암호. 비어 있으면 누구나 들어온다(시제품 기본값).
-    pub team_key: String,
+    pub auth: AuthMode,
+    /// 관리자 이메일(계정 차단·감사 기록 열람)
+    pub admins: Vec<String>,
 }
 
 impl Hub {
-    pub fn new(state: State, cfg: AgentCfg, data_path: Option<PathBuf>, team_key: String) -> Arc<Self> {
+    pub fn new(state: State, cfg: AgentCfg, store: Store, auth: AuthMode, admins: Vec<String>) -> Arc<Self> {
         let (tx, _) = broadcast::channel(512);
-        Arc::new(Self { state: Mutex::new(state), tx, cfg, data_path, dirty: Mutex::new(false), team_key })
+        let admins = admins.into_iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()).collect();
+        Arc::new(Self { state: Mutex::new(state), tx, cfg, store, dirty: Mutex::new(false), auth, admins })
     }
 
     pub async fn broadcast_snapshot(&self) {
@@ -41,19 +51,25 @@ impl Hub {
         *self.dirty.lock().await = true;
     }
 
+    /// 바뀐 것이 있으면 저장소에 스냅숏을 남긴다(잠금은 복사하는 동안만)
     pub async fn save(&self) {
-        let Some(p) = &self.data_path else { return };
-        let mut d = self.dirty.lock().await;
-        if !*d { return; }
-        let body = { serde_json::to_string_pretty(&*self.state.lock().await).unwrap_or_default() };
-        let tmp = p.with_extension("tmp");
-        if tokio::fs::write(&tmp, body).await.is_ok() {
-            let _ = tokio::fs::rename(&tmp, p).await;
-            *d = false;
+        {
+            let d = self.dirty.lock().await;
+            if !*d { return; }
         }
+        let copy = { self.state.lock().await.clone() };
+        match self.store.snapshot(&copy).await {
+            Ok(()) => *self.dirty.lock().await = false,
+            Err(e) => eprintln!("저장 실패(다음 주기에 다시 시도): {e}"),
+        }
+    }
+
+    pub fn is_admin(&self, email: &str) -> bool {
+        !email.is_empty() && self.admins.iter().any(|a| a == &email.to_lowercase())
     }
 }
 
+/// 파일 하나에서 상태 읽기(데스크톱 앱 내장 서버·시험용)
 pub fn load_state(path: &PathBuf) -> State {
     std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
@@ -79,9 +95,17 @@ pub fn load_demo(ui_dir: &PathBuf) -> Option<State> {
 }
 
 pub fn router(hub: Arc<Hub>, ui_dir: PathBuf) -> Router {
+    // 화면(데스크톱 앱·브라우저)이 다른 주소에서 상태·로그인 설정을 물을 수 있게 허용
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([axum::http::Method::GET])
+        .allow_headers([axum::http::header::AUTHORIZATION]);
     Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health))
+        .route("/auth-config", get(auth_config))
+        .route("/admin/audit", get(admin_audit))
+        .layer(cors)
         .fallback_service(tower_http::services::ServeDir::new(ui_dir))
         .with_state(hub)
 }
@@ -90,6 +114,9 @@ async fn health(AxState(hub): AxState<Arc<Hub>>) -> impl IntoResponse {
     let st = hub.state.lock().await;
     Json(json!({
         "ok": true,
+        "version": VERSION,
+        "auth": hub.auth.label(),
+        "store": hub.store.label(),
         "members": st.members.len(),
         "online": st.members.iter().filter(|m| m.online).count(),
         "projects": st.projects.len(),
@@ -98,8 +125,62 @@ async fn health(AxState(hub): AxState<Arc<Hub>>) -> impl IntoResponse {
     }))
 }
 
+/// 앱이 로그인 창을 열 때 필요한 값(공개 정보만)
+async fn auth_config(AxState(hub): AxState<Arc<Hub>>) -> impl IntoResponse {
+    match &hub.auth {
+        AuthMode::Open { team_key } => Json(json!({"mode": "open", "needKey": !team_key.is_empty()})),
+        AuthMode::Google(g) => Json(json!({
+            "mode": "google",
+            "clientId": g.client_ids.first().cloned().unwrap_or_default(),
+            "clientSecret": g.client_secret,
+            "domain": g.allowed_domains.first().cloned().unwrap_or_default(),
+        })),
+    }
+}
+
+/// 관리자: 최근 감사 기록. 머리글 Authorization: Bearer <구글 신분증>
+async fn admin_audit(AxState(hub): AxState<Arc<Hub>>, headers: HeaderMap, Query(q): Query<std::collections::HashMap<String, String>>) -> impl IntoResponse {
+    let AuthMode::Google(g) = &hub.auth else { return (StatusCode::FORBIDDEN, Json(json!({"error": "회사 계정 로그인 방식에서만 쓸 수 있습니다"}))); };
+    let token = headers.get("authorization").and_then(|h| h.to_str().ok()).and_then(|h| h.strip_prefix("Bearer ")).unwrap_or("");
+    match g.verify(token).await {
+        Ok(id) if hub.is_admin(&id.email) => {
+            let limit = q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(100i64).clamp(1, 1000);
+            (StatusCode::OK, Json(json!({"audit": hub.store.recent_audit(limit).await})))
+        }
+        Ok(_) => (StatusCode::FORBIDDEN, Json(json!({"error": "관리자만 볼 수 있습니다"}))),
+        Err(e) => (StatusCode::UNAUTHORIZED, Json(json!({"error": e}))),
+    }
+}
+
 async fn ws_handler(ws: WebSocketUpgrade, AxState(hub): AxState<Arc<Hub>>) -> impl IntoResponse {
     ws.on_upgrade(move |sock| client(sock, hub))
+}
+
+fn err(code: &str, msg: impl Into<String>) -> String {
+    json!({"t": "error", "code": code, "msg": msg.into()}).to_string()
+}
+
+/// 첫 인사 확인 → 회원 정보
+async fn greet(hub: &Hub, v: &Value) -> Result<Member, (String, String)> {
+    let given: Member = serde_json::from_value(v["member"].clone()).map_err(|_| ("hello".to_string(), "인사 형식이 틀렸습니다.".to_string()))?;
+    let m = match &hub.auth {
+        AuthMode::Open { team_key } => {
+            if !team_key.is_empty() && v.get("key").and_then(|k| k.as_str()) != Some(team_key.as_str()) {
+                return Err(("auth".into(), "모임 암호가 맞지 않습니다.".into()));
+            }
+            Member { email: String::new(), ..given }
+        }
+        AuthMode::Google(g) => {
+            let token = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
+            if token.is_empty() { return Err(("auth".into(), "회사 구글 계정으로 로그인해 주세요.".into())); }
+            let id = g.verify(token).await.map_err(|e| ("auth".to_string(), e))?;
+            Member { id: id.id, name: id.name, email: id.email, ..given }
+        }
+    };
+    if !m.email.is_empty() && hub.state.lock().await.blocked.contains(&m.email) {
+        return Err(("blocked".into(), "이 계정은 들어올 수 없습니다. 관리자에게 문의하세요.".into()));
+    }
+    Ok(m)
 }
 
 async fn client(sock: WebSocket, hub: Arc<Hub>) {
@@ -111,7 +192,10 @@ async fn client(sock: WebSocket, hub: Arc<Hub>) {
     let writer = tokio::spawn(async move {
         loop {
             tokio::select! {
-                Some(m) = direct_rx.recv() => { if sink.send(WsMsg::Text(m.into())).await.is_err() { break; } }
+                d = direct_rx.recv() => match d {
+                    Some(m) => { if sink.send(WsMsg::Text(m.into())).await.is_err() { break; } }
+                    None => { let _ = sink.close().await; break; } // 끊기 전 안내를 다 보낸 뒤 닫음
+                },
                 r = rx.recv() => match r {
                     Ok(m) => { if sink.send(WsMsg::Text(m.into())).await.is_err() { break; } }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -121,43 +205,60 @@ async fn client(sock: WebSocket, hub: Arc<Hub>) {
         }
     });
 
-    let mut me: Option<String> = None;
+    let mut me: Option<(String, String)> = None; // (아이디, 이메일)
     while let Some(Ok(msg)) = stream.next().await {
         let WsMsg::Text(text) = msg else { continue };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
 
-        // 첫 인사: {"op":"hello","member":{...},"key":"모임 암호"}
+        // 첫 인사: {"op":"hello","member":{...},"token":"구글 신분증" 또는 "key":"모임 암호"}
         if v.get("op").and_then(|o| o.as_str()) == Some("hello") {
-            if !hub.team_key.is_empty() && v.get("key").and_then(|k| k.as_str()) != Some(hub.team_key.as_str()) {
-                let _ = direct_tx.send(json!({"t":"error","msg":"모임 암호가 맞지 않습니다."}).to_string());
-                break;
+            match greet(&hub, &v).await {
+                Err((code, msg)) => {
+                    let _ = direct_tx.send(err(&code, msg));
+                    if code != "hello" { break; } else { continue; }
+                }
+                Ok(m) => {
+                    hub.store.audit(&m.id, &json!({"op": "hello", "computer": m.computer, "email": m.email})).await;
+                    me = Some((m.id.clone(), m.email.clone()));
+                    let admin = hub.is_admin(&m.email);
+                    hub.state.lock().await.upsert_member(m.clone());
+                    let _ = direct_tx.send(json!({"t":"welcome","memberId": m.id, "name": m.name, "email": m.email, "admin": admin, "claude": hub.cfg.api_key.is_some(), "version": VERSION}).to_string());
+                    hub.broadcast_snapshot().await;
+                }
             }
-            let Ok(m) = serde_json::from_value::<Member>(v["member"].clone()) else {
-                let _ = direct_tx.send(json!({"t":"error","msg":"인사 형식이 틀렸습니다."}).to_string());
-                continue;
-            };
-            me = Some(m.id.clone());
-            hub.state.lock().await.upsert_member(m.clone());
-            let _ = direct_tx.send(json!({"t":"welcome","memberId": m.id, "claude": hub.cfg.api_key.is_some()}).to_string());
-            hub.broadcast_snapshot().await;
             continue;
         }
-        let Some(who) = me.clone() else {
-            let _ = direct_tx.send(json!({"t":"error","msg":"먼저 인사(hello)를 보내 주세요."}).to_string());
+        let Some((who, email)) = me.clone() else {
+            let _ = direct_tx.send(err("hello", "먼저 인사(hello)를 보내 주세요."));
             continue;
         };
-        let op: Op = match serde_json::from_value(v) {
+        // 도중에 차단된 계정은 바로 끊는다
+        if !email.is_empty() && hub.state.lock().await.blocked.contains(&email) {
+            let _ = direct_tx.send(err("blocked", "이 계정은 차단되었습니다."));
+            break;
+        }
+        let op: Op = match serde_json::from_value(v.clone()) {
             Ok(op) => op,
-            Err(e) => { let _ = direct_tx.send(json!({"t":"error","msg": format!("알 수 없는 동작: {e}")}).to_string()); continue; }
+            Err(e) => { let _ = direct_tx.send(err("op", format!("알 수 없는 동작: {e}"))); continue; }
         };
+        match &op {
+            Op::Report { .. } => { hub.store.report(&who, &v).await; continue; }
+            Op::BlockUser { .. } | Op::UnblockUser { .. } if !hub.is_admin(&email) => {
+                let _ = direct_tx.send(err("admin", "관리자만 할 수 있습니다."));
+                continue;
+            }
+            _ => {}
+        }
+        hub.store.audit(&who, &v).await;
         handle_op(&hub, &who, op, Some(&direct_tx)).await;
     }
 
-    if let Some(id) = me {
+    if let Some((id, _)) = me {
         hub.state.lock().await.set_offline(&id);
         hub.broadcast_snapshot().await;
     }
-    writer.abort();
+    drop(direct_tx);
+    if tokio::time::timeout(std::time::Duration::from_secs(1), writer).await.is_err() { /* 1초 안에 못 보내면 그냥 닫음 */ }
 }
 
 /// 동작 하나 처리(시험에서도 쓴다).
@@ -235,4 +336,11 @@ pub type RouterType = Router;
 
 pub async fn serve(listener: tokio::net::TcpListener, router: Router) -> std::io::Result<()> {
     axum::serve(listener, router).await
+}
+
+/// 암호화 연결(https·wss)로 띄운다. 인증서·열쇠는 PEM 파일.
+pub async fn serve_tls(addr: std::net::SocketAddr, router: Router, cert: PathBuf, key: PathBuf) -> std::io::Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key).await?;
+    axum_server::bind_rustls(addr, cfg).serve(router.into_make_service()).await
 }

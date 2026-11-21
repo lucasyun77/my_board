@@ -18,6 +18,9 @@ pub struct Member {
     pub id: String,
     pub name: String,
     pub computer: String,
+    /// 회사 계정 이메일(구글 로그인일 때)
+    #[serde(default)]
+    pub email: String,
     #[serde(default)]
     pub role: String,
     #[serde(default)]
@@ -213,6 +216,9 @@ pub struct State {
     pub requests: Vec<MergeRequest>,
     #[serde(default)]
     pub boards: Vec<Board>,
+    /// 들어올 수 없는 계정 이메일(퇴사·정지)
+    #[serde(default)]
+    pub blocked: Vec<String>,
     #[serde(default)]
     pub seq: u64,
 }
@@ -259,6 +265,14 @@ pub enum Op {
     SetHelpLevel { level: u8 },
     #[serde(rename_all = "camelCase")]
     Board { project_id: String, id: Option<String>, name: String, widgets: Vec<String> },
+    /// 앱 오류 보고(저장만 하고 상태는 바꾸지 않음)
+    #[serde(rename_all = "camelCase")]
+    Report { message: String, #[serde(default)] detail: String, #[serde(default)] version: String },
+    /// 관리자: 계정 차단 / 차단 풀기
+    #[serde(rename_all = "camelCase")]
+    BlockUser { email: String },
+    #[serde(rename_all = "camelCase")]
+    UnblockUser { email: String },
     /// 본부장에게 지금 점검하라고 요청
     #[serde(rename_all = "camelCase")]
     AgentReview { project_id: String },
@@ -295,6 +309,7 @@ impl State {
         if let Some(old) = self.members.iter_mut().find(|x| x.id == m.id) {
             old.name = m.name;
             old.computer = m.computer;
+            if !m.email.is_empty() { old.email = m.email; }
             if !m.role.is_empty() { old.role = m.role; }
             old.online = true;
             old.last_seen = m.last_seen;
@@ -510,6 +525,19 @@ impl State {
                 Ok(Applied::Changed)
             }
             Op::AgentReview { project_id } => Ok(Applied::Review(project_id)),
+            Op::Report { .. } => Ok(Applied::Nothing),
+            Op::BlockUser { email } => {
+                let e = email.trim().to_lowercase();
+                if e.is_empty() { return Err("이메일이 비었습니다".into()); }
+                if !self.blocked.contains(&e) { self.blocked.push(e.clone()); }
+                for m in self.members.iter_mut().filter(|m| m.email == e) { m.online = false; }
+                Ok(Applied::Changed)
+            }
+            Op::UnblockUser { email } => {
+                let e = email.trim().to_lowercase();
+                self.blocked.retain(|x| x != &e);
+                Ok(Applied::Changed)
+            }
         }
     }
 

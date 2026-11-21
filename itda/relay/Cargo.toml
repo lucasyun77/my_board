@@ -1,8 +1,8 @@
 [package]
 name = "itda-relay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "잇다 중계 서버: 서로 다른 컴퓨터의 AI 세션을 잇고, AI 본부장을 돌린다"
+description = "아이센스투게더 중계 서버: 서로 다른 컴퓨터의 AI 세션을 잇고, AI 본부장을 돌린다"
 
 [lib]
 path = "src/lib.rs"
@@ -13,9 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "9"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "json", "tls-rustls-ring-webpki"] }
+
+[dev-dependencies]
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
+base64 = "0.22"

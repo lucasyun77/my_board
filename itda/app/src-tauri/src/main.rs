@@ -100,7 +100,7 @@ async fn start_relay(app: AppHandle, port: u16, key: String) -> Result<u16, Stri
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let data = dir.join("itda-data.json");
     let state = itda_relay::load_state(&data);
-    let hub = itda_relay::Hub::new(state, itda_relay::agent::AgentCfg::default(), Some(data), key);
+    let hub = itda_relay::Hub::new(state, itda_relay::agent::AgentCfg::default(), itda_relay::store::Store::File(data), itda_relay::auth::AuthMode::Open { team_key: key }, vec![]);
     itda_relay::spawn_background(hub.clone());
     let router = itda_relay::router(hub, dir.join("ui"));
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.map_err(|e| format!("포트 {port}를 열 수 없습니다: {e}"))?;
