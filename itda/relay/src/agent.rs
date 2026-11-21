@@ -265,6 +265,30 @@ mod tests {
     }
 
     #[test]
+    fn 확장을_공유하고_새_판은_다시_승인_대기() {
+        let mut st = base();
+        let ext = |v: &str, perm: &str| SharedExtension {
+            id: "today-tab".into(), name: "오늘 할 일".into(), version: v.into(), permissions: vec![perm.into()],
+            files: [("tab.html".to_string(), "<p>안녕</p>".to_string())].into_iter().collect(), ..Default::default()
+        };
+        st.apply("u1", Op::ShareExtension { ext: ext("1.0.0", "read:plan") }).unwrap();
+        assert_eq!(st.extensions[0].status, "대기");
+        st.apply("admin", Op::ApproveExtension { id: "today-tab".into() }).unwrap();
+        assert_eq!(st.extensions[0].status, "승인");
+        st.apply("u1", Op::ShareExtension { ext: ext("1.1.0", "read:plan") }).unwrap();
+        assert_eq!((st.extensions.len(), st.extensions[0].status.as_str()), (1, "대기"));
+        // 다른 사람이 같은 아이디로 덮어쓰기 금지, 허락 목록 밖 권한 금지, 이상한 아이디 금지
+        assert!(st.apply("u2", Op::ShareExtension { ext: ext("2.0.0", "read:plan") }).is_err());
+        assert!(st.apply("u1", Op::ShareExtension { ext: ext("1.2.0", "op:block") }).is_err());
+        let mut bad = ext("1.0.0", "read:plan"); bad.id = "Bad_ID".into();
+        assert!(st.apply("u1", Op::ShareExtension { ext: bad }).is_err());
+        let mut big = ext("1.3.0", "read:plan"); big.files.insert("big.html".into(), "가".repeat(80_000));
+        assert!(st.apply("u1", Op::ShareExtension { ext: big }).is_err());
+        st.apply("u1", Op::RemoveExtension { id: "today-tab".into() }).unwrap();
+        assert!(st.extensions.is_empty());
+    }
+
+    #[test]
     fn 완료인데_산출물_없으면_검수() {
         let mut st = base();
         let pid = st.projects[0].id.clone();

@@ -243,7 +243,11 @@ async fn client(sock: WebSocket, hub: Arc<Hub>) {
         };
         match &op {
             Op::Report { .. } => { hub.store.report(&who, &v).await; continue; }
-            Op::BlockUser { .. } | Op::UnblockUser { .. } if !hub.is_admin(&email) => {
+            Op::RemoveExtension { id } if !hub.is_admin(&email) && !hub.state.lock().await.extensions.iter().any(|e| &e.id == id && e.by == who) => {
+                let _ = direct_tx.send(err("admin", "관리자나 올린 사람만 지울 수 있습니다."));
+                continue;
+            }
+            Op::BlockUser { .. } | Op::UnblockUser { .. } | Op::ApproveExtension { .. } if !hub.is_admin(&email) => {
                 let _ = direct_tx.send(err("admin", "관리자만 할 수 있습니다."));
                 continue;
             }

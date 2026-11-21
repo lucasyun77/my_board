@@ -188,6 +188,38 @@ pub struct MergeRequest {
     pub ts: u64,
 }
 
+/// 팀에 공유한 확장(모드). 관리자가 승인해야 팀원이 켤 수 있다.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedExtension {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub tabs: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub bands: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub files: HashMap<String, String>,
+    /// 대기 / 승인
+    pub status: String,
+    pub by: String,
+    pub updated_at: u64,
+}
+
+pub const EXT_FILE_MAX: usize = 200 * 1024;
+pub const EXT_TOTAL_MAX: usize = 1024 * 1024;
+pub const EXT_PERMISSIONS: [&str; 11] = ["read:project", "read:sessions", "read:plan", "read:artifacts", "read:messages", "read:wiki", "read:members", "op:post", "op:plan", "op:wiki", "op:board"];
+
+/// 확장 아이디 검사: 영문 소문자·숫자·하이픈, 3~40자
+pub fn valid_ext_id(id: &str) -> bool {
+    (3..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// 사람이 만들어 공유하는 협업 대시보드(보여 줄 판 조각 목록)
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,6 +248,9 @@ pub struct State {
     pub requests: Vec<MergeRequest>,
     #[serde(default)]
     pub boards: Vec<Board>,
+    /// 팀에 공유한 확장
+    #[serde(default)]
+    pub extensions: Vec<SharedExtension>,
     /// 들어올 수 없는 계정 이메일(퇴사·정지)
     #[serde(default)]
     pub blocked: Vec<String>,
@@ -268,6 +303,15 @@ pub enum Op {
     /// 앱 오류 보고(저장만 하고 상태는 바꾸지 않음)
     #[serde(rename_all = "camelCase")]
     Report { message: String, #[serde(default)] detail: String, #[serde(default)] version: String },
+    /// 확장을 팀에 공유(새 판이면 다시 승인 대기)
+    #[serde(rename_all = "camelCase")]
+    ShareExtension { ext: SharedExtension },
+    /// 관리자: 확장 승인
+    #[serde(rename_all = "camelCase")]
+    ApproveExtension { id: String },
+    /// 관리자 또는 올린 사람: 확장 지우기
+    #[serde(rename_all = "camelCase")]
+    RemoveExtension { id: String },
     /// 관리자: 계정 차단 / 차단 풀기
     #[serde(rename_all = "camelCase")]
     BlockUser { email: String },
@@ -537,6 +581,36 @@ impl State {
             }
             Op::AgentReview { project_id } => Ok(Applied::Review(project_id)),
             Op::Report { .. } => Ok(Applied::Nothing),
+            Op::ShareExtension { mut ext } => {
+                if !valid_ext_id(&ext.id) { return Err("확장 아이디는 영문 소문자·숫자·하이픈 3~40자여야 합니다".into()); }
+                if ext.name.trim().is_empty() || ext.version.trim().is_empty() { return Err("확장 이름과 판 번호가 필요합니다".into()); }
+                if let Some(bad) = ext.permissions.iter().find(|p| !EXT_PERMISSIONS.contains(&p.as_str())) {
+                    return Err(format!("허락할 수 없는 권한입니다: {bad}"));
+                }
+                if ext.files.keys().any(|k| k.contains("..") || k.starts_with('/') || k.contains('\\')) { return Err("파일 이름이 올바르지 않습니다".into()); }
+                if ext.files.values().any(|v| v.len() > EXT_FILE_MAX) { return Err("파일 하나가 200KB를 넘습니다".into()); }
+                if ext.files.values().map(|v| v.len()).sum::<usize>() > EXT_TOTAL_MAX { return Err("확장 하나가 1MB를 넘습니다".into()); }
+                if let Some(old) = self.extensions.iter().find(|e| e.id == ext.id) {
+                    if old.by != who { return Err("다른 사람이 올린 확장과 아이디가 겹칩니다. 아이디를 바꿔 주세요".into()); }
+                }
+                ext.status = "대기".into();
+                ext.by = who.into();
+                ext.updated_at = now;
+                self.extensions.retain(|e| e.id != ext.id);
+                self.extensions.push(ext);
+                Ok(Applied::Changed)
+            }
+            Op::ApproveExtension { id } => {
+                let e = self.extensions.iter_mut().find(|e| e.id == id).ok_or("확장이 없습니다")?;
+                e.status = "승인".into();
+                Ok(Applied::Changed)
+            }
+            Op::RemoveExtension { id } => {
+                let before = self.extensions.len();
+                self.extensions.retain(|e| e.id != id);
+                if before == self.extensions.len() { return Err("확장이 없습니다".into()); }
+                Ok(Applied::Changed)
+            }
             Op::BlockUser { email } => {
                 let e = email.trim().to_lowercase();
                 if e.is_empty() { return Err("이메일이 비었습니다".into()); }
