@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "m
 itda-relay = { path = "../../relay" }
 itda-login = { path = "login" }
 itda-claude = { path = "claude" }
+itda-extws = { path = "extws" }
 
 [features]
 # 화면 파일을 실행 파일 안에 넣는다(배포용)

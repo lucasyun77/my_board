@@ -1,0 +1,9 @@
+[package]
+name = "itda-extws"
+version = "0.1.0"
+edition = "2021"
+description = "아이센스투게더 「앱 고치기」 작업 폴더를 읽고 쓰는 부품(타우리와 무관, 리눅스에서도 시험 가능)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

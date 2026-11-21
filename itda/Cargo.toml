@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["relay", "app/src-tauri", "app/src-tauri/login", "app/src-tauri/claude"]
+members = ["relay", "app/src-tauri", "app/src-tauri/login", "app/src-tauri/claude", "app/src-tauri/extws"]
 
 [profile.release]
 opt-level = "s"

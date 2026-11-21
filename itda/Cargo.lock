@@ -1896,6 +1896,7 @@ name = "itda-desktop"
 version = "0.1.0"
 dependencies = [
  "itda-claude",
+ "itda-extws",
  "itda-login",
  "itda-relay",
  "serde",
@@ -1903,6 +1904,14 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+]
+
+[[package]]
+name = "itda-extws"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

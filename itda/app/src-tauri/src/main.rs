@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 mod claude_cmd;
+mod ext_cmd;
 mod login;
 
 #[derive(Serialize, Clone)]
@@ -135,7 +136,9 @@ fn main() {
             claude_cmd::claude_start,
             claude_cmd::claude_send,
             claude_cmd::claude_stop,
-            claude_cmd::claude_status
+            claude_cmd::claude_status,
+            ext_cmd::ext_workspace,
+            ext_cmd::ext_write_layout
         ])
         .build(tauri::generate_context!())
         .expect("아이센스투게더를 시작하지 못했습니다")
