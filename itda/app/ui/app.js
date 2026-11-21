@@ -725,13 +725,19 @@ function onClaude(p) {
   const demo = p.demo ? ' (시연)' : '';
   if (p.claudeSessionId) CL.cid[sid] = p.claudeSessionId;
   switch (p.kind) {
-    case 'started': CL.running[sid] = true; lg('sys', `클로드 연결됨${p.resumed ? ' (이전 대화를 이어서)' : ''}`); break;
+    case 'started': CL.running[sid] = true; if (CL.cost) CL.cost[sid] = 0; lg('sys', `클로드 연결됨${p.resumed ? ' (이전 대화를 이어서)' : ''}`); break;
     case 'text': lg('out', p.text); break;
     case 'tool': lg('tool', `${p.tool || '도구'} · ${oneLine(p.text)}${demo}`); break;
     case 'tool_result': if (p.isError) lg('err', oneLine(p.text, 300)); break;
     case 'denied': lg('denied', `허락이 필요한 동작이 막혔습니다: ${p.tool || '도구'} · ${oneLine(p.text)}${demo}`); break;
-    case 'result': lg('result', `끝${typeof p.costUsd === 'number' ? ` · 약 ${p.costUsd.toFixed(2)}달러` : ''}${demo}`); break;
-    case 'exit': CL.running[sid] = false; lg('sys', '클로드가 꺼졌습니다'); break;
+    case 'result': {
+      // 클로드가 주는 비용은 켜 둔 동안의 누적값일 수 있어, 이번 차례에 늘어난 몫만 보인다
+      CL.cost = CL.cost || {};
+      let c = '';
+      if (typeof p.costUsd === 'number') { const prev = CL.cost[sid] || 0; const d = p.costUsd >= prev ? p.costUsd - prev : p.costUsd; CL.cost[sid] = p.costUsd; c = ` · 약 ${d.toFixed(3)}달러`; }
+      lg('result', `끝${c}${demo}`); break;
+    }
+    case 'exit': CL.running[sid] = false; if (CL.cost) CL.cost[sid] = 0; lg('sys', '클로드가 꺼졌습니다'); break;
     case 'error': lg('err', p.text || '클로드 오류'); break;
   }
 }
