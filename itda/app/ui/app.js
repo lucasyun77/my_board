@@ -126,9 +126,11 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 
 // ───────── 보내기: 연결 방식은 서버로, 시연 방식은 이 안에서 ─────────
 function send(op) {
-  if (S.live && S.ws && S.ws.readyState === 1) { S.ws.send(JSON.stringify(op)); return; }
-  try { Demo.apply(S.me, op); } catch (e) { toast(e.message || String(e)); }
+  if (S.live && S.ws && S.ws.readyState === 1) { S.ws.send(JSON.stringify(op)); return { ok: true }; }
+  let r = { ok: true };
+  try { Demo.apply(S.me, op); } catch (e) { r = { ok: false, error: e.message || String(e) }; toast(r.error); }
   render();
+  return r;
 }
 
 // ───────── 시연 방식 처리 규칙(중계 서버의 규칙을 줄여 옮김) ─────────
@@ -205,6 +207,16 @@ const Demo = {
         break;
       }
       case 'agentReview': this.review(op.projectId); break;
+      case 'shareExtension': {
+        const e = op.ext || {}; const c = cleanExt(e, e.files);
+        s.extensions = s.extensions || [];
+        const ent = Object.assign({}, c.manifest, { files: c.files, status: '대기', by: who, at: t });
+        const i = s.extensions.findIndex(x => x.id === c.manifest.id);
+        if (i >= 0) s.extensions[i] = ent; else s.extensions.push(ent);
+        break;
+      }
+      case 'approveExtension': { const x = (s.extensions || []).find(x => x.id === op.id); if (!x) throw new Error('확장을 찾을 수 없습니다'); x.status = '승인'; break; }
+      case 'removeExtension': { const x = (s.extensions || []).find(x => x.id === op.id); if (!x) throw new Error('확장을 찾을 수 없습니다'); s.extensions = s.extensions.filter(y => y !== x); break; }
       default: throw new Error('알 수 없는 동작: ' + op.op);
     }
   },
@@ -344,7 +356,7 @@ function onServerError(m) {
 }
 function setAdmin(on, email) {
   A.admin = on; A.email = email || '';
-  const tab = $('#tabAdmin'); if (tab) tab.classList.toggle('hidden', !on);
+  renderTabs();
   if (!on && ui.tab === 'admin') { ui.tab = 'map'; if (st()) renderRight(); }
   renderMe();
 }
@@ -371,6 +383,7 @@ function render(light) {
   if (!light || ui.tab === 'map' || ui.tab === 'chat') renderRight(light);
   renderMe(); renderUnread();
   autoReqs();
+  extPushAll();
 }
 
 function renderTree() {
@@ -389,9 +402,10 @@ function renderTree() {
       ${open ? `${tm ? sessNode(tm, '🎼 ') : ''}${people}` : ''}</div>`;
   }).join('');
   $('#tree').innerHTML = html || '<p class="muted pad">프로젝트가 없습니다. 위의 버튼으로 만드세요.</p>';
+  renderFixerNode();
 }
 function sessNode(s, pre = '') {
-  return `<div class="node ${s.id === ui.sessionId ? 'on' : ''}" data-sess="${s.id}" title="${esc(STATUS[s.status] || s.status)}"><span class="dot ${s.status}"></span><span class="t">${pre}${esc(s.title)}</span>${s.isMain && !s.isTeamMain ? '<span class="muted small">메인</span>' : ''}</div>`;
+  return `<div class="node ${s.id === ui.sessionId && !ui.fixer ? 'on' : ''}" data-sess="${s.id}" title="${esc(STATUS[s.status] || s.status)}"><span class="dot ${s.status}"></span><span class="t">${pre}${esc(s.title)}</span>${s.isMain && !s.isTeamMain ? '<span class="muted small">메인</span>' : ''}</div>`;
 }
 
 function renderMe() {
@@ -402,6 +416,7 @@ function renderMe() {
 }
 
 function renderCenter(light) {
+  if (ui.fixer) { renderFixer(light); return; }
   const s = session(); const head = $('#sessHead'); const log = $('#log');
   if (!s) { head.innerHTML = '<h2>세션을 고르세요</h2>'; log.innerHTML = ''; $('#coachStrip').innerHTML = ''; return; }
   const mine = s.ownerId === S.me; const owner = member(s.ownerId);
@@ -450,13 +465,18 @@ function renderCenter(light) {
 
 function renderUnread() {
   const n = st().channels.filter(c => c.projectId === ui.projectId).reduce((a, c) => a + unreadOf(c.id), 0);
-  $('#unread').textContent = n ? n : '';
+  const u = $('#unread'); if (u) u.textContent = n ? n : '';
 }
 const unreadOf = cid => st().messages.filter(m => m.channelId === cid && m.from !== S.me && m.ts > (ui.lastRead[cid] || 0)).length;
 
 function renderRight(light) {
+  const vis = tabList().map(t => t.id); if (A.admin) vis.push('admin');
+  if (!vis.includes(ui.tab)) ui.tab = vis[0] || '';
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
   const pane = $('#pane');
+  if (!ui.tab) { pane.dataset.ext = ''; pane.innerHTML = '<p class="pad muted">모든 탭이 숨겨져 있습니다. 「🛠 앱 고치기」에서 「지식위키 탭 다시 보여 줘」처럼 말하거나 「배치 처음대로」를 누르세요.</p>'; return; }
+  if (ui.tab.startsWith('ext:')) { renderExtTab(ui.tab); return; }
+  pane.dataset.ext = '';
   if (light && ui.tab === 'chat') { const box = $('.msgs', pane); if (box) { renderChat(); return; } }
   if (light && ui.tab === 'map') { renderMap(); return; }
   if (ui.tab === 'admin' && !A.admin) ui.tab = 'map';
@@ -598,7 +618,7 @@ function renderChat() {
   const keepScroll = existing && existing.dataset.ch === ch.id ? existing.scrollHeight - existing.scrollTop - existing.clientHeight < 60 : true;
   const draft = $('#chatInput') ? $('#chatInput').value : '';
   const focused = document.activeElement && document.activeElement.id === 'chatInput';
-  $('#pane').innerHTML = `<div class="chat"><div class="chlist"><div class="sec">채널</div>${chs.filter(c => c.kind === 'channel').map(listItem).join('')}<div class="ch muted" data-newch>＋ 채널 만들기</div>
+  $('#pane').innerHTML = `<div class="chat${LAY.channelListSide === 'right' ? ' right' : ''}"><div class="chlist"><div class="sec">채널</div>${chs.filter(c => c.kind === 'channel').map(listItem).join('')}<div class="ch muted" data-newch>＋ 채널 만들기</div>
       <div class="sec">개인 대화</div>${chs.filter(c => c.kind === 'dm').map(listItem).join('')}<div class="ch muted" data-newdm>＋ 개인 대화</div></div>
     <div class="chmain"><div class="chhead">${ch.kind === 'dm' ? '👤' : ch.name === '본부장' ? '🧭' : '#'} ${esc(ch.kind === 'dm' ? ch.members.filter(m => m !== S.me).map(nameOf).join(', ') : ch.name)}${ch.name === '본부장' ? '<span class="muted small" style="font-weight:400">AI 본부장이 여러분의 생각을 묻고 위키에 정리합니다. 「목표: …」 「할 일: …」 「점검」</span>' : ''}</div>
       <div class="msgs" data-ch="${ch.id}">${msgs.map(m => { const a = m.artifactId && st().artifacts.find(x => x.id === m.artifactId); const r = m.replyTo && byId[m.replyTo];
@@ -781,6 +801,7 @@ function autoReqs() {
 
 // ───────── 세션 입력 처리 ─────────
 async function submitInput(text) {
+  if (ui.fixer) { if (text.trim()) fxSubmit(text.trim()); return; }
   const s = session(); if (!s || !text.trim()) return;
   const mine = s.ownerId === S.me;
   if (!mine) {
@@ -838,6 +859,7 @@ function settingsDialog() {
     <label>다른 사람이 보낸 일 (합치기 요청·본부장 지시)</label><select id="cIncoming">${INCOMING.map(([v, n]) => `<option value="${v}" ${v === cfg.incoming ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label>화면 밝기</label><select id="cTheme"><option value="auto">컴퓨터 설정 따름</option><option value="light" ${cfg.theme === 'light' ? 'selected' : ''}>밝게</option><option value="dark" ${cfg.theme === 'dark' ? 'selected' : ''}>어둡게</option></select>
     ${TAURI ? `<label>이 컴퓨터를 팀 중계 서버로 (팀에서 한 사람만)</label><button class="btn" id="cHost">이 컴퓨터에서 중계 서버 켜기 (포트 7878)</button><p class="muted small" id="cHostMsg"></p>` : ''}
+    <label>확장 (탭·띠 더하기)</label><button class="btn" data-exta="open">🧩 확장 관리</button>
     <p class="muted small">내 아이디: ${esc(cfg.id)} (다른 컴퓨터에서 같은 사람으로 보이려면 이 값을 옮기세요)</p>
     <div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="cSave">저장하고 다시 연결</button></div>`);
   $('#cSave').onclick = () => {
@@ -934,6 +956,636 @@ document.addEventListener('click', e => {
   else if (a === 'blocknew') { const v = ($('#blockEmail').value || '').trim().toLowerCase(); if (v) send({ op: 'blockUser', email: v }); }
 });
 
+// ═════════ 배치 설정 (layout.json, 설계서 4장) ═════════
+const BASE_TABS = [['map', '연결 지도'], ['board', '협업 대시보드'], ['chat', '메신저'], ['wiki', '지식위키'], ['agent', 'AI 본부장']];
+const LAYOUT_DEFAULT = { channelListSide: 'left', tabOrder: BASE_TABS.map(t => t[0]), hiddenTabs: [], accent: '#FF7A45', fontScale: 1, sideWidth: 260 };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// 모르는 칸은 버리고, 범위 밖 값은 가장 가까운 허용값으로 맞춘다
+function normLayout(raw) {
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const L = JSON.parse(JSON.stringify(LAYOUT_DEFAULT));
+  if (o.channelListSide === 'left' || o.channelListSide === 'right') L.channelListSide = o.channelListSide;
+  const okTab = x => typeof x === 'string' && x.length > 0 && x.length <= 120;
+  if (Array.isArray(o.tabOrder)) L.tabOrder = [...new Set(o.tabOrder.filter(okTab))];
+  if (Array.isArray(o.hiddenTabs)) L.hiddenTabs = [...new Set(o.hiddenTabs.filter(okTab))];
+  if (typeof o.accent === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(o.accent.trim())) L.accent = o.accent.trim().toUpperCase();
+  const num = v => typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  if (isFinite(num(o.fontScale))) L.fontScale = Math.round(clamp(num(o.fontScale), 0.85, 1.3) * 100) / 100;
+  if (isFinite(num(o.sideWidth))) L.sideWidth = Math.round(clamp(num(o.sideWidth), 200, 360));
+  return L;
+}
+let LAY = normLayout(null);
+function applyLayout(raw, persist = true) {
+  LAY = normLayout(raw);
+  if (persist) LS.set('layout', LAY);
+  const r = document.documentElement.style;
+  r.setProperty('--accent', LAY.accent);
+  if (LAY.accent === LAYOUT_DEFAULT.accent) r.removeProperty('--accent-soft');
+  else r.setProperty('--accent-soft', `color-mix(in srgb, ${LAY.accent} 18%, var(--paper))`);
+  r.setProperty('--fs', String(LAY.fontScale));
+  r.setProperty('--side-w', LAY.sideWidth + 'px');
+  renderTabs();
+  if (st()) renderRight();
+  return LAY;
+}
+const tabTitle = id => { const t = BASE_TABS.find(x => x[0] === id); if (t) return t[1]; const e = extTabs().find(x => x.id === id); return e ? e.title : id; };
+function layoutDiff(a, b) {
+  const out = [];
+  if (a.channelListSide !== b.channelListSide) out.push(`메신저 채널 목록 ${b.channelListSide === 'right' ? '오른쪽' : '왼쪽'}`);
+  if (JSON.stringify(a.tabOrder) !== JSON.stringify(b.tabOrder)) out.push('탭 순서');
+  if (JSON.stringify(a.hiddenTabs) !== JSON.stringify(b.hiddenTabs)) out.push(b.hiddenTabs.length ? `숨긴 탭 ${b.hiddenTabs.map(tabTitle).join('·')}` : '숨긴 탭 없음');
+  if (a.accent !== b.accent) out.push(`강조색 ${b.accent}`);
+  if (a.fontScale !== b.fontScale) out.push(`글자 크기 ${b.fontScale}배`);
+  if (a.sideWidth !== b.sideWidth) out.push(`사이드 폭 ${b.sideWidth}`);
+  return out.join(', ') || '바뀐 것 없음';
+}
+
+// ── 탭 줄: 기본 탭 + 켜 둔 확장 탭, 순서·숨기기 적용 ──
+function extTabs() {
+  return extEnabled().flatMap(r => r.manifest.tabs.map(t => ({ id: `ext:${r.manifest.id}:${t.id}`, title: t.title, ext: r.manifest.id, name: r.manifest.name })));
+}
+function tabList() {
+  const all = BASE_TABS.map(([id, title]) => ({ id, title })).concat(extTabs());
+  const byId = Object.fromEntries(all.map(t => [t.id, t]));
+  const ordered = LAY.tabOrder.filter(id => byId[id]).map(id => byId[id]).concat(all.filter(t => !LAY.tabOrder.includes(t.id)));
+  return ordered.filter(t => !LAY.hiddenTabs.includes(t.id));
+}
+function renderTabs() {
+  const nav = $('#tabs'); if (!nav) return;
+  nav.innerHTML = tabList().map(t => `<button data-tab="${esc(t.id)}" class="${t.id === ui.tab ? 'on' : ''}${t.ext ? ' ext' : ''}"${t.ext ? ` title="확장 「${esc(t.name)}」"` : ''}>${esc(t.title)}${t.id === 'chat' ? ' <i id="unread"></i>' : ''}</button>`).join('')
+    + `<button data-tab="admin" id="tabAdmin" class="${A.admin ? '' : 'hidden'}${ui.tab === 'admin' ? ' on' : ''}">관리</button>`;
+  if (st()) renderUnread();
+}
+
+// ═════════ 확장 (설계서 5~7장) ═════════
+const PERM_DESC = {
+  'read:project': '프로젝트 이름·목표·지침 보기',
+  'read:sessions': '세션 목록과 상태 보기',
+  'read:plan': '계획(할 일) 보기',
+  'read:artifacts': '산출물 목록·버전 보기(내용 제외)',
+  'read:messages': '메신저 글 보기',
+  'read:wiki': '지식위키 보기',
+  'read:members': '팀원 이름·컴퓨터·접속 여부 보기(이메일 제외)',
+  'op:post': '메신저에 글 쓰기',
+  'op:plan': '계획(할 일) 더하기·고치기',
+  'op:wiki': '지식위키 쓰기',
+  'op:board': '협업 대시보드 만들기·고치기',
+};
+const OP_PERM = { post: 'op:post', plan: 'op:plan', wiki: 'op:wiki', board: 'op:board' };
+const EXT_MAX_FILE = 200 * 1024, EXT_MAX_ALL = 1024 * 1024, EXT_HIST = 5, EXT_STORE_MAX = 256 * 1024;
+const EXT_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:";
+const FIXER = 'app-fixer';
+const byteLen = s => new TextEncoder().encode(String(s)).length;
+const knownPerms = list => (list || []).filter(p => PERM_DESC[p]);
+function lsTry(k, v) { try { localStorage.setItem('itda.' + k, JSON.stringify(v)); return true; } catch { return false; } }
+const inst = () => LS.get('ext.installed', {}) || {};
+const pend = () => LS.get('ext.pending', {}) || {};
+const hist = () => LS.get('ext.hist', {}) || {};
+const extEnabled = () => Object.values(inst()).filter(r => r.enabled && !X.blocked[r.manifest.id]);
+const X = { blocked: {} };
+let FR = [];   // 떠 있는 확장 창들: { iframe, extId, target, hash, loaded, last, lastAt, timer, ops }
+
+// manifest 와 파일 묶음을 검사해 깨끗한 모양으로 돌려준다(틀리면 오류)
+function cleanExt(m, files) {
+  if (!m || typeof m !== 'object') throw new Error('manifest.json 이 비었거나 모양이 틀립니다');
+  const id = String(m.id || '');
+  if (!/^[a-z0-9-]{3,40}$/.test(id)) throw new Error(`확장 아이디 「${id}」가 규칙(영문 소문자·숫자·하이픈 3~40자)에 맞지 않습니다`);
+  const F = {}; let total = 0;
+  Object.entries(files && typeof files === 'object' ? files : {}).forEach(([k, v]) => {
+    if (typeof v !== 'string' || k.length > 120) return;
+    const n = byteLen(v); if (n > EXT_MAX_FILE) throw new Error(`「${id}」의 파일 「${k}」가 200KB를 넘습니다`);
+    total += n; F[k] = v;
+  });
+  if (total > EXT_MAX_ALL) throw new Error(`「${id}」 확장이 1MB를 넘습니다`);
+  const str = (v, n) => String(v ?? '').slice(0, n);
+  const okPart = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v);
+  const tabs = (Array.isArray(m.tabs) ? m.tabs : []).filter(t => t && okPart(t.id) && typeof t.file === 'string' && F[t.file] != null).slice(0, 8)
+    .map(t => ({ id: t.id, title: str(t.title || m.name || id, 30), file: t.file }));
+  const bands = (Array.isArray(m.bands) ? m.bands : []).filter(b => b && okPart(b.id) && typeof b.file === 'string' && F[b.file] != null).slice(0, 4)
+    .map(b => ({ id: b.id, file: b.file, height: Math.round(clamp(Number(b.height) || 36, 24, 120)) }));
+  if (!tabs.length && !bands.length) throw new Error(`「${id}」 확장에 탭이나 띠가 없습니다(파일 이름을 확인하세요)`);
+  const permissions = [...new Set((Array.isArray(m.permissions) ? m.permissions : []).map(String))].slice(0, 30);
+  return { manifest: { id, name: str(m.name || id, 40), version: str(m.version || '1.0.0', 20), description: str(m.description, 300), permissions, tabs, bands }, files: F };
+}
+function extHash(c) {
+  const j = JSON.stringify([c.manifest, Object.keys(c.files).sort().map(k => [k, c.files[k]])]);
+  let h = 2166136261; for (let i = 0; i < j.length; i++) { h ^= j.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + j.length.toString(36);
+}
+const toOffer = (c, source) => Object.assign({ manifest: c.manifest, files: c.files }, { hash: extHash(c), source });
+function saveInst(all) { if (!lsTry('ext.installed', all)) toast('저장 공간이 모자라 확장을 저장하지 못했습니다'); }
+function pushHist(rec) {
+  const H = hist(); const list = (H[rec.manifest.id] || []).filter(e => e.hash !== rec.hash);
+  list.push({ manifest: rec.manifest, files: rec.files, hash: rec.hash, at: now() });
+  H[rec.manifest.id] = list.slice(-EXT_HIST);
+  // 저장 공간이 모자라면 오래된 판부터 버린다
+  while (!lsTry('ext.hist', H)) { const k = Object.keys(H).find(k => H[k].length) ; if (!k) break; H[k].shift(); }
+}
+// 켜기: 이전 판은 되돌리기용으로 보관
+function extInstall(offer, granted) {
+  const all = inst(); const id = offer.manifest.id; const cur = all[id];
+  if (cur && cur.hash !== offer.hash) pushHist(cur);
+  all[id] = { manifest: offer.manifest, files: offer.files, hash: offer.hash, source: offer.source || 'local', enabled: true, granted: knownPerms(granted), at: now() };
+  saveInst(all);
+  const P = pend(); if (P[id] && P[id].hash === offer.hash) { delete P[id]; LS.set('ext.pending', P); }
+  delete X.blocked[id];
+  extRefresh();
+  return all[id];
+}
+function extRemove(id) {
+  const all = inst(); delete all[id]; saveInst(all);
+  const H = hist(); delete H[id]; LS.set('ext.hist', H);
+  try { localStorage.removeItem('itda.ext.store.' + id); } catch {}
+  extRefresh();
+}
+function extRollback(id, hash) {
+  const H = hist(); const e = (H[id] || []).find(x => x.hash === hash); const rec = inst()[id];
+  if (!e || !rec) return;
+  H[id] = H[id].filter(x => x !== e); LS.set('ext.hist', H);
+  const offer = { manifest: e.manifest, files: e.files, hash: e.hash, source: rec.source };
+  const more = knownPerms(e.manifest.permissions).filter(p => !rec.granted.includes(p));
+  if (more.length) permDialog(offer);
+  else { extInstall(offer, rec.granted.filter(p => e.manifest.permissions.includes(p))); toast(`「${e.manifest.name}」 v${e.manifest.version} 으로 되돌렸습니다`); }
+}
+function extRefresh() {
+  renderTabs(); renderBands();
+  if (st()) { renderRight(); renderFixerNode(); if (ui.fixer) renderCenter(true); }
+}
+
+// ── 확장 창 만들기: 콘텐츠 보안 정책 + 도우미 itda 를 맨 앞에 넣는다 ──
+// 이 함수는 글자로 바뀌어 격리 창 안에 들어간다(바깥 변수를 쓰면 안 됨)
+function itdaHelper() {
+  var P = window.parent, ctx = null, last = null, seq = 0, wait = {}, readyF = [], stateF = [];
+  function call(f, v) { try { f(v); } catch (e) { setTimeout(function () { throw e; }); } }
+  function post(m) { P.postMessage(m, '*'); }
+  function req(m) { return new Promise(function (res) { var id = 'q' + (++seq); wait[id] = res; m.reqId = id; post(m); }); }
+  window.addEventListener('message', function (e) {
+    if (e.source !== P) return;
+    var m = e.data; if (!m || typeof m !== 'object') return;
+    if (m.type === 'init') { ctx = { extId: m.extId, target: m.target, theme: m.theme }; readyF.forEach(function (f) { call(f, ctx); }); }
+    else if (m.type === 'state') { last = m.state; stateF.forEach(function (f) { call(f, last); }); }
+    else if ((m.type === 'opResult' || m.type === 'storeResult') && wait[m.reqId]) { var w = wait[m.reqId]; delete wait[m.reqId]; w(m); }
+  });
+  var itda = {
+    ready: function (f) { if (typeof f === 'function') { readyF.push(f); if (ctx) call(f, ctx); } },
+    onState: function (f) { if (typeof f === 'function') { stateF.push(f); if (last) call(f, last); } },
+    op: function (o) { return req({ type: 'op', op: o }).then(function (m) { return m.ok ? { ok: true } : { ok: false, error: m.error || '실패했습니다' }; }); },
+    store: Object.freeze({
+      get: function (k) { return req({ type: 'store.get', key: String(k) }).then(function (m) { return m.value === undefined ? null : m.value; }); },
+      set: function (k, v) { return req({ type: 'store.set', key: String(k), value: v }).then(function (m) { if (m.error) throw new Error(m.error); return m.value; }); }
+    }),
+    toast: function (t) { post({ type: 'toast', text: String(t) }); },
+    resize: function (h) { post({ type: 'resize', height: Number(h) || 0 }); }
+  };
+  window.itda = Object.freeze(itda);
+}
+const HELPER_SRC = '(' + itdaHelper.toString() + ')();';
+function buildSrcdoc(html) {
+  const body = String(html || '').replace(/^﻿?\s*<!doctype[^>]*>/i, '');
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${EXT_CSP}"><script>${HELPER_SRC}<\/script>` + body;
+}
+const isDark = () => cfg.theme === 'dark' || (cfg.theme !== 'light' && !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
+function makeFrame(rec, target, html) {
+  FR = FR.filter(f => f.iframe.isConnected);
+  const f = document.createElement('iframe');
+  f.setAttribute('sandbox', 'allow-scripts');
+  f.setAttribute('title', `확장 「${rec.manifest.name}」`);
+  f.dataset.ext = rec.manifest.id; f.dataset.target = target;
+  const fr = { iframe: f, extId: rec.manifest.id, target, hash: rec.hash, loaded: false, last: '', lastAt: 0, timer: null, ops: [] };
+  f.addEventListener('load', () => {
+    if (fr.loaded) {
+      // 두 번째로 불러졌다 = 확장이 스스로 다른 곳으로 옮겨 감. 막고 닫는다.
+      X.blocked[fr.extId] = true; f.remove(); FR = FR.filter(x => x !== fr);
+      toast(`「${rec.manifest.name}」 확장이 다른 곳으로 이동하려 해 멈췄습니다`); extRefresh(); return;
+    }
+    fr.loaded = true;
+    try { f.contentWindow.postMessage({ type: 'init', extId: fr.extId, target, theme: { accent: LAY.accent, dark: isDark() } }, '*'); } catch {}
+    extPush(fr);
+  });
+  f.srcdoc = buildSrcdoc(html);
+  FR.push(fr);
+  return f;
+}
+function renderExtTab(tabId) {
+  const pane = $('#pane');
+  const [, extId, tid] = tabId.split(':');
+  const rec = inst()[extId]; const t = rec && rec.enabled && rec.manifest.tabs.find(x => x.id === tid);
+  if (!t || X.blocked[extId]) { pane.dataset.ext = ''; pane.innerHTML = '<p class="pad muted">이 확장은 꺼져 있습니다.</p>'; return; }
+  const key = tabId + '|' + rec.hash;
+  const cur = $('iframe', pane);
+  if (pane.dataset.ext === key && cur && cur.isConnected) return;   // 이미 떠 있으면 그대로(상태 유지)
+  pane.innerHTML = ''; pane.dataset.ext = key;
+  const f = makeFrame(rec, 'tab:' + tid, rec.files[t.file]); f.className = 'extframe';
+  pane.appendChild(f);
+}
+function renderBands() {
+  const box = $('#bands'); if (!box) return;
+  const list = extEnabled().flatMap(r => r.manifest.bands.map(b => ({ r, b })));
+  const key = list.map(x => `${x.r.manifest.id}:${x.b.id}:${x.r.hash}`).join('|');
+  if (box.dataset.key === key) return;
+  box.dataset.key = key; box.innerHTML = '';
+  list.forEach(({ r, b }) => { const f = makeFrame(r, 'band:' + b.id, r.files[b.file]); f.style.height = b.height + 'px'; box.appendChild(f); });
+}
+
+// ── 확장에 주는 자료: 허락받은 것만, 정해진 칸만 옮겨 담는다(이메일·차단 목록·감사 기록은 없음) ──
+function extState(granted) {
+  const g = new Set(granted || []); const p = st() && project(); const me = st() ? member(S.me) : { name: cfg.name };
+  const out = { me: { id: S.me, name: me.name || '' } };
+  if (!p) return out;
+  out.project = { id: p.id };
+  if (g.has('read:project')) Object.assign(out.project, { name: p.name, kind: p.kind, goal: p.goal || '', guide: p.guide || '' });
+  if (g.has('read:sessions')) out.sessions = sessionsOf(p.id).map(s => ({ id: s.id, ownerId: s.ownerId, title: s.title, status: s.status, isMain: !!s.isMain, isTeamMain: !!s.isTeamMain }));
+  if (g.has('read:plan')) out.plan = st().plan.filter(x => x.projectId === p.id).map(x => ({ id: x.id, title: x.title, ownerId: x.ownerId || '', done: !!x.done, when: x.when || '', artifactId: x.artifactId || null }));
+  if (g.has('read:artifacts')) out.artifacts = artifactsOf(p.id).map(a => ({ id: a.id, name: a.name, kind: a.kind, ownerId: a.ownerId, versions: a.versions.map(v => ({ v: v.v, ts: v.ts, by: v.by, note: v.note || '' })) }));
+  if (g.has('read:messages')) {
+    const chs = new Set(st().channels.filter(c => c.projectId === p.id && (c.kind === 'channel' || (c.members || []).includes(S.me))).map(c => c.id));
+    out.messages = st().messages.filter(m => chs.has(m.channelId)).slice(-300).map(m => ({ id: m.id, channelId: m.channelId, from: m.from, text: m.text, ts: m.ts }));
+  }
+  if (g.has('read:wiki')) out.wiki = st().wiki.filter(w => w.projectId === p.id).map(w => ({ id: w.id, title: w.title, body: w.body, scope: w.scope }));
+  if (g.has('read:members')) out.members = p.members.map(id => member(id)).map(m => ({ id: m.id, name: m.name, computer: m.computer || '', online: !!m.online }));
+  return out;
+}
+// 바뀐 자료를 보낸다. 창마다 초당 최대 2번.
+function extPush(fr) {
+  if (!fr.loaded || !fr.iframe.isConnected || !st()) return;
+  const rec = inst()[fr.extId]; if (!rec || !rec.enabled) return;
+  const wait = 500 - (now() - fr.lastAt);
+  if (wait > 0) { if (!fr.timer) fr.timer = setTimeout(() => { fr.timer = null; extPush(fr); }, wait); return; }
+  const data = extState(rec.granted); const j = JSON.stringify(data);
+  if (j === fr.last) return;
+  fr.last = j; fr.lastAt = now();
+  try { fr.iframe.contentWindow.postMessage({ type: 'state', state: data }, '*'); } catch {}
+}
+function extPushAll() { FR = FR.filter(f => f.iframe.isConnected); FR.forEach(extPush); }
+
+// ── 확장이 보낸 동작: 허락 목록 확인 → 모양을 다시 만들어 기존 send() 로 ──
+function extOp(rec, o, fr) {
+  const deny = { ok: false, error: '허락되지 않은 동작' };
+  const err = m => ({ ok: false, error: m });
+  if (!o || typeof o !== 'object' || typeof o.op !== 'string') return deny;
+  const need = OP_PERM[o.op];
+  if (!need || !rec.granted.includes(need)) return deny;
+  const t = now(); fr.ops = fr.ops.filter(x => t - x < 10000);
+  if (fr.ops.length >= 20) return err('너무 자주 보냅니다. 잠시 뒤 다시 하세요');
+  fr.ops.push(t);
+  const p = project(); if (!p) return err('열린 프로젝트가 없습니다');
+  const str = (v, n) => String(v ?? '').slice(0, n);
+  let op;
+  if (o.op === 'post') {
+    const chs = st().channels.filter(c => c.projectId === p.id && (c.kind === 'channel' || (c.members || []).includes(S.me)));
+    const ch = o.channelId ? chs.find(c => c.id === o.channelId) : (chs.find(c => c.name === '전체') || chs[0]);
+    if (!ch) return err('이 프로젝트에 없는 채널입니다');
+    const text = str(o.text, 4000).trim(); if (!text) return err('글이 비었습니다');
+    op = { op: 'post', channelId: ch.id, text, artifactId: artifactsOf(p.id).some(a => a.id === o.artifactId) ? o.artifactId : null, replyTo: st().messages.some(m => m.id === o.replyTo && m.channelId === ch.id) ? o.replyTo : null };
+  } else if (o.op === 'plan') {
+    const it = o.id != null ? st().plan.find(x => x.id === o.id && x.projectId === p.id) : null;
+    if (o.id != null && !it) return err('이 프로젝트에 없는 계획 항목입니다');
+    if (!it && !str(o.title, 200).trim()) return err('할 일 제목이 비었습니다');
+    op = { op: 'plan', projectId: p.id, id: it ? it.id : null };
+    if (o.title != null) op.title = str(o.title, 200).trim();
+    if (o.ownerId != null) { if (o.ownerId !== '' && !p.members.includes(o.ownerId)) return err('이 프로젝트에 없는 사람입니다'); op.ownerId = o.ownerId; }
+    if (o.done != null) op.done = !!o.done;
+    if (o.when != null) op.when = str(o.when, 20);
+    if (o.artifactId != null) { if (!artifactsOf(p.id).some(a => a.id === o.artifactId)) return err('이 프로젝트에 없는 산출물입니다'); op.artifactId = o.artifactId; }
+  } else if (o.op === 'wiki') {
+    const w = o.id != null ? st().wiki.find(x => x.id === o.id && x.projectId === p.id) : null;
+    if (o.id != null && !w) return err('이 프로젝트에 없는 위키 문서입니다');
+    op = { op: 'wiki', projectId: p.id, id: w ? w.id : null, title: str(o.title ?? (w && w.title), 100).trim() || '제목 없음', body: str(o.body ?? (w && w.body), 20000), scope: o.scope === 'common' ? 'common' : 'team' };
+  } else if (o.op === 'board') {
+    const b = o.id != null ? st().boards.find(x => x.id === o.id && x.projectId === p.id) : null;
+    if (o.id != null && !b) return err('이 프로젝트에 없는 대시보드입니다');
+    const widgets = (Array.isArray(o.widgets) ? o.widgets : []).filter(k => WIDGETS[k]);
+    if (!widgets.length) return err('보여 줄 조각이 없습니다');
+    op = { op: 'board', projectId: p.id, id: b ? b.id : null, name: str(o.name, 40).trim() || '이름 없는 판', widgets };
+  }
+  return send(op);
+}
+function extStore(id) { return LS.get('ext.store.' + id, {}) || {}; }
+window.addEventListener('message', e => {
+  // 내가 띄운 확장 창이 보낸 것만 받는다(다른 창의 메시지는 무시)
+  const fr = FR.find(f => f.iframe.isConnected && f.iframe.contentWindow === e.source);
+  if (!fr) return;
+  const m = e.data; if (!m || typeof m !== 'object' || typeof m.type !== 'string') return;
+  const rec = inst()[fr.extId]; if (!rec || !rec.enabled || X.blocked[fr.extId]) return;
+  const reply = o => { try { e.source.postMessage(o, '*'); } catch {} };
+  const reqId = typeof m.reqId === 'string' ? m.reqId.slice(0, 40) : '';
+  switch (m.type) {
+    case 'op': { const r = extOp(rec, m.op, fr) || { ok: true }; reply(Object.assign({ type: 'opResult', reqId, ok: !!r.ok }, r.ok ? {} : { error: r.error || '실패했습니다' })); break; }
+    case 'store.get': { const v = extStore(fr.extId)[String(m.key).slice(0, 100)]; reply({ type: 'storeResult', reqId, value: v === undefined ? null : v }); break; }
+    case 'store.set': {
+      const all = extStore(fr.extId); const k = String(m.key).slice(0, 100);
+      let j; try { j = JSON.stringify(m.value === undefined ? null : m.value); } catch { reply({ type: 'storeResult', reqId, value: false, error: '저장할 수 없는 값입니다' }); break; }
+      all[k] = JSON.parse(j);
+      if (byteLen(JSON.stringify(all)) > EXT_STORE_MAX || !lsTry('ext.store.' + fr.extId, all)) { reply({ type: 'storeResult', reqId, value: false, error: '확장 저장소가 가득 찼습니다' }); break; }
+      reply({ type: 'storeResult', reqId, value: true }); break;
+    }
+    case 'toast': { const t = String(m.text ?? '').slice(0, 200); if (t) toast(`${rec.manifest.name}: ${t}`); break; }
+    case 'resize': if (fr.target.startsWith('band:')) fr.iframe.style.height = Math.round(clamp(Number(m.height) || 0, 24, 120)) + 'px'; break;
+  }
+});
+
+// ── 허락 목록 그리기 ──
+function permList(perms, prev) {
+  const list = perms || [];
+  if (!list.length) return '<ul class="perm"><li>허락이 필요 없습니다(화면만 그림)</li></ul>';
+  return `<ul class="perm">${list.map(p => PERM_DESC[p]
+    ? `<li${prev && !prev.includes(p) ? ' class="new"' : ''}>${esc(PERM_DESC[p])} <span class="muted small">${esc(p)}</span>${prev && !prev.includes(p) ? ' · 새로 요청' : ''}</li>`
+    : `<li class="bad">알 수 없는 허락 「${esc(p)}」 — 주지 않습니다</li>`).join('')}</ul>`;
+}
+const extWhat = m => [m.tabs.length ? `탭 ${m.tabs.map(t => `「${esc(t.title)}」`).join(' ')}` : '', m.bands.length ? `세션 창 위 띠 ${m.bands.length}개` : ''].filter(Boolean).join(' · ');
+const SRC_NAME = { fixer: '앱 고치기', team: '팀', local: '내 컴퓨터' };
+function permDialog(offer) {
+  const rec = inst()[offer.manifest.id]; const m = offer.manifest;
+  modal(`<h3>🧩 「${esc(m.name)}」 v${esc(m.version)} 켜기</h3><p>${esc(m.description || '')}</p><p class="small">${extWhat(m)}</p>
+    <label>허락 목록 — 「켜기」를 누르면 아래를 허락한 것으로 봅니다</label>${permList(m.permissions, rec ? rec.granted : null)}
+    <p class="muted small">확장은 격리된 작은 창에서만 돌고, 외부 서버에 접속할 수 없습니다. 회원 이메일은 주지 않습니다.</p>
+    <div class="acts"><button class="btn" data-close>나중에</button><button class="btn primary" id="permOk">켜기</button></div>`);
+  $('#permOk').onclick = () => { closeModal(); extOn(offer); };
+}
+function extOn(offer) {
+  const r = extInstall(offer, offer.manifest.permissions);
+  const t = r.manifest.tabs[0];
+  if (t) { ui.tab = `ext:${r.manifest.id}:${t.id}`; if (st()) renderRight(); }
+  toast(`「${r.manifest.name}」 확장을 켰습니다`);
+  if (ui.fixer || offer.source === 'fixer') fxLog('sys', `「${r.manifest.name}」 v${r.manifest.version} 확장을 켰습니다${t ? ` — 오른쪽 「${t.title}」 탭` : ''}${r.manifest.bands.length ? ' · 세션 창 위 띠' : ''}`);
+}
+
+// ── 확장 관리 대화상자 ──
+function extDialog(confirmDel) {
+  const I = inst(), P = pend(), H = hist();
+  const team = (st() && st().extensions) || [];
+  const canAdmin = A.admin || !S.live;
+  const mine = Object.values(I).map(r => {
+    const m = r.manifest; const h = (H[m.id] || []).slice().reverse();
+    return `<div class="card" style="margin:8px 0"><div><b>${esc(m.name)}</b> <span class="muted small">v${esc(m.version)} · ${esc(SRC_NAME[r.source] || r.source)} · ${esc(m.id)}</span> <span class="tag ${r.enabled ? 'info' : 'check'}">${r.enabled ? (X.blocked[m.id] ? '멈춤' : '켜짐') : '꺼짐'}</span></div>
+      <div class="small">${esc(m.description || '')}</div><div class="small muted">${extWhat(m)}</div>
+      <details><summary class="small">허락 목록 ${m.permissions.length}개</summary>${permList(m.permissions)}</details>
+      <div class="reqacts" style="flex-wrap:wrap;align-items:center">
+        <button class="btn sm ${r.enabled ? '' : 'primary'}" data-exta="toggle" data-id="${esc(m.id)}">${r.enabled ? '끄기' : '켜기'}</button>
+        ${h.length ? `<select class="btn sm" data-histsel="${esc(m.id)}">${h.map(e => `<option value="${esc(e.hash)}">v${esc(e.manifest.version)} · ${esc(fmtAt(e.at))}</option>`).join('')}</select><button class="btn sm" data-exta="rollback" data-id="${esc(m.id)}">이 판으로 되돌리기</button>` : '<span class="muted small">이전 판 없음</span>'}
+        <button class="btn sm" data-exta="share" data-id="${esc(m.id)}">팀에 공유</button>
+        ${confirmDel === m.id ? `<b class="small" style="color:var(--red)">정말 지울까요?</b><button class="btn sm" data-exta="delyes" data-id="${esc(m.id)}">지우기</button><button class="btn sm" data-exta="open">취소</button>` : `<button class="btn sm" data-exta="del" data-id="${esc(m.id)}">지우기</button>`}
+      </div></div>`;
+  }).join('') || '<p class="muted small">켜 둔 확장이 없습니다. 「🛠 앱 고치기」에 「오늘 할 일 탭 만들어 줘」처럼 말해 보세요.</p>';
+  const waiting = Object.values(P).map(o => `<div class="card" style="margin:8px 0"><b>${esc(o.manifest.name)}</b> <span class="muted small">v${esc(o.manifest.version)} · ${esc(SRC_NAME[o.source] || o.source)}</span><div class="small muted">${extWhat(o.manifest)}</div>
+      <div class="reqacts"><button class="btn sm primary" data-exta="penon" data-id="${esc(o.manifest.id)}">허락 목록 보고 켜기</button><button class="btn sm" data-exta="pendrop" data-id="${esc(o.manifest.id)}">버리기</button></div></div>`).join('');
+  const teamRows = team.map(x => {
+    let on = false; try { const c = cleanExt(x, x.files); on = !!(I[x.id] && I[x.id].hash === extHash(c)); } catch {}
+    const mayRemove = canAdmin || x.by === S.me;
+    return `<div class="card" style="margin:8px 0"><div><b>${esc(x.name || x.id)}</b> <span class="muted small">v${esc(x.version || '')} · 올린 사람 ${esc(nameOf(x.by))}</span> <span class="tag ${x.status === '승인' ? 'info' : 'check'}">${esc(x.status || '대기')}</span></div>
+      <div class="small">${esc(x.description || '')}</div>
+      <div class="reqacts">${x.status === '승인' ? (on ? '<span class="muted small">켜져 있음</span>' : `<button class="btn sm primary" data-exta="teamon" data-id="${esc(x.id)}">허락 목록 보고 켜기</button>`) : '<span class="muted small">관리자 승인을 기다리는 중</span>'}
+        ${canAdmin && x.status !== '승인' ? `<button class="btn sm" data-exta="approve" data-id="${esc(x.id)}">승인${S.live ? '' : ' (시연)'}</button>` : ''}
+        ${mayRemove ? `<button class="btn sm" data-exta="tremove" data-id="${esc(x.id)}">팀 목록에서 지우기</button>` : ''}</div></div>`;
+  }).join('') || '<p class="muted small">팀에 공유된 확장이 없습니다.</p>';
+  modal(`<h3>🧩 확장 관리</h3><p class="muted small">확장은 격리된 작은 창 안에서만 돌고, 허락한 자료와 동작만 씁니다. 이전 판은 확장마다 최근 ${EXT_HIST}개를 이 컴퓨터에 보관합니다.</p>
+    <label>내 확장</label>${mine}
+    ${waiting ? `<label>켜기를 기다리는 확장</label>${waiting}` : ''}
+    <label>팀 확장 ${S.live ? '' : '(시연)'}</label>${teamRows}
+    <p class="muted small">사내 지침: 확장을 회사 밖에 공개 배포하려면 전략실 승인번호가 필요합니다(앱 안 팀 공유는 해당 없음).</p>
+    <div class="acts"><button class="btn primary" data-close>닫기</button></div>`);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-exta]'); if (!t) return;
+  const a = t.dataset.exta, id = t.dataset.id;
+  if (a === 'open') extDialog();
+  else if (a === 'toggle') { const all = inst(); if (all[id]) { all[id].enabled = !all[id].enabled; if (all[id].enabled) delete X.blocked[id]; saveInst(all); extRefresh(); } extDialog(); }
+  else if (a === 'rollback') { const sel = $(`[data-histsel="${id}"]`); if (sel) { extRollback(id, sel.value); if (!$('#permOk')) extDialog(); } }
+  else if (a === 'del') extDialog(id);
+  else if (a === 'delyes') { extRemove(id); toast('확장을 지웠습니다'); extDialog(); }
+  else if (a === 'penon') { const o = pend()[id]; if (o) permDialog(o); }
+  else if (a === 'pendrop') { const P = pend(); delete P[id]; LS.set('ext.pending', P); renderFixerNode(); if (ui.fixer) renderCenter(true); extDialog(); }
+  else if (a === 'share') {
+    const r = inst()[id]; if (!r) return;
+    const m = r.manifest;
+    const res = send({ op: 'shareExtension', ext: { id: m.id, name: m.name, version: m.version, description: m.description, permissions: m.permissions, tabs: m.tabs, bands: m.bands, files: r.files } });
+    if (res && res.ok) toast(`「${m.name}」을 팀에 올렸습니다. 관리자가 승인하면 팀원이 켤 수 있습니다`);
+    extDialog();
+  }
+  else if (a === 'teamon') {
+    const x = ((st() && st().extensions) || []).find(y => y.id === id); if (!x) return;
+    try { permDialog(toOffer(cleanExt(x, x.files), 'team')); } catch (er) { toast(er.message); }
+  }
+  else if (a === 'approve') { send({ op: 'approveExtension', id }); extDialog(); }
+  else if (a === 'tremove') { send({ op: 'removeExtension', id }); extDialog(); }
+});
+
+// ═════════ 「앱 고치기」 세션 (설계서 8장) ═════════
+// 내 컴퓨터 전용: 줄은 localStorage 에만 두고 중계 서버로 올리지 않는다.
+const FX = { running: false, dir: '', log: LS.get('fixer.log', []) || [], lastHtml: '', cost: 0 };
+function fxLog(kind, text, extra) {
+  FX.log.push(Object.assign({ ts: now(), kind, text }, extra || {}));
+  if (FX.log.length > 300) FX.log.splice(0, FX.log.length - 300);
+  LS.set('fixer.log', FX.log);
+  if (ui.fixer) renderCenter(true);
+}
+function renderFixerNode() {
+  const n = $('#fixerNode'); if (!n) return;
+  n.classList.toggle('on', !!ui.fixer);
+  const waiting = Object.keys(pend()).length;
+  n.innerHTML = `<span>🛠</span><span class="t">앱 고치기</span>${waiting ? `<span class="n" title="켜기를 기다리는 확장">${waiting}</span>` : ''}`;
+}
+function extCard(l) {
+  const P = pend()[l.extId]; const rec = inst()[l.extId];
+  const live = P && P.hash === l.hash;
+  let acts;
+  if (rec && rec.hash === l.hash) acts = '<div class="reqdone">켰습니다</div>';
+  else if (live) acts = `<div class="reqacts"><button class="btn sm primary" data-fxon="${esc(l.extId)}">켜기</button>${l.status === 'later' ? '<span class="muted small">나중에로 미뤄 둠 — 확장 관리에서도 켤 수 있습니다</span>' : `<button class="btn sm" data-fxlater="${esc(l.hash)}">나중에</button>`}</div>`;
+  else acts = '<div class="reqdone">이 판은 지나갔습니다(확장 관리에서 확인하세요)</div>';
+  const m = live ? P.manifest : null;
+  return `<div class="card fxcard"><b>🧩 ${l.update ? '새 판' : '새 확장'} 「${esc(l.name)}」 v${esc(l.version)}</b>${l.demo ? ' <span class="muted small">(시연)</span>' : ''}
+    ${m ? `<div class="small">${esc(m.description || '')}</div><div class="small muted">${extWhat(m)}</div><div class="small" style="margin-top:6px"><b>허락 목록</b> — 「켜기」를 누르면 허락한 것으로 봅니다</div>${permList(m.permissions, rec ? rec.granted : null)}` : ''}${acts}</div>`;
+}
+function renderFixer(light) {
+  const head = $('#sessHead'), log = $('#log');
+  if (!light || !head.querySelector('[data-fxhead]')) {
+    head.innerHTML = `<span class="avatar" style="background:var(--navy);width:30px;height:30px">🛠</span><div data-fxhead><h2>🛠 앱 고치기</h2><div class="muted small">내 컴퓨터 전용 · 중계 서버에 올리지 않음 · ${TAURI ? (FX.running ? '<span class="dot working" style="display:inline-block"></span> 클로드 연결됨' : '클로드 꺼짐') : '시연 방식'}</div></div>
+      <div class="grow"></div><button class="btn sm" data-exta="open">🧩 확장 관리</button><button class="btn sm" data-fx="reset">배치 처음대로</button><button class="btn sm" data-fx="clear">기록 지우기</button>${TAURI ? `<button class="btn sm" data-fx="${FX.running ? 'stop' : 'start'}">${FX.running ? '끄기' : '켜기'}</button>` : ''}`;
+  }
+  log.className = 'log';
+  const lines = FX.log.length ? FX.log : [{ ts: now(), kind: 'out', text: '앱을 바꾸고 싶은 점을 평소 말로 적어 주세요.\n예: 「오늘 할 일 탭 만들어 줘」 「메신저 채널 목록 오른쪽으로」 「지식위키 탭 숨겨 줘」 「강조색 파랑으로」\n새 탭·띠(확장)는 허락 목록을 보여 드리고 「켜기」를 누르셔야 동작합니다.' }];
+  const html = lines.map(l => {
+    if (l.kind === 'sys') return `<div class="sysline">${esc(l.text)} · ${hhmm(l.ts)}</div>`;
+    if (l.kind === 'tool') { const [nm, ...rest] = String(l.text).split(' · '); return `<div class="card-tool"><b>${esc(nm)}</b>${rest.length ? ` <span class="sum">${esc(rest.join(' · '))}</span>` : ''}</div>`; }
+    if (l.kind === 'denied') return `<div class="card-req denied">⚠️ ${esc(l.text)}</div>`;
+    if (l.kind === 'result') return `<div class="resline">${esc(l.text)}</div>`;
+    if (l.kind === 'ext') return extCard(l);
+    const isIn = l.kind === 'in';
+    return `<div class="bub ${isIn ? 'in' : 'out'}">${isIn ? avatar(S.me, 26) : '<span class="avatar" style="background:#1F2A44;width:26px;height:26px">AI</span>'}<div><div class="who">${esc(isIn ? nameOf(S.me) : '앱 고치기')} · ${hhmm(l.ts)}</div><div class="body" ${l.kind === 'err' ? 'style="color:var(--red)"' : ''}>${esc(l.text)}</div></div></div>`;
+  }).join('');
+  if (light && html === FX.lastHtml && log.dataset.fixer === '1') return;
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  FX.lastHtml = html; log.dataset.fixer = '1'; log.innerHTML = html;
+  if (atBottom || !light) log.scrollTop = log.scrollHeight;
+  $('#coachStrip').innerHTML = `<span>🛠</span><span class="txt muted">이 세션은 앱 화면만 바꿉니다. 배치 설정은 바로 적용되고, 새 탭·띠는 허락 카드에서 「켜기」를 눌러야 동작합니다.</span>`;
+  $('#inputHint').innerHTML = TAURI
+    ? `앱 고치기: 클로드 코드가 <code>문서/iSensTogether/앱고치기</code> 폴더의 파일만 고칩니다. ${FX.dir ? `(${esc(FX.dir)})` : ''}`
+    : '앱 고치기 <b>시연</b>: 답은 흉내만 냅니다. 데스크톱 앱에서는 클로드가 직접 만듭니다.';
+  $('#input').placeholder = '예: 오늘 할 일 탭 만들어 줘';
+}
+// 작업 폴더 내용({ layout, extensions })을 화면에 반영
+function fxProcess(ws, opts = {}) {
+  if (!ws || typeof ws !== 'object') return;
+  const sfx = opts.demo ? ' (시연)' : '';
+  if (ws.layout && typeof ws.layout === 'object') {
+    const next = normLayout(ws.layout); const j = JSON.stringify(next);
+    // 같은 파일 내용은 한 번만 적용한다(「배치 처음대로」를 누른 뒤 다시 덮어쓰지 않게)
+    if (LS.get('layout.seen', '') !== j) {
+      LS.set('layout.seen', j);
+      if (JSON.stringify(LAY) !== j) {
+        const d = layoutDiff(LAY, next); applyLayout(next);
+        if (!opts.quiet) fxLog('sys', `배치 설정을 적용했습니다 — ${d}${sfx}`); else toast('앱 고치기: 배치 설정을 적용했습니다');
+      }
+    }
+  }
+  const seen = LS.get('ext.seen', {}) || {};
+  (Array.isArray(ws.extensions) ? ws.extensions : []).forEach(x => {
+    let c;
+    try { c = cleanExt(x && x.manifest, x && x.files); }
+    catch (e) {
+      const k = 'bad:' + extHash({ manifest: (x && x.manifest) || {}, files: {} });
+      if (!seen[k]) { seen[k] = 1; fxLog('err', `확장을 읽지 못했습니다: ${e.message}`); }
+      return;
+    }
+    const o = toOffer(c, 'fixer'); const id = c.manifest.id;
+    if (seen[id] === o.hash) return;
+    seen[id] = o.hash;
+    const rec = inst()[id]; if (rec && rec.hash === o.hash) return;
+    fxOffer(o, opts.demo);
+  });
+  LS.set('ext.seen', seen);
+}
+function fxOffer(o, demo) {
+  const P = pend(); P[o.manifest.id] = Object.assign({ at: now() }, o);
+  if (!lsTry('ext.pending', P)) { fxLog('err', '저장 공간이 모자라 확장을 보관하지 못했습니다'); return; }
+  const rec = inst()[o.manifest.id];
+  fxLog('ext', '', { extId: o.manifest.id, hash: o.hash, name: o.manifest.name, version: o.manifest.version, update: !!rec, status: 'ask', demo: !!demo });
+  renderFixerNode();
+  if (!ui.fixer) toast(`앱 고치기: 「${o.manifest.name}」 확장이 켜기를 기다립니다`);
+}
+async function fxRescan(quiet) {
+  if (!TAURI) return;
+  try { const ws = await TAURI.core.invoke('ext_workspace'); FX.dir = (ws && ws.dir) || FX.dir; fxProcess(ws, { quiet }); }
+  catch (e) { if (!quiet) fxLog('err', '앱 고치기 폴더를 읽지 못했습니다: ' + e); }
+}
+async function fxEnsure() {
+  if (FX.running) return true;
+  try {
+    const ws = await TAURI.core.invoke('ext_workspace'); FX.dir = (ws && ws.dir) || '';
+    fxProcess(ws);
+    const args = { sessionId: FIXER }; if (FX.dir) args.cwd = FX.dir;
+    await TAURI.core.invoke('claude_start', args);
+    FX.running = true; if (ui.fixer) renderFixer(false);
+    return true;
+  } catch (e) { fxLog('err', '앱 고치기 세션을 켜지 못했습니다: ' + e); return false; }
+}
+async function fxSubmit(t) {
+  fxLog('in', t);
+  if (!TAURI) { fxDemo(t); return; }
+  if (!await fxEnsure()) return;
+  try { await TAURI.core.invoke('claude_send', { sessionId: FIXER, text: t }); }
+  catch (e) { fxLog('err', '보내지 못했습니다: ' + e); }
+}
+// 데스크톱 앱 사건 → 앱 고치기 창(서버로 올리지 않음)
+function fxEvent(p) {
+  switch (p.kind) {
+    case 'started': FX.running = true; FX.cost = 0; fxLog('sys', `클로드 연결됨${p.resumed ? ' (이전 대화를 이어서)' : ''}`); if (ui.fixer) renderFixer(false); break;
+    case 'text': fxLog('out', p.text); break;
+    case 'tool': fxLog('tool', `${p.tool || '도구'} · ${oneLine(p.text)}`); break;
+    case 'tool_result': if (p.isError) fxLog('err', oneLine(p.text, 300)); break;
+    case 'denied': fxLog('denied', `허락이 필요한 동작이 막혔습니다: ${p.tool || '도구'} · ${oneLine(p.text)}`); break;
+    case 'result': {
+      let c = '';
+      if (typeof p.costUsd === 'number') { const d = p.costUsd >= FX.cost ? p.costUsd - FX.cost : p.costUsd; FX.cost = p.costUsd; c = ` · 약 ${d.toFixed(3)}달러`; }
+      fxLog('result', `끝${c}`);
+      fxRescan(false);
+      break;
+    }
+    case 'exit': FX.running = false; FX.cost = 0; fxLog('sys', '클로드가 꺼졌습니다'); if (ui.fixer) renderFixer(false); break;
+    case 'error': fxLog('err', p.text || '클로드 오류'); break;
+  }
+}
+
+// ── 시연 방식: 정해 둔 말에만 흉내로 답한다 ──
+const SAMPLE_TODAY = {
+  manifest: { id: 'today-tab', name: '오늘 할 일', version: '1.0.0', description: '오늘 계획 중 내 일을 모아 보여 줍니다', permissions: ['read:plan', 'read:members'], tabs: [{ id: 'main', title: '오늘 할 일', file: 'tab.html' }], bands: [] },
+  files: { 'tab.html': `<!doctype html><meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 12px; font: 14px "Malgun Gothic", sans-serif; color: #1F2A44; background: #FFFDF8; }
+  li { margin: 4px 0; }
+</style>
+<h3>오늘 할 일</h3>
+<ul id="list"></ul>
+<script>
+  itda.ready(ctx => { /* ctx.extId, ctx.target, ctx.theme.accent, ctx.theme.dark */ });
+  itda.onState(state => {
+    // state: { project, sessions, plan, artifacts, messages, wiki, members, me } 중 허락받은 것만
+    const mine = (state.plan || []).filter(p => !p.done && p.ownerId === state.me.id);
+    document.getElementById('list').innerHTML = mine.map(p => \`<li>\${p.title}</li>\`).join('') || '<li>오늘 남은 일이 없습니다</li>';
+  });
+</script>
+` },
+};
+const COLOR_WORDS = [[/파랑|파란|푸른|하늘/, '#3B6FE0'], [/초록|녹색|연두/, '#2BB673'], [/빨강|빨간|붉은/, '#E5484D'], [/보라/, '#8B5CF6'], [/분홍|핑크/, '#E0569B'], [/남색|곤색/, '#2E3A87'], [/노랑|노란/, '#E8A33D'], [/주황|원래|기본/, '#FF7A45']];
+function fxDemo(t) {
+  const ws = LS.get('fixer.demows', null) || { layout: JSON.parse(JSON.stringify(LAY)), extensions: [] };
+  const L = Object.assign({}, ws.layout || LAY);
+  const steps = []; const tool = text => steps.push({ kind: 'tool', text: text + ' (시연)' }); const say = text => steps.push({ kind: 'out', text: '(시연) ' + text });
+  const tabs = BASE_TABS.map(([id, title]) => ({ id, names: [title, ...({ board: ['대시보드'], wiki: ['위키'], agent: ['본부장'], map: ['지도'] }[id] || [])] }))
+    .concat(extTabs().map(x => ({ id: x.id, names: [x.title] })));
+  const hit = tabs.find(x => x.names.some(n => t.includes(n)));
+  if (/숨겨|숨기/.test(t)) {
+    if (hit) { L.hiddenTabs = [...new Set([...(L.hiddenTabs || []), hit.id])]; tool(`파일 고치기 · layout.json — hiddenTabs 에 "${hit.id}" 추가`); say(`「${tabTitle(hit.id)}」 탭을 숨겼습니다. 다시 보이게 하려면 「${tabTitle(hit.id)} 탭 다시 보여 줘」라고 하세요.`); }
+    else say('어느 탭을 숨길까요? 탭 이름을 함께 적어 주세요(예: 지식위키 탭 숨겨 줘).');
+  } else if (/보여|보이게/.test(t) && hit && (L.hiddenTabs || []).includes(hit.id)) {
+    L.hiddenTabs = L.hiddenTabs.filter(x => x !== hit.id); tool(`파일 고치기 · layout.json — hiddenTabs 에서 "${hit.id}" 뺌`); say(`「${tabTitle(hit.id)}」 탭을 다시 보이게 했습니다.`);
+  } else if (/채널|오른쪽/.test(t)) {
+    L.channelListSide = /왼쪽/.test(t) ? 'left' : 'right';
+    tool(`파일 고치기 · layout.json — channelListSide "${L.channelListSide}"`); say(`메신저 채널 목록을 ${L.channelListSide === 'right' ? '오른쪽' : '왼쪽'}으로 옮겼습니다. 메신저 탭에서 확인해 보세요.`);
+  } else if (/(강조|주)색|색깔|색상|색을|색으로|색\s*바꿔/.test(t)) {
+    const hex = (t.match(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/i) || [])[0];
+    const word = COLOR_WORDS.find(([re]) => re.test(t));
+    const cycle = ['#3B6FE0', '#2BB673', '#8B5CF6', '#FF7A45'];
+    L.accent = hex || (word ? word[1] : cycle[(cycle.indexOf(String(L.accent).toUpperCase()) + 1) % cycle.length]);
+    tool(`파일 고치기 · layout.json — accent "${L.accent}"`); say(`강조색을 ${L.accent} 로 바꿨습니다. 원래대로 하려면 「강조색 원래대로」라고 하세요.`);
+  } else if (/탭|할\s*일/.test(t)) {
+    const rec = inst()['today-tab'];
+    const sample = toOffer(cleanExt(SAMPLE_TODAY.manifest, SAMPLE_TODAY.files), 'fixer');
+    if (rec && rec.hash === sample.hash) say('「오늘 할 일」 탭은 이미 켜져 있습니다. 오른쪽 탭 줄에서 확인하세요.');
+    else {
+      ws.extensions = (ws.extensions || []).filter(x => x.manifest.id !== 'today-tab').concat([JSON.parse(JSON.stringify(SAMPLE_TODAY))]);
+      const seen = LS.get('ext.seen', {}) || {}; if (!(pend()['today-tab'] && pend()['today-tab'].hash === sample.hash)) { delete seen['today-tab']; LS.set('ext.seen', seen); }
+      tool('파일 만들기 · extensions/today-tab/manifest.json'); tool('파일 만들기 · extensions/today-tab/tab.html');
+      say('「오늘 할 일」 탭 확장을 만들었습니다. 아래 카드에서 허락 목록을 보고 「켜기」를 누르면 오른쪽에 탭이 생깁니다.');
+    }
+  } else {
+    say('데스크톱 앱에서는 클로드가 직접 만듭니다. 시연에서는 「오늘 할 일 탭 만들어 줘」 「채널 목록 오른쪽으로」 「지식위키 탭 숨겨 줘」 「강조색 파랑으로」만 흉내 냅니다.');
+  }
+  ws.layout = L;
+  LS.set('fixer.demows', ws);
+  steps.push({ kind: 'result', text: '끝 (시연)' });
+  steps.forEach((s, i) => setTimeout(() => {
+    if (s.kind === 'result') fxProcess(ws, { demo: true });
+    fxLog(s.kind, s.text);
+  }, 400 + i * 350));
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('#fixerNode,[data-fx],[data-fxon],[data-fxlater]'); if (!t) return;
+  const d = t.dataset;
+  if (t.id === 'fixerNode') { ui.fixer = true; renderTree(); renderCenter(); return; }
+  if (d.fxon) { const o = pend()[d.fxon]; if (o) extOn(o); }
+  else if (d.fxlater) { FX.log.forEach(l => { if (l.kind === 'ext' && l.hash === d.fxlater) l.status = 'later'; }); LS.set('fixer.log', FX.log); renderCenter(true); }
+  else if (d.fx === 'clear') { FX.log.length = 0; LS.set('fixer.log', FX.log); renderCenter(); }
+  else if (d.fx === 'reset') {
+    const before = LAY; applyLayout(LAYOUT_DEFAULT);
+    const ws = LS.get('fixer.demows', null); if (ws) { ws.layout = JSON.parse(JSON.stringify(LAYOUT_DEFAULT)); LS.set('fixer.demows', ws); }
+    fxLog('sys', `배치를 처음대로 되돌렸습니다 — ${layoutDiff(before, LAY)}${TAURI ? ' (폴더의 layout.json 은 그대로이며, 클로드가 그 파일을 다시 고치면 그때 적용됩니다)' : ''}`);
+  }
+  else if (d.fx === 'start') fxEnsure();
+  else if (d.fx === 'stop') TAURI.core.invoke('claude_stop', { sessionId: FIXER }).then(() => { FX.running = false; renderFixer(false); }).catch(er => fxLog('err', '끄지 못했습니다: ' + er));
+});
+
+
 function applyTheme() { if (cfg.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = cfg.theme; }
 
 // ───────── 이벤트 ─────────
@@ -942,6 +1594,7 @@ document.addEventListener('click', e => {
   if (!t) return;
   const d = t.dataset;
   if (t.id === 'modal') { if (e.target === t) closeModal(); return; }
+  if (d.proj || d.sess) ui.fixer = false;
   if (d.proj) { if (ui.projectId === d.proj) { ui.open[d.proj] = ui.open[d.proj] === false; LS.set('open', ui.open); } ui.projectId = d.proj; ui.sessionId = null; ui.channelId = null; ensureSelection(); render(); }
   else if (d.sess) { const s = st().sessions.find(x => x.id === d.sess); ui.sessionId = s.id; if (s.projectId !== ui.projectId) { ui.projectId = s.projectId; ui.channelId = null; ensureSelection(); } render(); }
   else if (d.add) { modal(`<h3>내 세션 열기</h3><label>세션 이름</label><input id="sTitle" placeholder="예: 로그인 화면 시안"><label class="check" style="color:var(--text)"><input type="checkbox" id="sMain" ${myMain(d.add) ? '' : 'checked'} style="width:auto"> 내 메인 세션 (하위 세션들을 대표)</label><div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="sSave">열기</button></div>`);
@@ -1001,15 +1654,18 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 
 // 데스크톱 앱: 이 컴퓨터에서 실행한 명령의 출력을 받아 중계 서버로 올린다
 if (TAURI && TAURI.event) {
-  TAURI.event.listen('itda-claude', ev => onClaude(ev.payload));
+  TAURI.event.listen('itda-claude', ev => { const p = ev.payload; if (p && p.sessionId === FIXER) fxEvent(p); else onClaude(p); });
   TAURI.event.listen('itda-out', ev => { const { sessionId, kind, text } = ev.payload; send({ op: 'log', sessionId, kind, text }); });
   TAURI.core.invoke('machine_info').then(info => { let ch = false; if (!cfg.computer) { cfg.computer = info.computer; ch = true; } if (!cfg.name) { cfg.name = info.user; ch = true; } if (ch) { LS.set('cfg', cfg); if (S.live) connect(); } }).catch(() => {});
 }
 
 // 시작
 applyTheme();
+applyLayout(LS.get('layout', {}), false);
+renderBands();
 connect();
+if (TAURI) fxRescan(true);
 setInterval(() => { if (!S.live && st()) { Demo.tick(); render(true); } }, 15000);
 setInterval(simulate, 5000);
-window.ITDA = { S, ui, A, send, Demo, render };
+window.ITDA = { S, ui, A, send, Demo, render, applyLayout, layout: () => LAY, ext: { installed: inst, pending: pend, frames: () => FR }, FX };
 })();

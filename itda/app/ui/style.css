@@ -34,7 +34,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .small { font-size: 12px; }
 .hidden { display: none !important; }
 
-#app { display: grid; grid-template-columns: 260px minmax(360px, 1fr) 6px var(--right-w, 46%); height: 100vh; }
+/* --side-w·--fs 는 배치 설정(layout.json)의 사이드 폭·글자 크기 배율 */
+#app { display: grid; grid-template-columns: var(--side-w, 260px) minmax(360px, 1fr) 6px var(--right-w, 46%); height: calc(100vh / var(--fs, 1)); zoom: var(--fs, 1); }
+.modal .box, #toast { zoom: var(--fs, 1); }
 
 /* ① 사이드 */
 #side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -230,3 +232,24 @@ svg.map .art:hover rect { stroke: var(--accent); stroke-width: 2; }
 .log.term .l.denied { color: #FFD479; }
 .log.term .l.result { color: #59627A; text-align: center; }
 .log.term .reqacts, .log.term .reqdone { margin: 2px 0 6px 52px; }
+
+/* 배치 설정: 메신저 채널 목록 오른쪽 */
+.chat.right { grid-template-columns: 1fr 190px; }
+.chat.right .chlist { order: 2; border-right: 0; border-left: 1px solid var(--line); }
+.modal .box { max-height: calc(88vh / var(--fs, 1)); }
+@media (max-width: 900px) { .chat.right { grid-template-columns: 1fr; } }
+
+/* 확장: 탭·띠 격리 창 */
+#tabs button.ext::before { content: "🧩 "; font-size: 11px; }
+.extframe { display: block; width: 100%; height: 100%; border: 0; background: var(--paper); }
+#bands iframe { display: block; width: 100%; border: 0; border-bottom: 1px solid var(--line); background: var(--paper); }
+.perm { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.perm .new { color: var(--accent); font-weight: 700; }
+.perm .bad { color: var(--red); }
+.fxcard { margin: 10px 0; max-width: 820px; line-height: 1.5; }
+.modal details summary { cursor: pointer; margin-top: 4px; }
+
+/* 「앱 고치기」 고정 항목 (새 프로젝트 단추 위) */
+.node.fixer { margin: 0 12px 6px; padding: 7px 10px; font-weight: 700; background: var(--paper); border: 1px solid var(--line); }
+.node.fixer.on { background: var(--accent-soft); border-color: var(--accent); }
+.node.fixer .n { background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; }

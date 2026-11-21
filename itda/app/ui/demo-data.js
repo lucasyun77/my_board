@@ -142,7 +142,8 @@ window.ITDA_DEMO = {
     {"id": "t8", "projectId": "p-app", "title": "도착 확인 화면", "ownerId": "u-kim", "done": false, "when": "내일"},
     {"id": "t9", "projectId": "p-app", "title": "매장 안내 문서", "ownerId": "u-park", "done": true, "when": "오늘"},
     {"id": "t10", "projectId": "p-cos", "title": "상세페이지 문안", "ownerId": "u-park", "done": false, "artifactId": "a-copy", "when": "오늘"},
-    {"id": "t11", "projectId": "p-cos", "title": "견본 발송 메일", "ownerId": "u-choi", "done": false, "artifactId": "a-mail", "when": "오늘"}
+    {"id": "t11", "projectId": "p-cos", "title": "견본 발송 메일", "ownerId": "u-choi", "done": false, "artifactId": "a-mail", "when": "오늘"},
+    {"id": "t12", "projectId": "p-app", "title": "출시 일정 확정", "ownerId": "u-choi", "done": false, "when": "오늘"}
   ],
   "coach": [
     {"id": "c1", "projectId": "p-app", "sessionId": "s-kim-icon", "level": "warn", "text": "김하늘 님의 「아이콘 세트」 세션이 18분 넘게 멈춰 있습니다.", "ts": 17},
@@ -159,3 +160,30 @@ window.ITDA_DEMO = {
     {"id": "b2", "projectId": "p-app", "name": "팀원 업무량", "widgets": ["workload", "uptime", "requests"], "by": "u-choi"}
   ]
 };
+
+// 팀에 공유된 확장 견본(설계서 7장 모양). 세션 창 위에 팀 가동률 띠를 보여 준다.
+window.ITDA_DEMO.extensions = [
+  {
+    "id": "team-uptime", "name": "팀 가동률 띠", "version": "1.0.0",
+    "description": "세션 창 맨 위에 지금 프로젝트의 세션 가동률을 띠로 보여 줍니다",
+    "permissions": ["read:sessions"], "tabs": [], "bands": [{ "id": "uptime", "file": "band.html", "height": 34 }],
+    "status": "승인", "by": "u-lee",
+    "files": { "band.html": `<!doctype html><meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 0 14px; height: 34px; display: flex; gap: 10px; align-items: center; font: 12px "Malgun Gothic", sans-serif; color: #1F2A44; background: #FFF5EE; }
+  .bar { flex: 1; height: 8px; background: #EFE8DA; border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: #2BB673; border-radius: 6px; }
+</style>
+<b>⚙️ 팀 가동률</b><div class="bar"><i id="b"></i></div><span id="t">불러오는 중…</span>
+<script>
+  itda.ready(ctx => { if (ctx.theme.dark) { document.body.style.background = '#1F2330'; document.body.style.color = '#E9E6DF'; } });
+  itda.onState(s => {
+    const ss = s.sessions || []; const w = ss.filter(x => x.status === 'working').length;
+    const p = ss.length ? Math.round(100 * w / ss.length) : 0;
+    document.getElementById('b').style.width = p + '%';
+    document.getElementById('t').textContent = p + '% 가동 · 세션 ' + ss.length + '개 중 ' + w + '개 일하는 중';
+  });
+</script>
+` }
+  }
+];
