@@ -1,5 +1,5 @@
-//! 잇다 중계 서버 실행 파일.
-//! 사용법: itda-relay [--port 7878] [--data 잇다자료.json] [--ui 화면폴더] [--demo] [--key 모임암호]
+//! 아이센스투게더 중계 서버 실행 파일.
+//! 사용법: itda-relay [--port 7878] [--data 아이센스투게더자료.json] [--ui 화면폴더] [--demo] [--key 모임암호]
 
 use itda_relay::{agent::AgentCfg, load_demo, load_state, router, spawn_background, Hub};
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ async fn main() {
         if let Some(d) = load_demo(&ui) { state = d; println!("시연 자료를 불러왔습니다."); }
     }
     let cfg = AgentCfg::default();
-    println!("잇다 중계 서버 시작: 포트 {port}, 자료 {}, 화면 {}", data.display(), ui.display());
+    println!("아이센스투게더 중계 서버 시작: 포트 {port}, 자료 {}, 화면 {}", data.display(), ui.display());
     println!("AI 본부장 클로드 연결: {}", if cfg.api_key.is_some() { "켜짐" } else { "꺼짐(규칙으로 답함)" });
     if key.is_empty() { println!("주의: 모임 암호가 없습니다. 사내망 시험용으로만 쓰세요(--key 로 지정)."); }
 

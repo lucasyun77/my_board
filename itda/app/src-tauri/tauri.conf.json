@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Itda",
+  "productName": "iSensTogether",
   "version": "0.1.0",
-  "identifier": "camp.isens.itda",
+  "identifier": "camp.isens.together",
   "build": { "frontendDist": "../ui" },
   "app": {
     "withGlobalTauri": true,
     "windows": [
-      { "title": "잇다 — 세션을 잇는 팀", "width": 1440, "height": 900, "minWidth": 1000, "minHeight": 640 }
+      { "title": "아이센스투게더 — 세션을 잇는 팀", "width": 1440, "height": 900, "minWidth": 1000, "minHeight": 640 }
     ],
     "security": { "csp": null }
   },

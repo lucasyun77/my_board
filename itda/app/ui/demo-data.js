@@ -1,4 +1,4 @@
-// 잇다 시연용 자료. 시각 숫자는 "지금으로부터 몇 분 전"을 뜻한다(화면·서버가 실제 시각으로 바꿈).
+// 아이센스투게더 시연용 자료. 시각 숫자는 "지금으로부터 몇 분 전"을 뜻한다(화면·서버가 실제 시각으로 바꿈).
 // 사람 이름은 모두 지어낸 예시다.
 window.ITDA_DEMO = {
   "seq": 1000,
@@ -29,7 +29,7 @@ window.ITDA_DEMO = {
   "logs": {
     "s-team": [
       {"ts": 30, "kind": "sys", "text": "팀 메인 세션: 오케스트라 지침을 불러왔습니다. (요청 받기 → 순서 정하기 → 합치기 → 알리기)", "from": "u-choi"},
-      {"ts": 12, "kind": "req", "text": "[김하늘 · 김하늘 메인] 「로그인 화면 시안」 v3 합치기 요청: 예약 버튼 색을 잇다 주황으로 바꿨어요. 앱에 반영해 주세요.", "from": "u-kim"},
+      {"ts": 12, "kind": "req", "text": "[김하늘 · 김하늘 메인] 「로그인 화면 시안」 v3 합치기 요청: 예약 버튼 색을 투게더 주황으로 바꿨어요. 앱에 반영해 주세요.", "from": "u-kim"},
       {"ts": 11, "kind": "in", "text": "김하늘 님 시안 v3을 예약 서버 화면 틀에 합쳐 줘. 이도윤 님 작업과 겹치는지 먼저 확인해.", "from": "u-choi"},
       {"ts": 10, "kind": "out", "text": "확인했습니다. 이도윤 님의 「예약 서버」는 화면 파일을 건드리지 않아 겹침이 없습니다.\n1) 시안 v3의 색·간격을 화면 틀에 반영\n2) 예약 버튼 문구 「예약하기」로 통일\n3) 합친 결과를 「앱 화면 묶음」 v5로 올림", "from": "u-choi"},
       {"ts": 9, "kind": "sys", "text": "산출물 「앱 화면 묶음」 v5 을 올렸습니다.", "from": "u-choi"},
@@ -39,9 +39,9 @@ window.ITDA_DEMO = {
       {"ts": 50, "kind": "sys", "text": "세션이 열렸습니다.", "from": "u-kim"},
       {"ts": 45, "kind": "in", "text": "벌툰 매장 예약 앱 로그인 화면을 만들어 줘. 따뜻한 베이지 바탕, 큰 예약 버튼.", "from": "u-kim"},
       {"ts": 44, "kind": "out", "text": "로그인 화면 시안 v1을 만들었습니다. 바탕 #F6F1E7, 버튼 높이 56으로 손가락으로 누르기 쉽게 했습니다.", "from": "u-kim"},
-      {"ts": 20, "kind": "in", "text": "버튼 색을 잇다 주황으로, 카카오 로그인 버튼 추가", "from": "u-kim"},
+      {"ts": 20, "kind": "in", "text": "버튼 색을 투게더 주황으로, 카카오 로그인 버튼 추가", "from": "u-kim"},
       {"ts": 19, "kind": "out", "text": "v3으로 고쳤습니다. 주황 #FF7A45, 간편 로그인 버튼 2개를 아래에 두었습니다.", "from": "u-kim"},
-      {"ts": 13, "kind": "in", "text": "/보내기 예약 버튼 색을 잇다 주황으로 바꿨어요. 앱에 반영해 주세요.", "from": "u-kim"},
+      {"ts": 13, "kind": "in", "text": "/보내기 예약 버튼 색을 투게더 주황으로 바꿨어요. 앱에 반영해 주세요.", "from": "u-kim"},
       {"ts": 12, "kind": "sys", "text": "「팀 메인 (지휘)」 세션으로 요청을 보냈습니다.", "from": "u-kim"},
       {"ts": 2, "kind": "out", "text": "예약 확인 화면 작업 중… 날짜 고르기 달력 만드는 중", "from": "u-kim"}
     ],
@@ -76,7 +76,7 @@ window.ITDA_DEMO = {
     {"id": "a-login", "projectId": "p-app", "sessionId": "s-kim-login", "ownerId": "u-kim", "name": "로그인 화면 시안", "kind": "디자인", "versions": [
       {"v": 1, "ts": 44, "by": "u-kim", "note": "첫 시안", "content": ""},
       {"v": 2, "ts": 30, "by": "u-kim", "note": "글자 크기 키움", "content": ""},
-      {"v": 3, "ts": 19, "by": "u-kim", "note": "잇다 주황 버튼, 간편 로그인", "content": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 520'><rect width='300' height='520' rx='28' fill='#F6F1E7'/><text x='150' y='120' font-size='34' text-anchor='middle' fill='#1F2A44' font-weight='700'>벌툰 예약</text><text x='150' y='152' font-size='14' text-anchor='middle' fill='#6b7280'>기다림 없이 자리 잡기</text><rect x='30' y='210' width='240' height='48' rx='12' fill='#fff' stroke='#ddd'/><text x='46' y='240' font-size='14' fill='#9ca3af'>휴대폰 번호</text><rect x='30' y='272' width='240' height='56' rx='14' fill='#FF7A45'/><text x='150' y='306' font-size='18' text-anchor='middle' fill='#fff' font-weight='700'>예약하기</text><rect x='30' y='350' width='115' height='44' rx='12' fill='#FEE500'/><text x='87' y='377' font-size='13' text-anchor='middle'>간편 로그인 1</text><rect x='155' y='350' width='115' height='44' rx='12' fill='#1F2A44'/><text x='212' y='377' font-size='13' text-anchor='middle' fill='#fff'>간편 로그인 2</text></svg>"}
+      {"v": 3, "ts": 19, "by": "u-kim", "note": "투게더 주황 버튼, 간편 로그인", "content": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 520'><rect width='300' height='520' rx='28' fill='#F6F1E7'/><text x='150' y='120' font-size='34' text-anchor='middle' fill='#1F2A44' font-weight='700'>벌툰 예약</text><text x='150' y='152' font-size='14' text-anchor='middle' fill='#6b7280'>기다림 없이 자리 잡기</text><rect x='30' y='210' width='240' height='48' rx='12' fill='#fff' stroke='#ddd'/><text x='46' y='240' font-size='14' fill='#9ca3af'>휴대폰 번호</text><rect x='30' y='272' width='240' height='56' rx='14' fill='#FF7A45'/><text x='150' y='306' font-size='18' text-anchor='middle' fill='#fff' font-weight='700'>예약하기</text><rect x='30' y='350' width='115' height='44' rx='12' fill='#FEE500'/><text x='87' y='377' font-size='13' text-anchor='middle'>간편 로그인 1</text><rect x='155' y='350' width='115' height='44' rx='12' fill='#1F2A44'/><text x='212' y='377' font-size='13' text-anchor='middle' fill='#fff'>간편 로그인 2</text></svg>"}
     ]},
     {"id": "a-icons", "projectId": "p-app", "sessionId": "s-kim-icon", "ownerId": "u-kim", "name": "아이콘 세트", "kind": "디자인", "versions": [
       {"v": 1, "ts": 40, "by": "u-kim", "note": "7개", "content": ""}
@@ -151,7 +151,7 @@ window.ITDA_DEMO = {
     {"id": "c4", "projectId": "p-app", "sessionId": "s-team", "level": "info", "text": "팀 메인이 로그인 시안 v3을 합쳤지만, 위키 「화면 문구 규칙」의 버튼 문구(동사로 끝냄) 확인이 빠졌습니다.", "ts": 8}
   ],
   "requests": [
-    {"id": "r1", "projectId": "p-app", "fromSession": "s-kim-main", "toSession": "s-team", "artifactId": "a-login", "note": "예약 버튼 색을 잇다 주황으로 바꿨어요. 앱에 반영해 주세요.", "status": "합침", "ts": 12},
+    {"id": "r1", "projectId": "p-app", "fromSession": "s-kim-main", "toSession": "s-team", "artifactId": "a-login", "note": "예약 버튼 색을 투게더 주황으로 바꿨어요. 앱에 반영해 주세요.", "status": "합침", "ts": 12},
     {"id": "r2", "projectId": "p-app", "fromSession": "s-lee-main", "toSession": "s-team", "artifactId": "a-api", "note": "예약 취소 기능 붙으면 화면에 취소 버튼 추가 부탁", "status": "대기", "ts": 4}
   ],
   "boards": [

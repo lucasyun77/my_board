@@ -39,7 +39,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* ① 사이드 */
 #side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
-.brand b { font-size: 20px; letter-spacing: -0.5px; }
+.brand b { font-size: 19px; letter-spacing: -0.5px; white-space: nowrap; }
+.brandname { display: flex; flex-direction: column; line-height: 1.25; }
 .btn { border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 7px 12px; cursor: pointer; }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }

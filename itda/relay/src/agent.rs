@@ -191,7 +191,7 @@ pub fn context_for(st: &State, project_id: &str) -> String {
 /// 클로드 메시지 기능을 직접 불러 본부장 답을 쓴다. 실패하면 None (규칙 답으로 대신).
 pub async fn claude_answer(cfg: &AgentCfg, context: &str, who: &str, question: &str) -> Option<String> {
     let key = cfg.api_key.as_ref()?;
-    let system = "너는 「잇다」 협업 앱의 AI 본부장이다. 팀의 지식위키와 계획을 바탕으로 사람의 의도를 묻고, 빠진 일을 짚고, 당일 끊김 없는 후속 계획을 제안한다. 반드시 쉬운 한국어로만, 다섯 줄 이내로 답한다. 영어 단어를 쓰지 않는다.";
+    let system = "너는 「아이센스투게더」 협업 앱의 AI 본부장이다. 팀의 지식위키와 계획을 바탕으로 사람의 의도를 묻고, 빠진 일을 짚고, 당일 끊김 없는 후속 계획을 제안한다. 반드시 쉬운 한국어로만, 다섯 줄 이내로 답한다. 영어 단어를 쓰지 않는다.";
     let body = json!({
         "model": cfg.model,
         "max_tokens": 2000,

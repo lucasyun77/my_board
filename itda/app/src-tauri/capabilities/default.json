@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "잇다 기본 권한: 이벤트 받기",
+  "description": "아이센스투게더 기본 권한: 이벤트 받기",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

@@ -1,4 +1,4 @@
-// 잇다 화면. 빌드 없이 도는 순수 자바스크립트.
+// 아이센스투게더 화면. 빌드 없이 도는 순수 자바스크립트.
 // 두 가지 방식으로 돈다:
 //  1) 연결 방식: 중계 서버(러스트)에 웹소켓으로 붙어 여러 컴퓨터가 같은 상태를 본다.
 //  2) 시연 방식: 서버 없이 이 화면 안에서 시연 자료로 돈다(아티팩트 미리보기·처음 실행).
@@ -56,7 +56,7 @@ function fixTimes(st) {
 
 // ───────── 조회 도우미 ─────────
 const st = () => S.state;
-const member = id => id === AGENT ? { id: AGENT, name: 'AI 본부장', computer: '잇다 중계 서버' } : (st().members.find(m => m.id === id) || { id, name: id, computer: '' });
+const member = id => id === AGENT ? { id: AGENT, name: 'AI 본부장', computer: '아이센스투게더 중계 서버' } : (st().members.find(m => m.id === id) || { id, name: id, computer: '' });
 const nameOf = id => member(id).name;
 const colorOf = id => id === AGENT ? '#1F2A44' : COLORS[Math.abs([...id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7)) % COLORS.length];
 const avatar = (id, size = 28) => `<span class="avatar" style="background:${colorOf(id)};width:${size}px;height:${size}px">${id === AGENT ? '본' : esc(nameOf(id).slice(-2, -1) || nameOf(id)[0] || '?')}</span>`;
@@ -579,11 +579,11 @@ async function submitInput(text) {
     catch (e) { send({ op: 'log', sessionId: s.id, kind: 'err', text: '실행 실패: ' + e }); }
   } else if (!S.live) {
     setTimeout(() => {
-      const reply = ui.mode === 'term' ? `(시연) 「${t}」 명령을 실행한 것처럼 보여 줍니다. 실제 실행은 잇다 데스크톱 앱에서 됩니다.` : `(시연) 알겠습니다. 「${t.slice(0, 40)}」 작업을 시작합니다. 끝나면 산출물로 올리고 팀 메인에 합치기 요청을 보낼까요?`;
+      const reply = ui.mode === 'term' ? `(시연) 「${t}」 명령을 실행한 것처럼 보여 줍니다. 실제 실행은 아이센스투게더 데스크톱 앱에서 됩니다.` : `(시연) 알겠습니다. 「${t.slice(0, 40)}」 작업을 시작합니다. 끝나면 산출물로 올리고 팀 메인에 합치기 요청을 보낼까요?`;
       send({ op: 'log', sessionId: s.id, kind: 'out', text: reply });
     }, 600);
   } else {
-    send({ op: 'log', sessionId: s.id, kind: 'sys', text: '이 화면은 웹 보기입니다. 명령을 실제로 실행하려면 잇다 데스크톱 앱을 쓰세요.' });
+    send({ op: 'log', sessionId: s.id, kind: 'sys', text: '이 화면은 웹 보기입니다. 명령을 실제로 실행하려면 아이센스투게더 데스크톱 앱을 쓰세요.' });
   }
 }
 function sendTeam(note) {
