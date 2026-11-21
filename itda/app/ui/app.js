@@ -28,7 +28,7 @@ const HELP_DESC = [
 // ───────── 설정 ─────────
 const servedByRelay = location.protocol.startsWith('http') && !/claude|artifact|usercontent/.test(location.host) && LS.get('servedHint', true);
 let cfg = Object.assign({
-  id: 'u-' + rid(), name: '', computer: '', relay: '', key: '', aiCmd: 'claude -p', theme: 'auto',
+  id: 'u-' + rid(), name: '', computer: '', relay: '', key: '', aiCmd: 'claude -p', theme: 'auto', incoming: 'ask',
 }, LS.get('cfg', {}));
 if (!cfg.relay && servedByRelay && location.port) cfg.relay = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
 
@@ -370,6 +370,7 @@ function render(light) {
   renderTree(); renderCenter(light);
   if (!light || ui.tab === 'map' || ui.tab === 'chat') renderRight(light);
   renderMe(); renderUnread();
+  autoReqs();
 }
 
 function renderTree() {
@@ -409,19 +410,23 @@ function renderCenter(light) {
       <div class="grow"></div>
       <div class="seg" role="group" aria-label="보기 방식"><button data-mode="term" class="${ui.mode === 'term' ? 'on' : ''}">터미널</button><button data-mode="chat" class="${ui.mode === 'chat' ? 'on' : ''}">쉬운 채팅</button></div>
       ${mine ? `<button class="btn sm" id="btnPublish">산출물 올리기</button>${!s.isTeamMain ? '<button class="btn sm" id="btnSendTeam">팀 메인에 합치기 요청</button>' : ''}
-      <select class="btn sm" id="selStatus">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === s.status ? 'selected' : ''}>${v}</option>`).join('')}</select>` : `<button class="btn sm" id="btnAsk">이 세션에 요청 보내기</button>`}`;
+      <select class="btn sm" id="selStatus">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === s.status ? 'selected' : ''}>${v}</option>`).join('')}</select>` : `<button class="btn sm" id="btnAsk">이 세션에 요청 보내기</button>`}<div id="claudeBar"></div>`;
   }
+  renderClaudeBar(s, mine);
   const lines = (st().logs[s.id] || []);
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.className = 'log' + (ui.mode === 'term' ? ' term' : '');
   const pend = s.isTeamMain ? st().requests.filter(r => r.toSession === s.id && r.status === '대기') : [];
   const reqBox = pend.length ? `<div class="card-req pending"><b>📥 합치기 대기 ${pend.length}건</b> — 팀 메인이 순서대로 정리합니다.\n${pend.map(r => { const f = st().sessions.find(x => x.id === r.fromSession) || {}; return `· ${esc(nameOf(f.ownerId))} «${esc(f.title)}»: ${esc(r.note)} <button class="btn sm" data-resolve="${r.id}" data-st="합침">합침</button> <button class="btn sm" data-resolve="${r.id}" data-st="반려">반려</button>`; }).join('\n')}</div>` : '';
   if (ui.mode === 'term') {
-    log.innerHTML = reqBox + lines.map(l => `<div class="l ${l.kind}"><span class="ts">${hhmm(l.ts)}</span>${l.from && l.from !== s.ownerId ? `[${esc(nameOf(l.from))}] ` : ''}${esc(l.text)}</div>`).join('');
+    log.innerHTML = reqBox + lines.map(l => `<div class="l ${l.kind}"><span class="ts">${hhmm(l.ts)}</span>${l.from && l.from !== s.ownerId ? `[${esc(nameOf(l.from))}] ` : ''}${esc(l.text)}</div>${l.kind === 'req' ? reqButtons(s, l, mine) : ''}`).join('');
   } else {
     log.innerHTML = reqBox + lines.map(l => {
       if (l.kind === 'sys') return `<div class="sysline">${esc(l.text)} · ${hhmm(l.ts)}</div>`;
-      if (l.kind === 'req') return `<div class="card-req">📨 ${esc(l.text)}</div>`;
+      if (l.kind === 'req') return `<div class="card-req">📨 ${esc(l.text)}${reqButtons(s, l, mine)}</div>`;
+      if (l.kind === 'tool') { const [nm, ...rest] = String(l.text).split(' · '); return `<div class="card-tool"><b>${esc(nm)}</b>${rest.length ? ` <span class="sum">${esc(rest.join(' · '))}</span>` : ''}</div>`; }
+      if (l.kind === 'denied') return `<div class="card-req denied">⚠️ ${esc(l.text)}</div>`;
+      if (l.kind === 'result') return `<div class="resline">${esc(l.text)}</div>`;
       if (l.kind === 'coach') return `<div class="card-coach">🧭 ${esc(l.text)}</div>`;
       const isIn = l.kind === 'in';
       const who = isIn ? nameOf(l.from) : 'AI 세션';
@@ -663,6 +668,111 @@ function cloneTo(target) {
   toast(`복제본을 보냈습니다 (공통 위키 ${common.length}개)`);
 }
 
+// ───────── 이어지는 클로드 세션 ─────────
+// 세션별 설정(모델·권한 방식)과 처리한 요청 기록은 이 컴퓨터의 저장소에 둔다.
+const CL = { running: {}, cid: {}, checked: {}, boot: now() - 5000, lastBar: '' };
+const MODELS = [['', '기본 (클로드 코드 설정)'], ['claude-opus-5-5', '오퍼스 5.5'], ['claude-sonnet-5-5', '소넷 5.5'], ['claude-haiku-5-5', '하이쿠 5.5']];
+const PERMS = [['acceptEdits', '편집은 묻지 않음'], ['default', '매번 확인'], ['plan', '계획만 세움']];
+const INCOMING = [['ask', '묻고 실행'], ['auto', '자동 실행'], ['none', '받지 않음']];
+const csOf = sid => Object.assign({ model: '', perm: 'acceptEdits' }, (LS.get('cs', {}) || {})[sid]);
+function csSet(sid, patch) { const all = LS.get('cs', {}) || {}; all[sid] = Object.assign(csOf(sid), patch); LS.set('cs', all); }
+const reqKey = (s, l) => `${s.id}|${l.ts}|${String(l.text).length}`;
+const reqDone = () => LS.get('reqDone', {}) || {};
+const oneLine = (t, n = 120) => { const x = String(t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n) + '…' : x; };
+
+function renderClaudeBar(s, mine) {
+  const box = $('#claudeBar'); if (!box) return;
+  if (!mine) { box.innerHTML = ''; box.style.display = 'none'; CL.lastBar = ''; return; }
+  const on = !!CL.running[s.id]; const c = csOf(s.id);
+  if (TAURI && !CL.checked[s.id]) {
+    CL.checked[s.id] = true;
+    TAURI.core.invoke('claude_status', { sessionId: s.id }).then(r => { CL.running[s.id] = !!(r && r.running); if (r && r.claudeSessionId) CL.cid[s.id] = r.claudeSessionId; const cur = session(); if (cur && cur.id === s.id) renderClaudeBar(s, true); }).catch(() => {});
+  }
+  const opts = (list, cur) => list.map(([v, n]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${n}</option>`).join('');
+  const html = `<span class="cstat ${on ? 'on' : ''}"><i></i>클로드 ${on ? '연결됨' : '꺼짐'}${TAURI ? '' : ' (시연)'}</span>
+    <button class="btn sm" data-claude="${on ? 'stop' : 'start'}">${on ? '끄기' : '켜기'}</button>
+    <label class="muted small">모델 <select class="btn sm" id="selModel" title="다음에 켤 때 적용됩니다">${opts(MODELS, c.model)}</select></label>
+    <label class="muted small">권한 <select class="btn sm" id="selPerm" title="다음에 켤 때 적용됩니다">${opts(PERMS, c.perm)}</select></label>`;
+  const key = s.id + '|' + html;
+  if (key === CL.lastBar && box.innerHTML) return;
+  CL.lastBar = key; box.style.display = ''; box.innerHTML = html;
+}
+async function claudeStart(sid) {
+  const c = csOf(sid); const args = { sessionId: sid, permissionMode: c.perm }; if (c.model) args.model = c.model;
+  if (!TAURI) {
+    CL.running[sid] = true;
+    send({ op: 'log', sessionId: sid, kind: 'sys', text: `(시연) 클로드 연결됨 · 모델 ${(MODELS.find(m => m[0] === c.model) || MODELS[0])[1]} · 권한 ${(PERMS.find(m => m[0] === c.perm) || PERMS[0])[1]}` });
+    return;
+  }
+  try { const r = await TAURI.core.invoke('claude_start', args); CL.running[sid] = true; if (r && r.claudeSessionId) CL.cid[sid] = r.claudeSessionId; }
+  catch (e) { send({ op: 'log', sessionId: sid, kind: 'err', text: '클로드를 켜지 못했습니다: ' + e }); }
+}
+async function claudeStop(sid) {
+  if (!TAURI) { CL.running[sid] = false; send({ op: 'log', sessionId: sid, kind: 'sys', text: '(시연) 클로드가 꺼졌습니다' }); return; }
+  try { await TAURI.core.invoke('claude_stop', { sessionId: sid }); CL.running[sid] = false; }
+  catch (e) { send({ op: 'log', sessionId: sid, kind: 'err', text: '클로드를 끄지 못했습니다: ' + e }); }
+}
+async function claudeSend(sid, text) {
+  if (!CL.running[sid]) await claudeStart(sid);
+  if (!CL.running[sid]) return;
+  try { await TAURI.core.invoke('claude_send', { sessionId: sid, text }); }
+  catch (e) { send({ op: 'log', sessionId: sid, kind: 'err', text: '보내지 못했습니다: ' + e }); }
+}
+// 데스크톱 앱 사건 → 세션 줄 (중계 서버로 올림)
+function onClaude(p) {
+  if (!p || !p.sessionId) return;
+  const sid = p.sessionId; const lg = (kind, text) => send({ op: 'log', sessionId: sid, kind, text });
+  const demo = p.demo ? ' (시연)' : '';
+  if (p.claudeSessionId) CL.cid[sid] = p.claudeSessionId;
+  switch (p.kind) {
+    case 'started': CL.running[sid] = true; lg('sys', `클로드 연결됨${p.resumed ? ' (이전 대화를 이어서)' : ''}`); break;
+    case 'text': lg('out', p.text); break;
+    case 'tool': lg('tool', `${p.tool || '도구'} · ${oneLine(p.text)}${demo}`); break;
+    case 'tool_result': if (p.isError) lg('err', oneLine(p.text, 300)); break;
+    case 'denied': lg('denied', `허락이 필요한 동작이 막혔습니다: ${p.tool || '도구'} · ${oneLine(p.text)}${demo}`); break;
+    case 'result': lg('result', `끝${typeof p.costUsd === 'number' ? ` · 약 ${p.costUsd.toFixed(2)}달러` : ''}${demo}`); break;
+    case 'exit': CL.running[sid] = false; lg('sys', '클로드가 꺼졌습니다'); break;
+    case 'error': lg('err', p.text || '클로드 오류'); break;
+  }
+}
+// 시연: 견본과 비슷한 가짜 사건 순서 (서버·데스크톱 앱 없음)
+function demoClaudeRun(sid, t) {
+  CL.running[sid] = true;
+  const steps = [
+    { kind: 'tool', tool: 'Bash', text: '폴더를 옮겨 파일을 만드는 명령' },
+    { kind: 'denied', tool: 'Bash', text: '폴더를 바꾸고 파일에 쓰는 명령은 확인이 필요합니다' },
+    { kind: 'tool', tool: 'Write', text: 'hello.txt 파일 만들기' },
+    { kind: 'text', text: `(시연) 알겠습니다. 「${t.slice(0, 40)}」 일을 마쳤습니다. 실제 답은 데스크톱 앱에서 진짜 클로드 코드가 합니다.` },
+    { kind: 'result', costUsd: 0.01 },
+  ];
+  steps.forEach((p, i) => setTimeout(() => onClaude(Object.assign({ sessionId: sid, demo: true }, p)), 500 + i * 700));
+}
+// 다른 사람·본부장이 보낸 일의 허락 단계
+function reqButtons(s, l, mine) {
+  if (!mine || l.from === S.me) return '';
+  const done = reqDone()[reqKey(s, l)];
+  if (done) return `<div class="reqdone">${done === 'ok' ? '맡김' : '거절함'}</div>`;
+  if (cfg.incoming === 'none') return '<div class="reqdone">받지 않음 설정</div>';
+  if (cfg.incoming === 'auto') return '<div class="reqdone">자동 실행</div>';
+  return `<div class="reqacts"><button class="btn sm primary" data-reqok="${esc(reqKey(s, l))}">이 세션에 맡기기</button> <button class="btn sm" data-reqno="${esc(reqKey(s, l))}">거절</button></div>`;
+}
+function reqMark(key, v) { const d = reqDone(); d[key] = v; LS.set('reqDone', d); }
+async function reqHandle(key, accept) {
+  const s = session(); if (!s) return;
+  const l = (st().logs[s.id] || []).find(x => x.kind === 'req' && reqKey(s, x) === key); if (!l || reqDone()[key]) return;
+  reqMark(key, accept ? 'ok' : 'no');
+  const who = nameOf(l.from);
+  if (!accept) { send({ op: 'log', sessionId: s.id, kind: 'sys', text: `${who} 님의 요청을 거절했습니다` }); return; }
+  send({ op: 'log', sessionId: s.id, kind: 'sys', text: `${who} 님의 요청을 맡겼습니다` });
+  if (TAURI) await claudeSend(s.id, l.text); else demoClaudeRun(s.id, l.text);
+}
+// 자동 실행 설정이면 새로 온 요청을 바로 맡긴다 (이 화면을 연 뒤에 온 것만)
+function autoReqs() {
+  if (cfg.incoming !== 'auto' || !st()) return;
+  const s = session(); if (!s || s.ownerId !== S.me) return;
+  (st().logs[s.id] || []).forEach(l => { if (l.kind === 'req' && l.from !== S.me && l.ts >= CL.boot) { const k = reqKey(s, l); if (!reqDone()[k]) reqHandle(k, true); } });
+}
+
 // ───────── 세션 입력 처리 ─────────
 async function submitInput(text) {
   const s = session(); if (!s || !text.trim()) return;
@@ -680,9 +790,12 @@ async function submitInput(text) {
   if (t.startsWith('/산출물')) { const [name, ...rest] = t.replace('/산출물', '').split('|'); publish(name.trim() || '이름 없는 산출물', rest.join('|').trim()); return; }
   send({ op: 'log', sessionId: s.id, kind: 'in', text: t });
   if (TAURI) {
-    const cmd = ui.mode === 'term' ? t : `${cfg.aiCmd} ${JSON.stringify(t)}`;
-    try { await TAURI.core.invoke('run_command', { sessionId: s.id, command: cmd }); }
-    catch (e) { send({ op: 'log', sessionId: s.id, kind: 'err', text: '실행 실패: ' + e }); }
+    if (ui.mode === 'term') {
+      try { await TAURI.core.invoke('run_command', { sessionId: s.id, command: t }); }
+      catch (e) { send({ op: 'log', sessionId: s.id, kind: 'err', text: '실행 실패: ' + e }); }
+    } else await claudeSend(s.id, t);
+  } else if (!S.live && ui.mode === 'chat') {
+    demoClaudeRun(s.id, t);
   } else if (!S.live) {
     setTimeout(() => {
       const reply = ui.mode === 'term' ? `(시연) 「${t}」 명령을 실행한 것처럼 보여 줍니다. 실제 실행은 아이센스투게더 데스크톱 앱에서 됩니다.` : `(시연) 알겠습니다. 「${t.slice(0, 40)}」 작업을 시작합니다. 끝나면 산출물로 올리고 팀 메인에 합치기 요청을 보낼까요?`;
@@ -716,12 +829,13 @@ function settingsDialog() {
     <label>중계 서버 주소 — 비우면 시연 방식</label><input id="cRelay" value="${esc(cfg.relay)}" placeholder="예: ws://192.168.0.10:7878/ws">
     <label>모임 암호</label><input id="cKey" type="password" value="${esc(cfg.key)}">
     <label>쉬운 채팅에서 부를 AI 명령 (데스크톱 앱)</label><input id="cAi" value="${esc(cfg.aiCmd)}">
+    <label>다른 사람이 보낸 일 (합치기 요청·본부장 지시)</label><select id="cIncoming">${INCOMING.map(([v, n]) => `<option value="${v}" ${v === cfg.incoming ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label>화면 밝기</label><select id="cTheme"><option value="auto">컴퓨터 설정 따름</option><option value="light" ${cfg.theme === 'light' ? 'selected' : ''}>밝게</option><option value="dark" ${cfg.theme === 'dark' ? 'selected' : ''}>어둡게</option></select>
     ${TAURI ? `<label>이 컴퓨터를 팀 중계 서버로 (팀에서 한 사람만)</label><button class="btn" id="cHost">이 컴퓨터에서 중계 서버 켜기 (포트 7878)</button><p class="muted small" id="cHostMsg"></p>` : ''}
     <p class="muted small">내 아이디: ${esc(cfg.id)} (다른 컴퓨터에서 같은 사람으로 보이려면 이 값을 옮기세요)</p>
     <div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="cSave">저장하고 다시 연결</button></div>`);
   $('#cSave').onclick = () => {
-    Object.assign(cfg, { name: $('#cName').value.trim(), computer: $('#cComp').value.trim(), relay: $('#cRelay').value.trim(), key: $('#cKey').value, aiCmd: $('#cAi').value.trim() || 'claude -p', theme: $('#cTheme').value });
+    Object.assign(cfg, { name: $('#cName').value.trim(), computer: $('#cComp').value.trim(), relay: $('#cRelay').value.trim(), key: $('#cKey').value, aiCmd: $('#cAi').value.trim() || 'claude -p', theme: $('#cTheme').value, incoming: $('#cIncoming').value });
     LS.set('cfg', cfg); applyTheme(); closeModal(); connect();
   };
   if ($('#cHost')) $('#cHost').onclick = async () => {
@@ -818,7 +932,7 @@ function applyTheme() { if (cfg.theme === 'auto') document.documentElement.remov
 
 // ───────── 이벤트 ─────────
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-proj],[data-sess],[data-add],[data-mode],[data-tab],[data-art],[data-close],[data-share],[data-ch],[data-newch],[data-newdm],[data-reply],[data-noreply],[data-wiki],[data-newwiki],[data-editwiki],[data-board],[data-newboard],[data-editboard],[data-editgoal],[data-addplan],[data-review],[data-help],[data-nudge],[data-clone],[data-resolve],[data-mapf],#btnNewProject,#btnSettings,#btnPublish,#btnSendTeam,#btnAsk,#modal');
+  const t = e.target.closest('[data-proj],[data-sess],[data-add],[data-mode],[data-tab],[data-art],[data-close],[data-share],[data-ch],[data-newch],[data-newdm],[data-reply],[data-noreply],[data-wiki],[data-newwiki],[data-editwiki],[data-board],[data-newboard],[data-editboard],[data-editgoal],[data-addplan],[data-review],[data-help],[data-nudge],[data-clone],[data-resolve],[data-mapf],[data-claude],[data-reqok],[data-reqno],#btnNewProject,#btnSettings,#btnPublish,#btnSendTeam,#btnAsk,#modal');
   if (!t) return;
   const d = t.dataset;
   if (t.id === 'modal') { if (e.target === t) closeModal(); return; }
@@ -849,6 +963,9 @@ document.addEventListener('click', e => {
   else if (d.nudge) nudge(d.nudge);
   else if (d.clone !== undefined) cloneTo($('#cloneTo').value);
   else if (d.resolve) send({ op: 'resolveRequest', requestId: d.resolve, status: d.st });
+  else if (d.claude) { const s = session(); if (s) (d.claude === 'start' ? claudeStart(s.id) : claudeStop(s.id)).then(() => renderClaudeBar(s, true)); }
+  else if (d.reqok) reqHandle(d.reqok, true);
+  else if (d.reqno) reqHandle(d.reqno, false);
   else if (d.mapf) { ui.mapFilter = d.mapf; renderMap(); }
   else if (t.id === 'btnNewProject') { modal(`<h3>새 프로젝트 (메인 채팅)</h3><label>이름</label><input id="pName" placeholder="예: 진정 크림 라인"><label>종류</label><select id="pKind"><option>개발</option><option>사업</option></select><label>목표 (나중에 본부장과 정해도 됩니다)</label><input id="pGoal"><div class="acts"><button class="btn" data-close>취소</button><button class="btn primary" id="pSave">만들기</button></div>`); $('#pSave').onclick = () => { send({ op: 'createProject', name: $('#pName').value.trim() || '새 프로젝트', kind: $('#pKind').value, goal: $('#pGoal').value.trim() }); closeModal(); }; }
   else if (t.id === 'btnSettings') settingsDialog();
@@ -858,6 +975,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'selStatus') send({ op: 'setSessionStatus', sessionId: ui.sessionId, status: e.target.value });
+  if (e.target.id === 'selModel' && ui.sessionId) csSet(ui.sessionId, { model: e.target.value });
+  if (e.target.id === 'selPerm' && ui.sessionId) csSet(ui.sessionId, { perm: e.target.value });
   if (e.target.id === 'selHelp') send({ op: 'setHelpLevel', level: +e.target.value });
   if (e.target.dataset.plan) send({ op: 'plan', projectId: ui.projectId, id: e.target.dataset.plan, done: e.target.checked });
 });
@@ -876,6 +995,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 
 // 데스크톱 앱: 이 컴퓨터에서 실행한 명령의 출력을 받아 중계 서버로 올린다
 if (TAURI && TAURI.event) {
+  TAURI.event.listen('itda-claude', ev => onClaude(ev.payload));
   TAURI.event.listen('itda-out', ev => { const { sessionId, kind, text } = ev.payload; send({ op: 'log', sessionId, kind, text }); });
   TAURI.core.invoke('machine_info').then(info => { let ch = false; if (!cfg.computer) { cfg.computer = info.computer; ch = true; } if (!cfg.name) { cfg.name = info.user; ch = true; } if (ch) { LS.set('cfg', cfg); if (S.live) connect(); } }).catch(() => {});
 }
