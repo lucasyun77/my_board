@@ -1897,6 +1897,7 @@ version = "0.1.0"
 dependencies = [
  "itda-claude",
  "itda-extws",
+ "itda-git",
  "itda-login",
  "itda-relay",
  "serde",
@@ -1912,6 +1913,13 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "itda-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
