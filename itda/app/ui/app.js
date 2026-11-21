@@ -445,6 +445,7 @@ function renderCenter(light) {
     ? (ui.mode === 'term' ? `터미널 방식: ${TAURI ? '이 컴퓨터에서 명령이 실행됩니다.' : '<b>시연</b>: 명령은 흉내만 냅니다(데스크톱 앱에서 실제 실행).'} · <code>/보내기 내용</code> 팀 메인에 합치기 요청 · <code>/산출물 이름 | 내용</code> · <code>/도움</code>`
       : `쉬운 채팅: AI에게 평소 말로 부탁하세요. ${TAURI ? `(<code>${esc(cfg.aiCmd)}</code> 로 실행)` : '<b>시연</b>: 답은 흉내만 냅니다.'} · <code>/보내기</code> · <code>/산출물</code> · <code>/도움</code>`)
     : `${esc(owner.name)} 님의 세션은 볼 수만 있습니다. 여기에 쓰면 <b>이 세션으로 요청</b>이 갑니다(내 메인 세션에서 보냄).`;
+  if (window.ITDAMerge) window.ITDAMerge.decorate(); // [합치기 연결]
   $('#input').placeholder = mine ? (ui.mode === 'term' ? '명령 입력 (예: dir, cargo test)' : '무엇을 도와드릴까요?') : `${owner.name} 님 세션에 보낼 요청`;
 }
 
@@ -568,6 +569,7 @@ function renderBoard() {
     <div class="grow"></div>${b.id !== 'base' ? '<button class="btn sm" data-editboard>이 판 고치기</button>' : ''}<button class="btn sm" data-newboard>＋ 대시보드 만들기</button></div>
     <p class="muted small" style="margin:8px 14px 0">공유 대시보드: 여기서 만든 판은 프로젝트의 모든 사람에게 똑같이 보입니다.${b.by ? ` 만든 사람 ${esc(nameOf(b.by))}.` : ''}</p>
     <div class="grid">${b.widgets.filter(w => W[w]).map(w => `<div class="card">${W[w]()}</div>`).join('')}</div>`;
+  if (window.ITDAMerge) window.ITDAMerge.decorateBoard(); // [합치기 연결]
 }
 function boardDialog(b) {
   const p = project();
@@ -699,6 +701,7 @@ function renderClaudeBar(s, mine) {
 }
 async function claudeStart(sid) {
   const c = csOf(sid); const args = { sessionId: sid, permissionMode: c.perm }; if (c.model) args.model = c.model;
+  if (TAURI && window.ITDAMerge) { const d = await window.ITDAMerge.prepare(sid); if (d === false) return; if (d) args.cwd = d; } // [합치기 연결]
   if (!TAURI) {
     CL.running[sid] = true;
     send({ op: 'log', sessionId: sid, kind: 'sys', text: `(시연) 클로드 연결됨 · 모델 ${(MODELS.find(m => m[0] === c.model) || MODELS[0])[1]} · 권한 ${(PERMS.find(m => m[0] === c.perm) || PERMS[0])[1]}` });
@@ -721,6 +724,7 @@ async function claudeSend(sid, text) {
 // 데스크톱 앱 사건 → 세션 줄 (중계 서버로 올림)
 function onClaude(p) {
   if (!p || !p.sessionId) return;
+  if (window.ITDAMerge) window.ITDAMerge.onClaude(p); // [합치기 연결]
   const sid = p.sessionId; const lg = (kind, text) => send({ op: 'log', sessionId: sid, kind, text });
   const demo = p.demo ? ' (시연)' : '';
   if (p.claudeSessionId) CL.cid[sid] = p.claudeSessionId;
@@ -812,6 +816,7 @@ async function submitInput(text) {
   }
 }
 function sendTeam(note) {
+  if (window.ITDAMerge && window.ITDAMerge.sendTeam(note)) return; // [합치기 연결]
   const s = session(); const tm = teamMain(s.projectId);
   if (!tm) { toast('팀 메인 세션이 없습니다'); return; }
   const a = artifactsOf(s.projectId).filter(a => a.sessionId === s.id).sort((x, y) => latest(y).ts - latest(x).ts)[0];
@@ -1011,5 +1016,5 @@ applyTheme();
 connect();
 setInterval(() => { if (!S.live && st()) { Demo.tick(); render(true); } }, 15000);
 setInterval(simulate, 5000);
-window.ITDA = { S, ui, A, send, Demo, render };
+window.ITDA = { S, ui, A, send, Demo, render, H: { st, session, project, teamMain, myMain, nameOf, esc, toast, modal, closeModal, claudeSend, onClaude, artifactsOf, latest } }; // [합치기 연결]
 })();
