@@ -250,6 +250,21 @@ mod tests {
     }
 
     #[test]
+    fn 클로드가_한_차례_끝내면_사람_대기로_보고_멈춤으로_치지_않는다() {
+        let mut st = base();
+        let pid = st.projects[0].id.clone();
+        st.apply("u1", Op::OpenSession { project_id: pid, title: "개발".into(), is_main: true }).ok();
+        let sid = st.sessions.iter().find(|s| s.title == "개발").unwrap().id.clone();
+        st.apply("u1", Op::Log { session_id: sid.clone(), kind: "tool".into(), text: "Write · a.rs".into() }).unwrap();
+        assert_eq!(st.sessions.iter().find(|s| s.id == sid).unwrap().status, "working");
+        st.apply("u1", Op::Log { session_id: sid.clone(), kind: "result".into(), text: "끝 · 약 0.01달러".into() }).unwrap();
+        assert_eq!(st.sessions.iter().find(|s| s.id == sid).unwrap().status, "waiting");
+        // 사람 대기는 오래 지나도 멈춤으로 바꾸지 않는다(멈춤 감지는 일하는 중인 세션만)
+        tick(&mut st, now_ms() + 60 * 60_000, &AgentCfg { api_key: None, ..Default::default() });
+        assert_eq!(st.sessions.iter().find(|s| s.id == sid).unwrap().status, "waiting");
+    }
+
+    #[test]
     fn 완료인데_산출물_없으면_검수() {
         let mut st = base();
         let pid = st.projects[0].id.clone();

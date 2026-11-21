@@ -426,11 +426,22 @@ impl State {
             }
             Op::Log { session_id, kind, text } => {
                 if !self.sessions.iter().any(|s| s.id == session_id) { return Err("세션이 없습니다".into()); }
+                // 진짜 클로드 세션의 상태 읽기: 한 차례가 끝나면(result) 사람 답을 기다리는 중,
+                // 사람이 말하거나 클로드가 일하면(in·out·tool) 일하는 중
+                let next_status = match kind.as_str() {
+                    "result" => Some("waiting"),
+                    "in" | "out" | "tool" | "denied" => Some("working"),
+                    _ => None,
+                };
                 let line = LogLine { ts: now, kind, text, from: who.into() };
-                let was_stalled = self.sessions.iter().any(|s| s.id == session_id && s.status == "stalled");
+                let before = self.sessions.iter().find(|s| s.id == session_id).map(|s| s.status.clone()).unwrap_or_default();
                 self.touch(&session_id);
+                if let (Some(ns), Some(s)) = (next_status, self.sessions.iter_mut().find(|s| s.id == session_id)) {
+                    if s.status != "done" { s.status = ns.into(); }
+                }
                 self.push_log(&session_id, line.clone());
-                if was_stalled { Ok(Applied::Changed) } else { Ok(Applied::LogOnly(session_id, line)) }
+                let after = self.sessions.iter().find(|s| s.id == session_id).map(|s| s.status.clone()).unwrap_or_default();
+                if before != after { Ok(Applied::Changed) } else { Ok(Applied::LogOnly(session_id, line)) }
             }
             Op::PublishArtifact { project_id, session_id, name, kind, content, note, artifact_id } => {
                 let existing = artifact_id.clone()
