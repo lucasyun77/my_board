@@ -13,6 +13,8 @@ pub struct AgentCfg {
     pub stall_after_ms: u64,
     /// 합치기 요청이 이 시간 넘게 대기면 팀 메인에 알린다
     pub request_wait_ms: u64,
+    /// 합치기가 이 시간 넘게 「합치는 중」이면 경고
+    pub merge_stuck_ms: u64,
     pub api_key: Option<String>,
     pub model: String,
 }
@@ -22,6 +24,7 @@ impl Default for AgentCfg {
         Self {
             stall_after_ms: 120_000,
             request_wait_ms: 300_000,
+            merge_stuck_ms: 900_000,
             api_key: std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty()),
             model: std::env::var("ITDA_MODEL").unwrap_or_else(|_| "claude-opus-5-5".into()),
         }
@@ -63,6 +66,25 @@ pub fn tick(st: &mut State, now: u64, cfg: &AgentCfg) -> bool {
         let title = st.sessions.iter().find(|s| s.id == r.to_session).map(|s| s.title.clone()).unwrap_or_default();
         let before = st.coach.len();
         st.add_coach(&r.project_id, Some(r.to_session.clone()), "warn", format!("「{}」에 합치기 요청이 5분 넘게 대기 중입니다: {}", title, r.note));
+        changed |= st.coach.len() != before;
+    }
+
+    // 2-1) 합치기가 「합치는 중」에서 오래 멈춤 / 「충돌」로 끝남
+    let merges: Vec<MergeRequest> = st.requests.iter()
+        .filter(|r| (r.status == "합치는 중" && now.saturating_sub(r.status_at) > cfg.merge_stuck_ms) || r.status == "충돌").cloned().collect();
+    for r in merges {
+        let from = st.sessions.iter().find(|s| s.id == r.from_session).cloned().unwrap_or_default();
+        let owner = st.member_name(&from.owner_id);
+        let before = st.coach.len();
+        if r.status == "충돌" {
+            let why = if r.result_note.is_empty() { "이유가 적혀 있지 않습니다".to_string() } else { r.result_note.clone() };
+            let msg = format!("합치기 충돌: {} 님의 「{}」 갈래 {} — {}. 두 분이 메신저에서 어느 쪽을 살릴지 정해 주시면 팀 메인이 다시 합치겠습니다.", owner, from.title, r.branch, why);
+            st.add_coach(&r.project_id, Some(r.to_session.clone()), "warn", msg.clone());
+            st.add_coach(&r.project_id, Some(r.from_session.clone()), "warn", msg.clone());
+            if st.coach.len() != before { st.agent_post(&r.project_id, msg); }
+        } else {
+            st.add_coach(&r.project_id, Some(r.to_session.clone()), "warn", format!("{} 님의 「{}」 합치기가 15분 넘게 「합치는 중」입니다. 팀 메인 세션이 멈췄는지 확인해 주세요.", owner, from.title));
+        }
         changed |= st.coach.len() != before;
     }
 
@@ -306,6 +328,30 @@ mod tests {
         assert_eq!(st.requests[0].result_commit, "9f8e7d6c5");
         assert!(st.logs[&mine].iter().any(|l| l.text.contains("「합침」 처리되었습니다 (기록 9f8e7d6)")));
         assert!(st.apply("u1", Op::ResolveRequest { request_id: rid, status: "몰라".into(), commit: None, note: None }).is_err());
+    }
+
+    #[test]
+    fn 합치기_충돌과_오래_멈춤을_본부장이_알린다() {
+        let mut st = base();
+        let pid = st.projects[0].id.clone();
+        let team = st.sessions[0].id.clone();
+        st.apply("u1", Op::OpenSession { project_id: pid, title: "디자인".into(), is_main: true }).ok();
+        let mine = st.sessions[1].id.clone();
+        for _ in 0..2 {
+            st.apply("u1", Op::SendRequest { from_session: mine.clone(), to_session: team.clone(), artifact_id: None, note: "반영".into(), branch: Some("together/김하늘/디자인".into()), commit: None }).unwrap();
+        }
+        let (r1, r2) = (st.requests[0].id.clone(), st.requests[1].id.clone());
+        st.apply("u1", Op::ResolveRequest { request_id: r1, status: "충돌".into(), commit: None, note: Some("로그인 화면 같은 줄을 둘 다 고침".into()) }).unwrap();
+        st.apply("u1", Op::ResolveRequest { request_id: r2, status: "합치는 중".into(), commit: None, note: None }).unwrap();
+        let cfg = AgentCfg { api_key: None, ..Default::default() };
+        assert!(tick(&mut st, now_ms() + 20 * 60_000, &cfg));
+        assert!(st.coach.iter().any(|c| c.text.contains("합치기 충돌") && c.session_id.as_deref() == Some(mine.as_str())));
+        assert!(st.coach.iter().any(|c| c.text.contains("15분 넘게")));
+        assert!(st.messages.iter().any(|m| m.from == AGENT_ID && m.text.contains("같은 줄을 둘 다")));
+        // 같은 알림을 되풀이하지 않는다
+        let n = st.coach.len();
+        tick(&mut st, now_ms() + 21 * 60_000, &cfg);
+        assert_eq!(st.coach.len(), n);
     }
 
     #[test]

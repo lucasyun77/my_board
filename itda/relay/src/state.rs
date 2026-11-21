@@ -202,6 +202,9 @@ pub struct MergeRequest {
     pub result_commit: String,
     #[serde(default)]
     pub result_note: String,
+    /// 상태가 마지막으로 바뀐 시각
+    #[serde(default)]
+    pub status_at: u64,
 }
 
 pub const REQUEST_STATUSES: [&str; 6] = ["대기", "합치는 중", "합침", "충돌", "반려", "되돌림"];
@@ -553,6 +556,7 @@ impl State {
                 if !REQUEST_STATUSES.contains(&status.as_str()) { return Err(format!("알 수 없는 상태입니다: {status}")); }
                 let r = self.requests.iter_mut().find(|r| r.id == request_id).ok_or("요청이 없습니다")?;
                 r.status = status.clone();
+                r.status_at = now;
                 if let Some(c) = commit { r.result_commit = c; }
                 if let Some(n) = note { r.result_note = n; }
                 let extra = match (status.as_str(), r.result_commit.is_empty()) {
