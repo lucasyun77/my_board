@@ -289,6 +289,26 @@ mod tests {
     }
 
     #[test]
+    fn 깃허브_갈래로_합치기_요청과_결과() {
+        let mut st = base();
+        let pid = st.projects[0].id.clone();
+        assert!(st.apply("u1", Op::UpdateProject { project_id: pid.clone(), goal: None, guide: None, repo: Some("ftp://x".into()), base_branch: None }).is_err());
+        st.apply("u1", Op::UpdateProject { project_id: pid.clone(), goal: None, guide: None, repo: Some("https://github.com/회사/앱.git".into()), base_branch: Some("main".into()) }).unwrap();
+        assert_eq!(st.projects[0].repo, "https://github.com/회사/앱.git");
+        let team = st.sessions[0].id.clone();
+        st.apply("u1", Op::OpenSession { project_id: pid, title: "디자인".into(), is_main: true }).ok();
+        let mine = st.sessions[1].id.clone();
+        st.apply("u1", Op::SendRequest { from_session: mine.clone(), to_session: team.clone(), artifact_id: None, note: "시안 반영".into(), branch: Some("together/김하늘/디자인".into()), commit: Some("abc1234def".into()) }).unwrap();
+        assert!(st.logs[&team].iter().any(|l| l.text.contains("갈래 together/김하늘/디자인 (기록 abc1234)")));
+        let rid = st.requests[0].id.clone();
+        st.apply("u1", Op::ResolveRequest { request_id: rid.clone(), status: "합치는 중".into(), commit: None, note: None }).unwrap();
+        st.apply("u1", Op::ResolveRequest { request_id: rid.clone(), status: "합침".into(), commit: Some("9f8e7d6c5".into()), note: None }).unwrap();
+        assert_eq!(st.requests[0].result_commit, "9f8e7d6c5");
+        assert!(st.logs[&mine].iter().any(|l| l.text.contains("「합침」 처리되었습니다 (기록 9f8e7d6)")));
+        assert!(st.apply("u1", Op::ResolveRequest { request_id: rid, status: "몰라".into(), commit: None, note: None }).is_err());
+    }
+
+    #[test]
     fn 완료인데_산출물_없으면_검수() {
         let mut st = base();
         let pid = st.projects[0].id.clone();
@@ -330,7 +350,7 @@ mod tests {
         let team = st.sessions[0].id.clone();
         st.apply("u1", Op::OpenSession { project_id: pid, title: "디자인".into(), is_main: true }).ok();
         let mine = st.sessions[1].id.clone();
-        st.apply("u1", Op::SendRequest { from_session: mine, to_session: team.clone(), artifact_id: None, note: "로그인 시안 합쳐 주세요".into() }).unwrap();
+        st.apply("u1", Op::SendRequest { from_session: mine, to_session: team.clone(), artifact_id: None, note: "로그인 시안 합쳐 주세요".into(), branch: None, commit: None }).unwrap();
         assert_eq!(st.requests.len(), 1);
         assert!(st.logs[&team].iter().any(|l| l.kind == "req"));
     }

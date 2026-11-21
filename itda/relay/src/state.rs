@@ -47,6 +47,12 @@ pub struct Project {
     #[serde(default)]
     pub members: Vec<String>,
     pub created_at: u64,
+    /// 회사 깃허브 저장소 주소(2번 합치기)
+    #[serde(default)]
+    pub repo: String,
+    /// 기본 갈래(비면 main)
+    #[serde(default)]
+    pub base_branch: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -183,10 +189,22 @@ pub struct MergeRequest {
     #[serde(default)]
     pub artifact_id: Option<String>,
     pub note: String,
-    /// 대기 / 합침 / 반려
+    /// 대기 → 합치는 중 → 합침 | 충돌 | 반려 | 되돌림
     pub status: String,
     pub ts: u64,
+    /// 합칠 작업 갈래와 그 기록 번호(깃허브 방식)
+    #[serde(default)]
+    pub branch: String,
+    #[serde(default)]
+    pub commit: String,
+    /// 합친(또는 되돌린) 결과 기록 번호와 설명
+    #[serde(default)]
+    pub result_commit: String,
+    #[serde(default)]
+    pub result_note: String,
 }
+
+pub const REQUEST_STATUSES: [&str; 6] = ["대기", "합치는 중", "합침", "충돌", "반려", "되돌림"];
 
 /// 팀에 공유한 확장(모드). 관리자가 승인해야 팀원이 켤 수 있다.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -267,7 +285,7 @@ pub enum Op {
     #[serde(rename_all = "camelCase")]
     JoinProject { project_id: String },
     #[serde(rename_all = "camelCase")]
-    UpdateProject { project_id: String, goal: Option<String>, guide: Option<String> },
+    UpdateProject { project_id: String, goal: Option<String>, guide: Option<String>, #[serde(default)] repo: Option<String>, #[serde(default)] base_branch: Option<String> },
     #[serde(rename_all = "camelCase")]
     OpenSession { project_id: String, title: String, #[serde(default)] is_main: bool },
     #[serde(rename_all = "camelCase")]
@@ -285,9 +303,9 @@ pub enum Op {
         artifact_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
-    SendRequest { from_session: String, to_session: String, artifact_id: Option<String>, note: String },
+    SendRequest { from_session: String, to_session: String, artifact_id: Option<String>, note: String, #[serde(default)] branch: Option<String>, #[serde(default)] commit: Option<String> },
     #[serde(rename_all = "camelCase")]
-    ResolveRequest { request_id: String, status: String },
+    ResolveRequest { request_id: String, status: String, #[serde(default)] commit: Option<String>, #[serde(default)] note: Option<String> },
     #[serde(rename_all = "camelCase")]
     CreateChannel { project_id: String, name: String, #[serde(default)] members: Vec<String> },
     #[serde(rename_all = "camelCase")]
@@ -425,7 +443,7 @@ impl State {
                 let id = self.next_id("p");
                 self.projects.push(Project {
                     id: id.clone(), name: name.clone(), kind, goal, guide: String::new(),
-                    owner_id: who.into(), members: vec![who.into()], created_at: now,
+                    owner_id: who.into(), members: vec![who.into()], created_at: now, ..Default::default()
                 });
                 // 기본 채널과 팀 메인 세션
                 let gen = self.next_id("ch");
@@ -446,10 +464,18 @@ impl State {
                 self.agent_post(&project_id, format!("{} 님이 합류했습니다. 메인 세션을 하나 열어 주세요.", name));
                 Ok(Applied::Changed)
             }
-            Op::UpdateProject { project_id, goal, guide } => {
+            Op::UpdateProject { project_id, goal, guide, repo, base_branch } => {
                 let p = self.projects.iter_mut().find(|p| p.id == project_id).ok_or("프로젝트가 없습니다")?;
                 if let Some(g) = goal { p.goal = g; }
                 if let Some(g) = guide { p.guide = g; }
+                if let Some(r) = repo {
+                    let r = r.trim().to_string();
+                    if !r.is_empty() && !(r.starts_with("https://") || r.starts_with("git@") || r.starts_with("ssh://")) {
+                        return Err("저장소 주소는 https:// 나 git@ 로 시작해야 합니다".into());
+                    }
+                    p.repo = r;
+                }
+                if let Some(b) = base_branch { p.base_branch = b.trim().to_string(); }
                 Ok(Applied::Changed)
             }
             Op::OpenSession { project_id, title, is_main } => {
@@ -508,23 +534,34 @@ impl State {
                 let _ = aid;
                 Ok(Applied::Changed)
             }
-            Op::SendRequest { from_session, to_session, artifact_id, note } => {
+            Op::SendRequest { from_session, to_session, artifact_id, note, branch, commit } => {
                 let to = self.sessions.iter().find(|s| s.id == to_session).cloned().ok_or("받는 세션이 없습니다")?;
                 let from = self.sessions.iter().find(|s| s.id == from_session).cloned().ok_or("보내는 세션이 없습니다")?;
                 let id = self.next_id("r");
                 let art = artifact_id.as_ref().and_then(|a| self.artifacts.iter().find(|x| &x.id == a)).map(|a| format!(" 「{}」 v{}", a.name, a.versions.len())).unwrap_or_default();
                 let who_name = self.member_name(who);
-                self.requests.push(MergeRequest { id, project_id: to.project_id.clone(), from_session, to_session: to.id.clone(), artifact_id, note: note.clone(), status: "대기".into(), ts: now });
-                self.push_log(&to.id, LogLine { ts: now, kind: "req".into(), text: format!("[{} · {}]{} 합치기 요청: {}", who_name, from.title, art, note), from: who.into() });
+                let branch = branch.unwrap_or_default();
+                let commit = commit.unwrap_or_default();
+                let git = if branch.is_empty() { String::new() } else { format!(" 갈래 {}{}", branch, if commit.is_empty() { String::new() } else { format!(" (기록 {})", commit.chars().take(7).collect::<String>()) }) };
+                self.requests.push(MergeRequest { id, project_id: to.project_id.clone(), from_session, to_session: to.id.clone(), artifact_id, note: note.clone(), status: "대기".into(), ts: now, branch, commit, ..Default::default() });
+                self.push_log(&to.id, LogLine { ts: now, kind: "req".into(), text: format!("[{} · {}]{}{} 합치기 요청: {}", who_name, from.title, art, git, note), from: who.into() });
                 self.push_log(&from.id, LogLine { ts: now, kind: "sys".into(), text: format!("「{}」 세션으로 요청을 보냈습니다.", to.title), from: who.into() });
                 self.touch(&from.id);
                 Ok(Applied::Changed)
             }
-            Op::ResolveRequest { request_id, status } => {
+            Op::ResolveRequest { request_id, status, commit, note } => {
+                if !REQUEST_STATUSES.contains(&status.as_str()) { return Err(format!("알 수 없는 상태입니다: {status}")); }
                 let r = self.requests.iter_mut().find(|r| r.id == request_id).ok_or("요청이 없습니다")?;
                 r.status = status.clone();
+                if let Some(c) = commit { r.result_commit = c; }
+                if let Some(n) = note { r.result_note = n; }
+                let extra = match (status.as_str(), r.result_commit.is_empty()) {
+                    ("합침", false) | ("되돌림", false) => format!(" (기록 {})", r.result_commit.chars().take(7).collect::<String>()),
+                    ("충돌", _) if !r.result_note.is_empty() => format!(": {}", r.result_note),
+                    _ => String::new(),
+                };
                 let (fs, ts) = (r.from_session.clone(), r.to_session.clone());
-                self.push_log(&fs, LogLine { ts: now, kind: "sys".into(), text: format!("보낸 요청이 「{}」 처리되었습니다.", status), from: who.into() });
+                self.push_log(&fs, LogLine { ts: now, kind: "sys".into(), text: format!("보낸 요청이 「{}」 처리되었습니다{}.", status, extra), from: who.into() });
                 self.touch(&ts);
                 Ok(Applied::Changed)
             }
